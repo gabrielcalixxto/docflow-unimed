@@ -6,9 +6,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
 from app.models import company, document, document_event, document_version, sector, user  # noqa: F401
 from app.routers import auth, documents, search, versions
 
+configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +24,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+if settings.log_requests:
+    app.add_middleware(
+        RequestResponseLoggingMiddleware,
+        log_response_body=settings.log_response_body,
+        max_body_chars=settings.log_response_body_max_chars,
+    )
 
 
 @app.get("/health", tags=["health"])

@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     debug_sql: bool = False
+    log_level: str = "INFO"
+    log_requests: bool = True
+    log_response_body: bool = True
+    log_response_body_max_chars: int = 1200
 
     model_config = SettingsConfigDict(
         env_file=".env",
