@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 from app.schemas.common import MessageResponse
+from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
 
 def test_create_document_returns_201_and_calls_service(
@@ -19,6 +20,21 @@ def test_create_document_returns_201_and_calls_service(
     service.create_document.assert_called_once()
     _, user_arg = service.create_document.call_args.args
     assert user_arg.user_id == current_user.user_id
+
+
+def test_create_document_returns_403_when_service_blocks_action(
+    authorized_client, document_payload, monkeypatch
+) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.create_document.side_effect = ForbiddenServiceError("Reader role cannot modify documents.")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.post("/documents", json=document_payload.model_dump(mode="json"))
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Reader role cannot modify documents."}
 
 
 def test_list_documents_returns_items(authorized_client, fake_document, monkeypatch) -> None:
@@ -81,6 +97,21 @@ def test_submit_review_calls_service_and_returns_message(
     assert user_arg.user_id == current_user.user_id
 
 
+def test_submit_review_returns_409_on_invalid_transition(authorized_client, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.submit_for_review.side_effect = ConflictServiceError(
+        "Only draft versions can be submitted for review."
+    )
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.post("/documents/10/submit-review")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Only draft versions can be submitted for review."}
+
+
 def test_approve_document_calls_service_and_returns_message(
     authorized_client, current_user, monkeypatch
 ) -> None:
@@ -97,3 +128,47 @@ def test_approve_document_calls_service_and_returns_message(
     service.approve_document.assert_called_once()
     _, user_arg = service.approve_document.call_args.args
     assert user_arg.user_id == current_user.user_id
+
+
+def test_approve_document_returns_404_when_service_reports_missing_document(
+    authorized_client, monkeypatch
+) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.approve_document.side_effect = NotFoundServiceError("Document not found.")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.post("/documents/999/approve")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Document not found."}
+
+
+def test_reject_document_calls_service_and_returns_message(
+    authorized_client, current_user, monkeypatch
+) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.reject_document.return_value = MessageResponse(message="rejected")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.post("/documents/10/reject", json={"reason": "ajustar titulo"})
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "rejected"}
+    service.reject_document.assert_called_once_with(10, current_user, reason="ajustar titulo")
+
+
+def test_reject_document_returns_409_on_invalid_transition(authorized_client, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.reject_document.side_effect = ConflictServiceError("Only versions in review can be rejected.")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.post("/documents/10/reject", json={"reason": "motivo"})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Only versions in review can be rejected."}

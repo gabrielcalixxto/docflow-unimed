@@ -1,6 +1,13 @@
+from unittest.mock import Mock
+
 from jose import jwt
 
 from app.core.config import settings
+from app.core.enums import UserRole
+from app.core.security import create_access_token
+from app.schemas.auth import TokenResponse
+from app.services.auth_service import InvalidCredentialsError
+from main import app
 
 
 def test_healthcheck_returns_ok(public_client) -> None:
@@ -11,21 +18,55 @@ def test_healthcheck_returns_ok(public_client) -> None:
 
 
 def test_auth_login_returns_jwt_bearer_token(public_client) -> None:
-    response = public_client.post(
-        "/auth/login",
-        json={"email": "coord.nutricao@example.com", "password": "secret"},
-    )
+    import app.routers.auth as auth_router
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["token_type"] == "bearer"
-    decoded = jwt.decode(
-        body["access_token"],
-        settings.jwt_secret_key,
-        algorithms=[settings.jwt_algorithm],
+    service = Mock()
+    token = create_access_token(
+        subject="coord.nutricao@example.com",
+        role=UserRole.COORDENADOR,
+        user_id=7,
     )
-    assert decoded["sub"] == "coord.nutricao@example.com"
-    assert decoded["role"] == "COORDENADOR"
+    service.login.return_value = TokenResponse(access_token=token, token_type="bearer")
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = public_client.post(
+            "/auth/login",
+            json={"email": "coord.nutricao@example.com", "password": "secret"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["token_type"] == "bearer"
+        decoded = jwt.decode(
+            body["access_token"],
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+        assert decoded["sub"] == "coord.nutricao@example.com"
+        assert decoded["role"] == "COORDENADOR"
+        assert decoded["user_id"] == 7
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_auth_login_returns_401_on_invalid_credentials(public_client) -> None:
+    import app.routers.auth as auth_router
+
+    service = Mock()
+    service.login.side_effect = InvalidCredentialsError
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = public_client.post(
+            "/auth/login",
+            json={"email": "coord.nutricao@example.com", "password": "wrong"},
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid email or password."}
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_protected_documents_route_requires_authentication(public_client) -> None:
