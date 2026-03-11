@@ -39,6 +39,6 @@ def healthcheck() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(search.router)
 app.include_router(documents.router)
 app.include_router(versions.router)
-app.include_router(search.router)
