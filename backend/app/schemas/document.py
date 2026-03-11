@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.enums import DocumentScope
 
@@ -16,6 +16,10 @@ class DocumentBase(BaseModel):
 
 class DocumentCreate(DocumentBase):
     pass
+
+
+class DocumentRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class DocumentRead(DocumentBase):

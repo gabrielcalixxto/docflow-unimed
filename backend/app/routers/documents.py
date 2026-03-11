@@ -3,18 +3,25 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
+from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
-from app.schemas.document import DocumentCreate, DocumentRead
+from app.schemas.document import DocumentCreate, DocumentRead, DocumentRejectRequest
 from app.services.audit_service import AuditService
 from app.services.document_service import DocumentService
+from app.services.errors import ServiceError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 def get_document_service(db: Session) -> DocumentService:
-    repository = DocumentRepository(db)
-    return DocumentService(repository=repository, audit_service=AuditService())
+    return DocumentService(
+        repository=DocumentRepository(db),
+        version_repository=VersionRepository(db),
+        auth_repository=AuthRepository(db),
+        audit_service=AuditService(),
+    )
 
 
 @router.post("", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -24,7 +31,10 @@ def create_document(
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
-    return service.create_document(payload, current_user)
+    try:
+        return service.create_document(payload, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("", response_model=list[DocumentRead])
@@ -56,7 +66,10 @@ def submit_review(
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
-    return service.submit_for_review(document_id, current_user)
+    try:
+        return service.submit_for_review(document_id, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/{document_id}/approve", response_model=MessageResponse)
@@ -66,4 +79,22 @@ def approve_document(
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
-    return service.approve_document(document_id, current_user)
+    try:
+        return service.approve_document(document_id, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/{document_id}/reject", response_model=MessageResponse)
+def reject_document(
+    document_id: int,
+    payload: DocumentRejectRequest | None = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_document_service(db)
+    try:
+        reason = payload.reason if payload is not None else None
+        return service.reject_document(document_id, current_user, reason=reason)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

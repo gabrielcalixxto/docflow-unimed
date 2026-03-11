@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 from app.schemas.common import MessageResponse
+from app.services.errors import ConflictServiceError, NotFoundServiceError
 
 
 def test_create_version_returns_201_and_calls_service(
@@ -22,6 +23,44 @@ def test_create_version_returns_201_and_calls_service(
     service.create_version.assert_called_once()
     _, _, user_arg = service.create_version.call_args.args
     assert user_arg.user_id == current_user.user_id
+
+
+def test_create_version_returns_409_when_service_reports_conflict(
+    authorized_client, version_payload, monkeypatch
+) -> None:
+    import app.routers.versions as versions_router
+
+    service = Mock()
+    service.create_version.side_effect = ConflictServiceError(
+        "Version number 2 already exists for document 1."
+    )
+    monkeypatch.setattr(versions_router, "get_version_service", lambda _: service)
+
+    response = authorized_client.post(
+        "/documents/1/versions",
+        json=version_payload.model_dump(mode="json"),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Version number 2 already exists for document 1."}
+
+
+def test_create_version_returns_404_when_document_missing(
+    authorized_client, version_payload, monkeypatch
+) -> None:
+    import app.routers.versions as versions_router
+
+    service = Mock()
+    service.create_version.side_effect = NotFoundServiceError("Document not found.")
+    monkeypatch.setattr(versions_router, "get_version_service", lambda _: service)
+
+    response = authorized_client.post(
+        "/documents/999/versions",
+        json=version_payload.model_dump(mode="json"),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Document not found."}
 
 
 def test_list_versions_returns_items(authorized_client, fake_version, monkeypatch) -> None:
