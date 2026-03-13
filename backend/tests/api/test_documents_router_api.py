@@ -37,6 +37,25 @@ def test_create_document_returns_403_when_service_blocks_action(
     assert response.json() == {"detail": "Reader role cannot modify documents."}
 
 
+def test_get_document_form_options_returns_items(authorized_client, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.get_form_options.return_value = {
+        "companies": [{"id": 1, "name": "DocFlow Unimed"}],
+        "sectors": [{"id": 10, "name": "Qualidade", "company_id": 1}],
+        "document_types": ["POP", "IT"],
+        "scopes": ["LOCAL", "CORPORATIVO"],
+    }
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.get("/documents/form-options")
+
+    assert response.status_code == 200
+    assert response.json()["companies"][0]["id"] == 1
+    assert response.json()["sectors"][0]["id"] == 10
+
+
 def test_list_documents_returns_items(authorized_client, fake_document, monkeypatch) -> None:
     import app.routers.documents as documents_router
 

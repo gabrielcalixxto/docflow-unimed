@@ -1,29 +1,54 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.enums import DocumentScope
 
 
-class DocumentBase(BaseModel):
-    code: str
+class DocumentCreate(BaseModel):
     title: str
     company_id: int
     sector_id: int
     document_type: str
     scope: DocumentScope
+    file_path: str
+    expiration_date: date
 
 
-class DocumentCreate(DocumentBase):
-    pass
+class CompanyOption(BaseModel):
+    id: int
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SectorOption(BaseModel):
+    id: int
+    name: str
+    company_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentFormOptionsRead(BaseModel):
+    companies: list[CompanyOption]
+    sectors: list[SectorOption]
+    document_types: list[str]
+    scopes: list[DocumentScope]
 
 
 class DocumentRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
-class DocumentRead(DocumentBase):
+class DocumentRead(BaseModel):
     id: int
+    code: str
+    title: str
+    company_id: int
+    sector_id: int
+    document_type: str
+    scope: DocumentScope
     created_by: int | None = None
     created_at: datetime
 

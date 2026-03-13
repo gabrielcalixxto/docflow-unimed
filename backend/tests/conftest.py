@@ -21,12 +21,13 @@ def current_user() -> AuthenticatedUser:
 @pytest.fixture
 def document_payload() -> DocumentCreate:
     return DocumentCreate(
-        code="DOC-001",
         title="Manual de Nutricao",
         company_id=1,
         sector_id=10,
         document_type="POP",
         scope=DocumentScope.LOCAL,
+        file_path="/tmp/doc-001-v1.pdf",
+        expiration_date=date(2027, 1, 31),
     )
 
 

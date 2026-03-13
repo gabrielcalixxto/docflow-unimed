@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import AppShell from "./components/AppShell";
+import CriarVersaoPage from "./pages/CriarVersaoPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
 import PainelDocumentos from "./pages/PainelDocumentos";
@@ -72,6 +73,9 @@ export default function App() {
       )}
       {activePage === "novo-documento" && (
         <NovoDocumentoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
+      )}
+      {activePage === "criar-versao" && (
+        <CriarVersaoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
       {activePage === "solicitacoes" && (
         <SolicitacoesPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />

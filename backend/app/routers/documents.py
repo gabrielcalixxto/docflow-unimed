@@ -7,7 +7,7 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
-from app.schemas.document import DocumentCreate, DocumentRead, DocumentRejectRequest
+from app.schemas.document import DocumentCreate, DocumentFormOptionsRead, DocumentRead, DocumentRejectRequest
 from app.services.audit_service import AuditService
 from app.services.document_service import DocumentService
 from app.services.errors import ServiceError
@@ -35,6 +35,15 @@ def create_document(
         return service.create_document(payload, current_user)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/form-options", response_model=DocumentFormOptionsRead)
+def get_document_form_options(
+    _: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DocumentFormOptionsRead:
+    service = get_document_service(db)
+    return service.get_form_options()
 
 
 @router.get("", response_model=list[DocumentRead])
