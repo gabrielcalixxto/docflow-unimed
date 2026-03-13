@@ -6,6 +6,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("status");
 
   const loadItems = async () => {
     setLoading(true);
@@ -68,48 +69,112 @@ export default function PainelDocumentos({ onUnauthorized }) {
         </article>
       </section>
 
-      <section className="panel-float workflow-list">
-        <div className="workflow-list-head">
-          <h3>Resumo geral dos documentos</h3>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Codigo</th>
-                <th>Titulo</th>
-                <th>Tipo</th>
-                <th>Escopo</th>
-                <th>Status atual</th>
-                <th>Versao atual</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.id}</td>
-                  <td>{item.code}</td>
-                  <td>{item.title}</td>
-                  <td>{item.document_type}</td>
-                  <td>{item.scope}</td>
-                  <td>
-                    <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
-                      {item.latestStatus}
-                    </span>
-                  </td>
-                  <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
-                </tr>
-              ))}
-              {!loading && items.length === 0 && (
-                <tr>
-                  <td colSpan={7}>Nenhum documento encontrado.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <section className="panel-float workflow-tabs">
+        <button
+          type="button"
+          className={`workflow-tab ${activeTab === "status" ? "active" : ""}`}
+          onClick={() => setActiveTab("status")}
+        >
+          Status
+        </button>
+        <button
+          type="button"
+          className={`workflow-tab ${activeTab === "identificacao" ? "active" : ""}`}
+          onClick={() => setActiveTab("identificacao")}
+        >
+          Titulo e codigo
+        </button>
       </section>
+
+      {activeTab === "status" && (
+        <section className="panel-float workflow-list">
+          <div className="workflow-list-head">
+            <h3>Resumo geral dos documentos</h3>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Codigo</th>
+                  <th>Titulo</th>
+                  <th>Company</th>
+                  <th>Setor</th>
+                  <th>Tipo</th>
+                  <th>Escopo</th>
+                  <th>Status atual</th>
+                  <th>Versao atual</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.id}</td>
+                    <td>{item.code}</td>
+                    <td>{item.title}</td>
+                    <td>{item.companyName}</td>
+                    <td>{item.sectorName}</td>
+                    <td>{item.document_type}</td>
+                    <td>{item.scope}</td>
+                    <td>
+                      <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
+                        {item.latestStatus}
+                      </span>
+                    </td>
+                    <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
+                  </tr>
+                ))}
+                {!loading && items.length === 0 && (
+                  <tr>
+                    <td colSpan={9}>Nenhum documento encontrado.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {activeTab === "identificacao" && (
+        <section className="panel-float workflow-list">
+          <div className="workflow-list-head">
+            <h3>Amostra por identificacao</h3>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Titulo</th>
+                  <th>Codigo</th>
+                  <th>Company</th>
+                  <th>Setor</th>
+                  <th>Tipo</th>
+                  <th>Escopo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={`id-${item.id}`}>
+                    <td>{item.id}</td>
+                    <td>{item.title}</td>
+                    <td>{item.code}</td>
+                    <td>{item.companyName}</td>
+                    <td>{item.sectorName}</td>
+                    <td>{item.document_type}</td>
+                    <td>{item.scope}</td>
+                  </tr>
+                ))}
+                {!loading && items.length === 0 && (
+                  <tr>
+                    <td colSpan={7}>Nenhum documento encontrado.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

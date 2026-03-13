@@ -82,6 +82,8 @@ export default function SolicitacoesPage({ onUnauthorized }) {
                 <th>ID</th>
                 <th>Codigo</th>
                 <th>Titulo</th>
+                <th>Company</th>
+                <th>Setor</th>
                 <th>Status</th>
                 <th>Versao</th>
                 <th>Vencimento</th>
@@ -94,6 +96,8 @@ export default function SolicitacoesPage({ onUnauthorized }) {
                   <td>{item.id}</td>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
+                  <td>{item.companyName}</td>
+                  <td>{item.sectorName}</td>
                   <td>
                     <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
                       {item.latestStatus}
@@ -154,7 +158,7 @@ export default function SolicitacoesPage({ onUnauthorized }) {
               ))}
               {!loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={7}>Nenhuma solicitacao encontrada.</td>
+                  <td colSpan={9}>Nenhuma solicitacao encontrada.</td>
                 </tr>
               )}
             </tbody>

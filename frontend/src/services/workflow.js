@@ -1,13 +1,31 @@
-import { getDocumentVersions, getDocuments } from "./api";
+import { getDocumentFormOptions, getDocumentVersions, getDocuments } from "./api";
 
 export async function fetchWorkflowItems() {
-  const docs = await getDocuments();
+  const [docs, options] = await Promise.all([
+    getDocuments(),
+    getDocumentFormOptions().catch((requestError) => {
+      if (requestError?.status === 401) {
+        throw requestError;
+      }
+      return { companies: [], sectors: [] };
+    }),
+  ]);
+
+  const companyById = new Map(
+    (options?.companies || []).map((company) => [Number(company.id), company.name]),
+  );
+  const sectorById = new Map(
+    (options?.sectors || []).map((sector) => [Number(sector.id), sector.name]),
+  );
+
   const items = await Promise.all(
     (docs || []).map(async (doc) => {
       const versions = await getDocumentVersions(doc.id);
       const latestVersion = versions?.[0] ?? null;
       return {
         ...doc,
+        companyName: companyById.get(Number(doc.company_id)) || `ID ${doc.company_id}`,
+        sectorName: sectorById.get(Number(doc.sector_id)) || `ID ${doc.sector_id}`,
         versions: versions || [],
         latestVersion,
         latestStatus: latestVersion?.status || "SEM_VERSAO",
