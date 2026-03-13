@@ -529,6 +529,15 @@ select:focus {
   gap: 10px;
 }
 
+.document-file-stack {
+  display: grid;
+  gap: 10px;
+  border: 1px dashed rgba(15, 143, 102, 0.28);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(211, 242, 230, 0.22);
+}
+
 .span-2 {
   grid-column: 1 / -1;
 }
@@ -541,6 +550,14 @@ select:focus {
   font-weight: 800;
   color: #fff;
   background: linear-gradient(135deg, var(--brand-0), var(--brand-1));
+}
+
+.workflow-card .compact-submit {
+  align-self: flex-end;
+  width: auto;
+  min-width: 148px;
+  padding: 7px 11px;
+  font-size: 0.84rem;
 }
 
 .workflow-card button:disabled,

@@ -231,34 +231,32 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 ))}
               </select>
             </label>
-            <label className="span-2">
-              Caminho/URL do arquivo
-              <input
-                required
-                value={documentForm.filePath}
-                onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
-                }
-                placeholder="https://... ou /tmp/arquivo.pdf"
-              />
-            </label>
-            <label>
-              Data de vencimento
-              <input
-                required
-                type="date"
-                value={documentForm.expirationDate}
-                onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Versao inicial
-              <input value="1 (automatico)" disabled />
-            </label>
+            <div className="document-file-stack span-2">
+              <label>
+                Caminho/URL do arquivo
+                <input
+                  required
+                  value={documentForm.filePath}
+                  onChange={(event) =>
+                    setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
+                  }
+                  placeholder="https://... ou /tmp/arquivo.pdf"
+                />
+              </label>
+              <label>
+                Data de vencimento
+                <input
+                  required
+                  type="date"
+                  value={documentForm.expirationDate}
+                  onChange={(event) =>
+                    setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))
+                  }
+                />
+              </label>
+            </div>
           </div>
-          <button type="submit" disabled={submitting}>
+          <button type="submit" className="compact-submit" disabled={submitting}>
             Criar documento
           </button>
         </form>
