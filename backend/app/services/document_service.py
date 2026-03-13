@@ -303,24 +303,21 @@ class DocumentService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if current_user.role == UserRole.LEITOR:
-            raise ForbiddenServiceError("Reader role cannot modify documents.")
+        if current_user.role not in {UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}:
+            raise ForbiddenServiceError("Only author, reviewer, or coordinator can modify documents.")
 
     @staticmethod
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
-        if current_user.role != UserRole.AUTOR:
+        if current_user.role != UserRole.REVISOR:
             raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
 
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
-        if current_user.role not in {UserRole.COORDENADOR, UserRole.ADMIN}:
-            raise ForbiddenServiceError("Only coordinator or admin can approve documents.")
+        if current_user.role != UserRole.COORDENADOR:
+            raise ForbiddenServiceError("Only coordinator role can approve documents.")
 
         document = self.repository.get_document_by_id(document_id)
         if document is None:
             raise NotFoundServiceError("Document not found.")
-
-        if current_user.role == UserRole.ADMIN:
-            return
 
         user = self.auth_repository.get_user_by_id(current_user.user_id)
         if user is None:

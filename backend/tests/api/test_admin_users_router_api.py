@@ -56,7 +56,7 @@ def test_get_admin_user_options_returns_data(admin_authorized_client, monkeypatc
 
     service = Mock()
     service.get_options.return_value = {
-        "roles": ["AUTOR", "COORDENADOR", "LEITOR", "ADMIN"],
+        "roles": ["AUTOR", "REVISOR", "COORDENADOR", "LEITOR", "ADMIN"],
         "sectors": [{"id": 10, "name": "Qualidade", "company_id": 1}],
     }
     monkeypatch.setattr(admin_users_router, "get_user_admin_service", lambda _: service)

@@ -1,15 +1,21 @@
 import { useState } from "react";
 
 import {
+  canAccessAdminCatalog,
   canAccessAdminUsers,
+  canAccessAtualizarDocumento,
+  canAccessCentralAprovacao,
+  canAccessHistoricoSolicitacoes,
+  canAccessNovoDocumento,
   canAccessPainel,
-  canAccessSolicitacoes,
+  canAccessSearch,
   displayRole,
 } from "../utils/roles";
 
 const SEARCH_ITEM = {
   id: "search",
   label: "Busca",
+  isVisible: canAccessSearch,
   icon: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
@@ -20,13 +26,28 @@ const SEARCH_ITEM = {
   ),
 };
 
+const APPROVAL_ITEM = {
+  id: "central-aprovacao",
+  label: "Central de Aprovacao",
+  isVisible: canAccessCentralAprovacao,
+  icon: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M7 3a4 4 0 0 1 3.9 5H13a4 4 0 1 1 0 2h-2.1A4 4 0 1 1 7 3Zm10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+};
+
 const NAV_SECTIONS = [
   {
-    title: "Solicitações",
+    title: "Solicitacoes",
     items: [
       {
         id: "novo-documento",
         label: "Novo Documento",
+        isVisible: canAccessNovoDocumento,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -39,6 +60,7 @@ const NAV_SECTIONS = [
       {
         id: "atualizar-documento",
         label: "Atualizar Documento",
+        isVisible: canAccessAtualizarDocumento,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -49,21 +71,9 @@ const NAV_SECTIONS = [
         ),
       },
       {
-        id: "central-aprovacao",
-        label: "Central de Aprovação",
-        isVisible: canAccessSolicitacoes,
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M7 3a4 4 0 0 1 3.9 5H13a4 4 0 1 1 0 2h-2.1A4 4 0 1 1 7 3Zm10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
-              fill="currentColor"
-            />
-          </svg>
-        ),
-      },
-      {
         id: "historico-solicitacoes",
         label: "Historico de Solicitacoes",
+        isVisible: canAccessHistoricoSolicitacoes,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -107,7 +117,7 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Gestão de acessos",
+    title: "Gestao de acessos",
     items: [
       {
         id: "painel-usuarios",
@@ -125,7 +135,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-setores",
         label: "Cadastro de Setores",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -138,7 +148,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-empresas",
         label: "Cadastro de Empresas",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -151,7 +161,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-tipo-documento",
         label: "Cadastro Tipo de Documento",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -190,19 +200,37 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         </div>
 
         <nav className="sidebar-nav">
-          <button
-            key={SEARCH_ITEM.id}
-            type="button"
-            className={`nav-item ${activePage === SEARCH_ITEM.id ? "active" : ""}`}
-            onClick={() => {
-              onPageChange(SEARCH_ITEM.id);
-              setMobileOpen(false);
-            }}
-            title={SEARCH_ITEM.label}
-          >
-            <span className="nav-icon">{SEARCH_ITEM.icon}</span>
-            {!collapsed && <span className="nav-label">{SEARCH_ITEM.label}</span>}
-          </button>
+          {(!SEARCH_ITEM.isVisible || SEARCH_ITEM.isVisible(session.role)) && (
+            <button
+              key={SEARCH_ITEM.id}
+              type="button"
+              className={`nav-item ${activePage === SEARCH_ITEM.id ? "active" : ""}`}
+              onClick={() => {
+                onPageChange(SEARCH_ITEM.id);
+                setMobileOpen(false);
+              }}
+              title={SEARCH_ITEM.label}
+            >
+              <span className="nav-icon">{SEARCH_ITEM.icon}</span>
+              {!collapsed && <span className="nav-label">{SEARCH_ITEM.label}</span>}
+            </button>
+          )}
+
+          {(!APPROVAL_ITEM.isVisible || APPROVAL_ITEM.isVisible(session.role)) && (
+            <button
+              key={APPROVAL_ITEM.id}
+              type="button"
+              className={`nav-item ${activePage === APPROVAL_ITEM.id ? "active" : ""}`}
+              onClick={() => {
+                onPageChange(APPROVAL_ITEM.id);
+                setMobileOpen(false);
+              }}
+              title={APPROVAL_ITEM.label}
+            >
+              <span className="nav-icon">{APPROVAL_ITEM.icon}</span>
+              {!collapsed && <span className="nav-label">{APPROVAL_ITEM.label}</span>}
+            </button>
+          )}
 
           {visibleSections.map((section) => (
             <div key={`section-${section.title}`}>
@@ -287,3 +315,4 @@ export default function AppShell({ children, activePage, onPageChange, session, 
     </div>
   );
 }
+

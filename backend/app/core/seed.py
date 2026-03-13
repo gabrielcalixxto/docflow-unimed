@@ -16,8 +16,9 @@ _DEFAULT_DOCUMENT_TYPES = ["POP", "IT", "MANUAL", "POLITICA", "PROTOCOLO"]
 
 _DEFAULT_USERS: list[tuple[str, str, UserRole, str | None]] = [
     ("Admin DocFlow", "admin@teste.com", UserRole.ADMIN, None),
+    ("Autor DocFlow", "autor@teste.com", UserRole.AUTOR, "Qualidade"),
+    ("Revisor DocFlow", "revisor@teste.com", UserRole.REVISOR, "Qualidade"),
     ("Coordenacao Qualidade", "coord@teste.com", UserRole.COORDENADOR, "Qualidade"),
-    ("Revisor DocFlow", "autor@teste.com", UserRole.AUTOR, "Qualidade"),
     ("Leitor DocFlow", "leitor@teste.com", UserRole.LEITOR, "Qualidade"),
 ]
 

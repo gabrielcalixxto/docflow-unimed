@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -16,10 +17,19 @@ configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 
+def ensure_user_role_enum_values() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'REVISOR'"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_user_role_enum_values()
         seed_default_users()
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)

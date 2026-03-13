@@ -28,13 +28,15 @@ def test_create_document_returns_403_when_service_blocks_action(
     import app.routers.documents as documents_router
 
     service = Mock()
-    service.create_document.side_effect = ForbiddenServiceError("Reader role cannot modify documents.")
+    service.create_document.side_effect = ForbiddenServiceError(
+        "Only author, reviewer, or coordinator can modify documents."
+    )
     monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
 
     response = authorized_client.post("/documents", json=document_payload.model_dump(mode="json"))
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Reader role cannot modify documents."}
+    assert response.json() == {"detail": "Only author, reviewer, or coordinator can modify documents."}
 
 
 def test_get_document_form_options_returns_items(authorized_client, monkeypatch) -> None:

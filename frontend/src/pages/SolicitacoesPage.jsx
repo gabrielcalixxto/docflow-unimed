@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { approveDocument, rejectDocument, submitForReview } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
-import { canAccessSolicitacoes, isAdmin, isCoordinator, isReviewer } from "../utils/roles";
+import { canAccessCentralAprovacao, isCoordinator, isReviewer } from "../utils/roles";
 
 export default function SolicitacoesPage({ session, onUnauthorized }) {
   const [items, setItems] = useState([]);
@@ -35,21 +35,20 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
 
   const reviewerRole = isReviewer(session?.role);
   const coordinatorRole = isCoordinator(session?.role);
-  const adminRole = isAdmin(session?.role);
-  const canOpenSolicitacoes = canAccessSolicitacoes(session?.role);
+  const canOpenSolicitacoes = canAccessCentralAprovacao(session?.role);
 
   const visibleItems = useMemo(() => {
     if (!canOpenSolicitacoes) {
       return [];
     }
-    if (coordinatorRole && !adminRole) {
+    if (coordinatorRole) {
       if (!session?.sectorId) {
         return [];
       }
       return items.filter((item) => Number(item.sector_id) === Number(session.sectorId));
     }
     return items;
-  }, [items, canOpenSolicitacoes, coordinatorRole, adminRole, session?.sectorId]);
+  }, [items, canOpenSolicitacoes, coordinatorRole, session?.sectorId]);
 
   const runAction = async (documentId, action) => {
     if (action === "review") {
@@ -152,7 +151,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                         </>
                       )}
 
-                      {item.latestStatus === "EM_REVISAO" && (coordinatorRole || adminRole) && (
+                      {item.latestStatus === "EM_REVISAO" && coordinatorRole && (
                         <>
                           <input
                             className="reject-reason"
