@@ -49,7 +49,7 @@ export default function CriarVersaoPage({ onUnauthorized }) {
       <section className="hero-block">
         <div>
           <p className="kicker">Versionamento</p>
-          <h2>Criar versao</h2>
+          <h2>Atualizar Documento</h2>
           <p>
             Use esta tela para criar novas revisoes. A versao 1 ja e criada automaticamente no
             cadastro do documento.
@@ -61,7 +61,7 @@ export default function CriarVersaoPage({ onUnauthorized }) {
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreateVersion}>
-          <h3>Criar versao</h3>
+          <h3>Atualizar Documento</h3>
           <p className="workflow-hint">
             Informe o documento, numero da versao e os dados do arquivo em rascunho.
           </p>
@@ -116,7 +116,7 @@ export default function CriarVersaoPage({ onUnauthorized }) {
             </label>
           </div>
           <button type="submit" disabled={submitting}>
-            Criar versao
+            Atualizar documento
           </button>
         </form>
       </section>

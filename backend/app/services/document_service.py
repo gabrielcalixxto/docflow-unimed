@@ -11,12 +11,10 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
-from app.schemas.document import DocumentCreate, DocumentFormOptionsRead
+from app.schemas.document import DocumentCreate, DocumentDraftUpdate, DocumentFormOptionsRead
 from app.schemas.version import DocumentVersionCreate
 from app.services.audit_service import AuditService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
-
-DEFAULT_DOCUMENT_TYPES = ("POP", "IT", "MANUAL", "POLITICA", "PROTOCOLO")
 
 
 class DocumentService:
@@ -93,12 +91,17 @@ class DocumentService:
     def get_form_options(self) -> DocumentFormOptionsRead:
         companies = self.repository.list_companies()
         sectors = self.repository.list_sectors()
+        configured_document_types = self.repository.list_document_types()
         existing_document_types = self.repository.list_distinct_document_types()
-        normalized_defaults = [item.strip().upper() for item in DEFAULT_DOCUMENT_TYPES]
+        normalized_catalog = [
+            item.name.strip().upper()
+            for item in configured_document_types
+            if item.name and item.name.strip()
+        ]
         normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
 
         document_types: list[str] = []
-        for item in [*normalized_defaults, *normalized_existing]:
+        for item in [*normalized_catalog, *normalized_existing]:
             if item not in document_types:
                 document_types.append(item)
 
@@ -115,9 +118,67 @@ class DocumentService:
     def get_document(self, document_id: int) -> Document | None:
         return self.repository.get_document_by_id(document_id)
 
+    def update_draft_document(
+        self,
+        document_id: int,
+        payload: DocumentDraftUpdate,
+        current_user: AuthenticatedUser,
+    ) -> MessageResponse:
+        self._ensure_authenticated_user_id(current_user)
+        document, latest_version = self._get_editable_draft(document_id, current_user)
+
+        document_changed = False
+        version_changed = False
+
+        if payload.title is not None:
+            title = payload.title.strip()
+            if not title:
+                raise ConflictServiceError("Title cannot be empty.")
+            document.title = title
+            document_changed = True
+
+        if payload.file_path is not None:
+            file_path = payload.file_path.strip()
+            if not file_path:
+                raise ConflictServiceError("File path cannot be empty.")
+            latest_version.file_path = file_path
+            version_changed = True
+
+        if payload.expiration_date is not None:
+            latest_version.expiration_date = payload.expiration_date
+            version_changed = True
+
+        if not document_changed and not version_changed:
+            raise ConflictServiceError("Provide at least one field to update.")
+
+        try:
+            if document_changed:
+                self.repository.save(document)
+            if version_changed:
+                self.version_repository.save(latest_version)
+            self.repository.db.commit()
+        except SQLAlchemyError as exc:
+            self.repository.db.rollback()
+            raise ConflictServiceError("Could not update draft document.") from exc
+
+        return MessageResponse(message="Draft document updated successfully.")
+
+    def delete_draft_document(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
+        self._ensure_authenticated_user_id(current_user)
+        document, _ = self._get_editable_draft(document_id, current_user)
+
+        try:
+            self.repository.delete(document)
+            self.repository.db.commit()
+        except SQLAlchemyError as exc:
+            self.repository.db.rollback()
+            raise ConflictServiceError("Could not delete draft document.") from exc
+
+        return MessageResponse(message="Draft document deleted successfully.")
+
     def submit_for_review(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        self._ensure_can_write(current_user)
+        self._ensure_can_submit_for_review(current_user)
 
         document = self.repository.get_document_by_id(document_id)
         if document is None:
@@ -245,6 +306,11 @@ class DocumentService:
         if current_user.role == UserRole.LEITOR:
             raise ForbiddenServiceError("Reader role cannot modify documents.")
 
+    @staticmethod
+    def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
+        if current_user.role != UserRole.AUTOR:
+            raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
+
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
         if current_user.role not in {UserRole.COORDENADOR, UserRole.ADMIN}:
             raise ForbiddenServiceError("Only coordinator or admin can approve documents.")
@@ -264,12 +330,33 @@ class DocumentService:
         if user.sector_id is not None and document.sector_id != user.sector_id:
             raise ForbiddenServiceError("Coordinator can only approve documents from the same sector.")
 
+    def _get_editable_draft(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+    ):
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
+
+        if document.created_by != current_user.user_id:
+            raise ForbiddenServiceError("Only the requester can edit or delete this draft.")
+
+        latest_version = self.version_repository.get_latest_version_for_document(document_id)
+        if latest_version is None:
+            raise NotFoundServiceError("Document has no versions.")
+
+        if latest_version.status != DocumentStatus.RASCUNHO:
+            raise ConflictServiceError("Only draft documents can be edited or deleted.")
+
+        return document, latest_version
+
     @staticmethod
     def _build_document_code(*, document_type: str, document_id: int, sector_name: str) -> str:
         normalized_type = DocumentService._slug_segment(document_type) or "DOC"
         normalized_sector = DocumentService._slug_segment(sector_name) or "SET"
         sector_part = normalized_sector[:3].ljust(3, "X")
-        return f"{normalized_type}-{document_id}-{sector_part}"
+        return f"{normalized_type}-{sector_part}-{document_id}"
 
     @staticmethod
     def _slug_segment(value: str) -> str:

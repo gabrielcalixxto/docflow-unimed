@@ -9,8 +9,8 @@ from app.core.config import settings
 from app.core.database import Base, engine
 from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
 from app.core.seed import seed_default_users
-from app.models import company, document, document_event, document_version, sector, user  # noqa: F401
-from app.routers import auth, documents, search, versions
+from app.models import company, document, document_event, document_type, document_version, sector, user  # noqa: F401
+from app.routers import admin_catalog, admin_users, auth, documents, search, versions
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -53,3 +53,5 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(documents.router)
 app.include_router(versions.router)
+app.include_router(admin_users.router)
+app.include_router(admin_catalog.router)

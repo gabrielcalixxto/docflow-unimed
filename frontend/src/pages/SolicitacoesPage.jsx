@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { approveDocument, rejectDocument, submitForReview } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
+import { canAccessSolicitacoes, isAdmin, isCoordinator, isReviewer } from "../utils/roles";
 
-export default function SolicitacoesPage({ onUnauthorized }) {
+export default function SolicitacoesPage({ session, onUnauthorized }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +33,30 @@ export default function SolicitacoesPage({ onUnauthorized }) {
     loadItems();
   }, []);
 
+  const reviewerRole = isReviewer(session?.role);
+  const coordinatorRole = isCoordinator(session?.role);
+  const adminRole = isAdmin(session?.role);
+  const canOpenSolicitacoes = canAccessSolicitacoes(session?.role);
+
+  const visibleItems = useMemo(() => {
+    if (!canOpenSolicitacoes) {
+      return [];
+    }
+    if (coordinatorRole && !adminRole) {
+      if (!session?.sectorId) {
+        return [];
+      }
+      return items.filter((item) => Number(item.sector_id) === Number(session.sectorId));
+    }
+    return items;
+  }, [items, canOpenSolicitacoes, coordinatorRole, adminRole, session?.sectorId]);
+
   const runAction = async (documentId, action) => {
+    if (action === "review") {
+      showFeedback("success", "Revisao em andamento. Ao concluir, clique em Aprovar.");
+      return;
+    }
+
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
@@ -64,7 +88,7 @@ export default function SolicitacoesPage({ onUnauthorized }) {
       <section className="hero-block">
         <div>
           <p className="kicker">Fila operacional</p>
-          <h2>Solicitacoes</h2>
+          <h2>Central de Aprovacao</h2>
           <p>Veja o status atual e execute as acoes de envio, aprovacao e reprovacao.</p>
         </div>
         <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
@@ -91,7 +115,7 @@ export default function SolicitacoesPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <tr key={item.id}>
                   <td>{item.id}</td>
                   <td>{item.code}</td>
@@ -107,18 +131,28 @@ export default function SolicitacoesPage({ onUnauthorized }) {
                   <td>{item.latestVersion?.expiration_date || "-"}</td>
                   <td>
                     <div className="request-actions">
-                      {item.latestStatus === "RASCUNHO" && (
-                        <button
-                          type="button"
-                          className="table-btn"
-                          disabled={submitting}
-                          onClick={() => runAction(item.id, "submit")}
-                        >
-                          Enviar revisao
-                        </button>
+                      {item.latestStatus === "RASCUNHO" && reviewerRole && (
+                        <>
+                          <button
+                            type="button"
+                            className="table-btn"
+                            disabled={submitting}
+                            onClick={() => runAction(item.id, "review")}
+                          >
+                            Revisar
+                          </button>
+                          <button
+                            type="button"
+                            className="table-btn"
+                            disabled={submitting}
+                            onClick={() => runAction(item.id, "submit")}
+                          >
+                            Aprovar para coordenador
+                          </button>
+                        </>
                       )}
 
-                      {item.latestStatus === "EM_REVISAO" && (
+                      {item.latestStatus === "EM_REVISAO" && (coordinatorRole || adminRole) && (
                         <>
                           <input
                             className="reject-reason"
@@ -156,7 +190,7 @@ export default function SolicitacoesPage({ onUnauthorized }) {
                   </td>
                 </tr>
               ))}
-              {!loading && items.length === 0 && (
+              {!loading && visibleItems.length === 0 && (
                 <tr>
                   <td colSpan={9}>Nenhuma solicitacao encontrada.</td>
                 </tr>

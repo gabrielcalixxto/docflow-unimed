@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -6,6 +7,7 @@ import pytest
 from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.schemas.common import MessageResponse
+from app.schemas.document import DocumentDraftUpdate
 from app.services.document_service import DocumentService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
@@ -54,7 +56,7 @@ def test_create_document_persists_entity_and_emits_event(document_payload, curre
         code="PENDING",
         created_by=current_user.user_id,
     )
-    assert repository.create_document.return_value.code == "POP-12-QUA"
+    assert repository.create_document.return_value.code == "POP-QUA-12"
     version_repository.create_version.assert_called_once()
     version_payload = version_repository.create_version.call_args.kwargs["payload"]
     assert version_payload.version_number == 1
@@ -146,6 +148,16 @@ def test_submit_for_review_raises_not_found_when_document_missing(current_user) 
 
     with pytest.raises(NotFoundServiceError):
         service.submit_for_review(999, current_user)
+
+
+def test_submit_for_review_blocks_non_reviewer_role() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    service = build_service(repository=repository)
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
+
+    with pytest.raises(ForbiddenServiceError):
+        service.submit_for_review(10, coordinator)
 
 
 def test_submit_for_review_raises_conflict_on_invalid_status(current_user) -> None:
@@ -351,6 +363,10 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     repository = Mock()
     repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
     repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
+    repository.list_document_types.return_value = [
+        SimpleNamespace(id=1, name="POP"),
+        SimpleNamespace(id=2, name="manual"),
+    ]
     repository.list_distinct_document_types.return_value = ["Pop", "manual", "instrucao"]
     service = build_service(repository=repository)
 
@@ -362,3 +378,79 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     assert "MANUAL" in options.document_types
     assert "INSTRUCAO" in options.document_types
     assert options.scopes == list(DocumentScope)
+
+
+def test_update_draft_document_updates_document_and_latest_version(current_user) -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_by_id.return_value = SimpleNamespace(
+        id=12,
+        created_by=current_user.user_id,
+        title="Titulo antigo",
+    )
+    version_repository = Mock()
+    version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=31,
+        status=DocumentStatus.RASCUNHO,
+        file_path="/tmp/old.pdf",
+        expiration_date=date(2027, 1, 31),
+    )
+    service = build_service(repository=repository, version_repository=version_repository)
+
+    response = service.update_draft_document(
+        12,
+        DocumentDraftUpdate(
+            title="Titulo novo",
+            file_path="/tmp/new.pdf",
+            expiration_date=date(2028, 1, 31),
+        ),
+        current_user,
+    )
+
+    assert isinstance(response, MessageResponse)
+    assert "updated" in response.message.lower()
+    repository.save.assert_called_once()
+    version_repository.save.assert_called_once()
+    repository.db.commit.assert_called_once_with()
+
+
+def test_update_draft_document_blocks_non_requester(current_user) -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_by_id.return_value = SimpleNamespace(
+        id=12,
+        created_by=777,
+        title="Titulo antigo",
+    )
+    version_repository = Mock()
+    version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=31,
+        status=DocumentStatus.RASCUNHO,
+    )
+    service = build_service(repository=repository, version_repository=version_repository)
+
+    with pytest.raises(ForbiddenServiceError):
+        service.update_draft_document(12, DocumentDraftUpdate(title="Novo"), current_user)
+
+
+def test_delete_draft_document_deletes_document_for_requester(current_user) -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_by_id.return_value = SimpleNamespace(
+        id=12,
+        created_by=current_user.user_id,
+        title="Titulo antigo",
+    )
+    version_repository = Mock()
+    version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=31,
+        status=DocumentStatus.RASCUNHO,
+    )
+    service = build_service(repository=repository, version_repository=version_repository)
+
+    response = service.delete_draft_document(12, current_user)
+
+    assert isinstance(response, MessageResponse)
+    assert "deleted" in response.message.lower()
+    repository.delete.assert_called_once()
+    repository.db.commit.assert_called_once_with()

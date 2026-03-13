@@ -98,6 +98,48 @@ def test_get_document_returns_item_when_found(authorized_client, fake_document, 
     assert response.json()["id"] == fake_document.id
 
 
+def test_update_draft_document_calls_service_and_returns_message(
+    authorized_client, current_user, monkeypatch
+) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.update_draft_document.return_value = MessageResponse(message="updated")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.patch(
+        "/documents/10/draft",
+        json={
+            "title": "Novo titulo",
+            "file_path": "/tmp/new.pdf",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "updated"}
+    service.update_draft_document.assert_called_once()
+    _, _, user_arg = service.update_draft_document.call_args.args
+    assert user_arg.user_id == current_user.user_id
+
+
+def test_delete_draft_document_calls_service_and_returns_message(
+    authorized_client, current_user, monkeypatch
+) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.delete_draft_document.return_value = MessageResponse(message="deleted")
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.delete("/documents/10/draft")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "deleted"}
+    service.delete_draft_document.assert_called_once()
+    _, user_arg = service.delete_draft_document.call_args.args
+    assert user_arg.user_id == current_user.user_id
+
+
 def test_submit_review_calls_service_and_returns_message(
     authorized_client, current_user, monkeypatch
 ) -> None:
@@ -129,6 +171,21 @@ def test_submit_review_returns_409_on_invalid_transition(authorized_client, monk
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Only draft versions can be submitted for review."}
+
+
+def test_update_draft_document_returns_403_when_service_blocks(authorized_client, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.update_draft_document.side_effect = ForbiddenServiceError(
+        "Only the requester can edit or delete this draft."
+    )
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.patch("/documents/10/draft", json={"title": "novo"})
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Only the requester can edit or delete this draft."}
 
 
 def test_approve_document_calls_service_and_returns_message(

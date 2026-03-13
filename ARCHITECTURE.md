@@ -1,48 +1,11 @@
-# ARCHITECTURE.md
+# ARCHITECTURE
 
-## Purpose
+Este documento descreve a arquitetura vigente do projeto (estado atual do codigo).
 
-This document is the architectural source of truth for the Document Management Platform MVP.
-
-It defines the stack, domain boundaries, data modeling strategy, API direction, and non-negotiable business rules for implementation.
-
-The system is not a generic CRUD application. The backend must preserve:
-
-- lifecycle control
-- document versioning
-- approval workflow
-- sector-based visibility
-- role-based access control
-- immutable audit trail
-- protected search that returns only active content by default
-
-## 1. Product Objective
-
-Build the MVP core of a document management platform for regulated environments.
-
-The platform must support:
-
-- document taxonomy
-- document lifecycle management
-- version history
-- approval delegation by sector
-- controlled visibility
-- auditability for compliance-relevant actions
-
-## 2. Mandatory Stack
-
-- Frontend: React with Tailwind CSS
-- Backend: Python with FastAPI
-- Database: PostgreSQL
-- Authentication: JWT Bearer Token
-- Containerization: separate Docker containers for frontend and backend
-
-React is the selected frontend implementation for this repository. If the project later migrates to Next.js, this document must be updated explicitly.
-
-## 3. High-Level Architecture
+## 1. Visao geral
 
 ```text
-Frontend (React + Tailwind CSS)
+Frontend (React + Vite)
         |
         v
 Backend API (FastAPI)
@@ -51,291 +14,42 @@ Backend API (FastAPI)
 PostgreSQL
 ```
 
-### Frontend responsibilities
+Servicos Docker:
 
-- authenticate users
-- list and search visible active documents
-- allow authors to create and edit drafts
-- allow coordinators to review and decide pending drafts
-- display document metadata, version metadata, and audit data where authorized
+- `frontend`
+- `backend`
+- `postgres`
 
-### Backend responsibilities
+## 2. Backend por camadas
 
-- enforce lifecycle rules
-- enforce approval rules
-- orchestrate version creation
-- enforce scope and sector visibility
-- enforce RBAC
-- issue and validate JWT tokens
-- generate immutable audit events
-- coordinate persistence in transactional flows
-
-### Database responsibilities
-
-- preserve relational integrity
-- store document identity separately from document history
-- support transactional approval and obsolescence updates
-- store immutable event history
-
-## 4. Backend Architectural Style
-
-Expected structure:
+Estrutura:
 
 ```text
 backend/
   app/
-    routers/
-    services/
-    repositories/
+    core/
     models/
     schemas/
-    core/
+    repositories/
+    services/
+    routers/
   main.py
 ```
 
-### Layer rules
+Responsabilidades:
 
-`routers`
+- `routers`: HTTP + dependencia + translate de erros para status code.
+- `services`: regras de negocio e orquestracao.
+- `repositories`: persistencia SQLAlchemy.
+- `models`: entidades ORM.
+- `schemas`: contratos Pydantic de entrada/saida.
+- `core`: config, banco, seguranca JWT, seed, logging.
 
-- own HTTP concerns only
-- validate request and response schemas
-- delegate to services
-- translate domain errors into HTTP responses
+## 3. Modelagem principal
 
-`services`
-
-- own business rules
-- validate lifecycle transitions
-- orchestrate versioning
-- apply scope, sector, and role checks
-- create audit events
-- coordinate repository calls inside transactions
-
-`repositories`
-
-- own persistence logic
-- isolate ORM and query details
-- do not decide workflow behavior
-- do not implement business policy
-
-`models`
-
-- define ORM entities and relational constraints
-
-`schemas`
-
-- define Pydantic request and response contracts
-
-`core`
-
-- configuration
-- JWT helpers
-- authentication dependencies
-- shared enums and domain utilities
-
-## 5. Core Domain Concepts
-
-### Document
-
-Represents the logical identity of a controlled document.
-
-It should contain stable business identity data such as:
-
-- code
-- title
-- company
-- sector
-- document type
-- visibility scope
-
-### Document Version
-
-Represents one historical revision of a document.
-
-It should contain stateful data such as:
-
-- version number
-- workflow status
-- file reference
-- expiration date
-- review and approval metadata
-
-Document and document version must remain structurally separated.
-
-## 6. Mandatory Taxonomy
-
-Every document must have, at minimum:
-
-- `sector`
-- `document_type`
-- `expiration_date`
-
-Modeling rule:
-
-- `sector` belongs to the logical document identity
-- `document_type` belongs to the logical document identity
-- `expiration_date` belongs to the document version, because it may change between revisions
-
-The backend must reject document creation or draft creation that omits any required taxonomy field.
-
-## 7. Lifecycle Model
-
-### Mandatory statuses
-
-- `RASCUNHO`
-- `EM_REVISAO`
-- `VIGENTE`
-- `OBSOLETO`
-
-### Allowed transitions
-
-- `RASCUNHO -> EM_REVISAO`
-- `EM_REVISAO -> RASCUNHO` when the coordinator rejects the draft
-- `EM_REVISAO -> VIGENTE` when the coordinator approves the draft
-- `VIGENTE -> OBSOLETO`
-
-### Lifecycle rules
-
-- invalid transitions must be blocked in the backend
-- frontend state must never be treated as the source of truth
-- rejection must not create a new status outside the four mandatory states
-- rejection should require a reason and return the same version to `RASCUNHO`
-
-## 8. Versioning Strategy
-
-Versioning is mandatory and must not be simplified.
-
-### Core rules
-
-1. A document may have multiple versions.
-2. For one logical document in one sector, only one version may be `VIGENTE` at a time.
-3. Editing a `VIGENTE` version must never overwrite the active file or active row in place.
-4. Editing a `VIGENTE` document must create a new version in `RASCUNHO`.
-5. When a new version becomes `VIGENTE`, the previous `VIGENTE` version must become `OBSOLETO` in the same business flow.
-
-### Architectural implication
-
-The service layer must treat publication as a transaction that:
-
-- validates the approving user
-- promotes the target version to `VIGENTE`
-- obsoletes the previous active version
-- records the corresponding audit events
-
-## 9. Governance, Scope, and Permissions
-
-### Visibility scopes
-
-- `CORPORATIVO`
-- `LOCAL`
-
-### Scope meaning
-
-`CORPORATIVO`
-
-- visible to authenticated users with reading permission across sectors
-
-`LOCAL`
-
-- visible only to users from the same sector, still respecting role permissions
-
-Visibility must always be enforced in the backend.
-
-### Required recorded actors
-
-- `created_by`
-- `approved_by`
-
-### Minimum roles
-
-- `AUTOR`
-- `COORDENADOR`
-- `LEITOR`
-- `ADMIN`
-
-### Role behavior
-
-`AUTOR`
-
-- creates drafts
-- edits drafts
-- submits drafts for review
-- cannot approve
-
-`COORDENADOR`
-
-- reviews drafts from the same sector
-- approves drafts from the same sector
-- rejects drafts from the same sector
-- cannot approve drafts from unrelated sectors unless an explicit future rule says so
-
-`LEITOR`
-
-- searches and views only permitted `VIGENTE` documents
-- cannot edit or change workflow state
-
-`ADMIN`
-
-- manages administrative data
-- may inspect broader system information when authorized
-- must still respect explicit business rules for publication flows unless the service layer defines a safe override
-
-## 10. Audit Architecture
-
-Audit is part of the domain.
-
-The system must keep an immutable event trail for compliance-relevant actions.
-
-### Minimum events
-
-- `document_created`
-- `version_created`
-- `submitted_for_review`
-- `approved`
-- `rejected`
-- `set_to_vigente`
-- `marked_obsolete`
-- `document_viewed`
-
-### Required event payload
-
-Each event must be tied to:
-
-- document
-- version
-- user
-- timestamp
-
-Recommended additional data:
-
-- sector
-- action context
-- reason or notes
-
-Critical actions must not bypass audit creation.
-
-## 11. Search Protection Strategy
-
-Default search behavior must protect the user.
-
-### Standard search and reader listing rules
-
-- return only documents whose visible version is `VIGENTE`
-- exclude `RASCUNHO`
-- exclude `EM_REVISAO`
-- exclude `OBSOLETO`
-
-Older or non-active versions may only be returned in explicit administrative, compliance, or audit flows.
-
-## 12. Data Modeling Strategy
-
-The relational model must separate identity, history, permissions, and audit.
-
-### Minimum conceptual entities
+Entidades implementadas:
 
 - `users`
-- `roles`
-- `user_roles`
 - `companies`
 - `sectors`
 - `document_types`
@@ -343,168 +57,118 @@ The relational model must separate identity, history, permissions, and audit.
 - `document_versions`
 - `document_events`
 
-### Conceptual relationships
+Observacoes:
 
-- `companies -> sectors`
-- `documents -> companies`
-- `documents -> sectors`
-- `documents -> document_types`
-- `documents -> document_versions`
-- `document_versions -> document_events`
-- `users -> roles`
-- `users -> sectors` directly or through an association table
+- `document_type` e armazenado em `documents` como texto (`string`).
+- `document_types` existe como catalogo administrativo para dropdowns e cadastro.
+- `document_versions` possui:
+  - unicidade `(document_id, version_number)`
+  - indice parcial para uma unica versao `VIGENTE` por documento (PostgreSQL).
 
-### Suggested entity responsibilities
+## 4. Workflow atual
 
-`documents`
+Status em uso:
 
-- `id`
-- `code`
-- `title`
-- `company_id`
-- `sector_id`
-- `document_type_id`
-- `scope`
-- `created_by`
-- `created_at`
+- `RASCUNHO`
+- `EM_REVISAO`
+- `VIGENTE`
+- `OBSOLETO`
 
-`document_versions`
+Transicoes aplicadas:
 
-- `id`
-- `document_id`
-- `version_number`
-- `status`
-- `file_path`
-- `expiration_date`
-- `review_reason`
-- `created_by`
-- `approved_by`
-- `created_at`
-- `approved_at`
+- `RASCUNHO -> EM_REVISAO` (envio para coordenacao)
+- `EM_REVISAO -> VIGENTE` (aprovacao)
+- `EM_REVISAO -> RASCUNHO` (reprovacao)
+- `VIGENTE -> OBSOLETO` (ao promover nova vigente)
 
-`document_events`
+## 5. Regras de governanca
 
-- `id`
-- `document_id`
-- `version_id`
-- `user_id`
-- `event_type`
-- `event_reason`
-- `created_at`
+- Codigo automatico no formato `TIPO-SET-ID`.
+- Criacao de documento gera versao `1` em `RASCUNHO`.
+- Solicitante da criacao pode:
+  - editar rascunho
+  - excluir rascunho
+- Restricao de aprovacao para coordenador do mesmo setor (quando setor do coordenador esta definido).
 
-### Recommended constraints
+## 6. Permissoes (resumo)
 
-- unique active version per document
-- version number unique per document
-- document code unique inside its business scope, such as company plus sector, if the business confirms that rule
+Perfis:
 
-## 13. API Architectural Guidelines
+- `AUTOR` (rotulado como `REVISOR` no frontend)
+- `COORDENADOR`
+- `LEITOR`
+- `ADMIN`
 
-The backend exposes a REST API.
+Pontos de controle:
 
-### Expected endpoint families
+- backend valida JWT e permissoes por regra de negocio
+- frontend aplica filtros de visibilidade de menu/telas por perfil
+- backend e a fonte de verdade para autorizacao
 
-- authentication
-- documents
-- versions
-- review and approval
-- search
-- audit
+## 7. Endpoints ativos
 
-### Example routes
+Auth:
 
 - `POST /auth/login`
+
+Documents:
+
 - `POST /documents`
 - `GET /documents`
-- `GET /documents/{id}`
-- `POST /documents/{id}/versions`
-- `POST /documents/{id}/submit-review`
-- `POST /documents/{id}/approve`
-- `POST /documents/{id}/reject`
+- `GET /documents/{document_id}`
+- `GET /documents/form-options`
+- `PATCH /documents/{document_id}/draft`
+- `DELETE /documents/{document_id}/draft`
+- `POST /documents/{document_id}/submit-review`
+- `POST /documents/{document_id}/approve`
+- `POST /documents/{document_id}/reject`
+
+Versions:
+
+- `POST /documents/{document_id}/versions`
+- `GET /documents/{document_id}/versions`
+
+Search:
+
 - `GET /documents/search`
 
-### Status code conventions
+Admin users:
 
-- `200 OK`
-- `201 Created`
-- `400 Bad Request`
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict`
+- `GET /admin/users`
+- `GET /admin/users/options`
+- `POST /admin/users`
+- `PUT /admin/users/{user_id}`
+- `DELETE /admin/users/{user_id}`
 
-Use `409 Conflict` for:
+Admin catalog:
 
-- invalid workflow transitions
-- unique active version violations
-- state collisions during approval or publication
+- `GET /admin/catalog/options`
+- `POST /admin/catalog/companies`
+- `DELETE /admin/catalog/companies/{company_id}`
+- `POST /admin/catalog/sectors`
+- `DELETE /admin/catalog/sectors/{sector_id}`
+- `POST /admin/catalog/document-types`
+- `DELETE /admin/catalog/document-types/{document_type_id}`
 
-## 14. Security Architecture
+## 8. Frontend atual
 
-Security is enforced primarily in the backend.
+Stack:
 
-Authorization decisions must consider:
+- React 18
+- Vite 5
+- CSS proprio (`src/index.css`)
+- axios para HTTP
 
-- authenticated user
-- role
-- sector relationship
-- document scope
-- document status
-- workflow state
+Modulos principais:
 
-Security principles:
+- busca e visualizacao de vigentes
+- criacao/atualizacao de documentos
+- central de aprovacao
+- historico de solicitacoes com edicao/exclusao de rascunho
+- painel de documentos com filtros
+- administracao de usuarios e catalogos
 
-- never trust frontend filtering as final authorization
-- never expose restricted documents through client-only filtering
-- do not weaken workflow restrictions for convenience
+## 9. Gaps tecnicos conhecidos
 
-## 15. Container Architecture
-
-Planned services:
-
-- `frontend`
-- `backend`
-- `postgres`
-
-Recommended local orchestration:
-
-- `docker compose`
-
-## 16. Development and Testing Priorities
-
-Recommended implementation order:
-
-1. project folder structure
-2. FastAPI bootstrap
-3. PostgreSQL connection
-4. ORM models
-5. Pydantic schemas
-6. JWT authentication
-7. repositories
-8. services
-9. routers
-10. audit integration
-11. seed data
-12. automated tests
-
-High-priority tests:
-
-- valid and invalid transitions
-- rejection returning `EM_REVISAO` to `RASCUNHO`
-- versioning without in-place overwrite
-- only one `VIGENTE` version at a time
-- approval allowed only for coordinators from the same sector
-- visibility rules for `CORPORATIVO` and `LOCAL`
-- search returning only `VIGENTE`
-
-## 17. Non-Goals for the Initial MVP
-
-The initial MVP does not need:
-
-- advanced notifications
-- digital signatures
-- external integrations
-- complex workflow builders
-- analytics dashboards beyond basic operational needs
-
-Correct domain behavior is more important than feature breadth.
+- `AuditService` ainda gera eventos placeholder e nao persiste em `document_events`.
+- Nao existe Alembic/migracao versionada; inicializacao usa `Base.metadata.create_all`.

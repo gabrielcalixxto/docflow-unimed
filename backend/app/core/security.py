@@ -17,6 +17,7 @@ class AuthenticatedUser:
     email: str
     role: UserRole
     user_id: int | None = None
+    sector_id: int | None = None
 
 
 def hash_password(password: str) -> str:
@@ -40,12 +41,14 @@ def create_access_token(
     subject: str,
     role: UserRole,
     user_id: int | None = None,
+    sector_id: int | None = None,
 ) -> str:
     expire_at = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload: dict[str, str | int | None] = {
         "sub": subject,
         "role": role.value,
         "user_id": user_id,
+        "sector_id": sector_id,
         "exp": expire_at,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -68,7 +71,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
         user_id = payload.get("user_id")
         if user_id is not None and not isinstance(user_id, int):
             user_id = None
+        sector_id = payload.get("sector_id")
+        if sector_id is not None and not isinstance(sector_id, int):
+            sector_id = None
     except (JWTError, ValueError) as exc:
         raise credentials_error from exc
 
-    return AuthenticatedUser(email=subject, role=role, user_id=user_id)
+    return AuthenticatedUser(email=subject, role=role, user_id=user_id, sector_id=sector_id)

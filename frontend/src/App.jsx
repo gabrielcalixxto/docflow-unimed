@@ -1,14 +1,21 @@
 import { useMemo, useState } from "react";
 
 import AppShell from "./components/AppShell";
+import AdminUsuariosPage from "./pages/AdminUsuariosPage";
+import CadastroEmpresasPage from "./pages/CadastroEmpresasPage";
+import CadastroSetoresPage from "./pages/CadastroSetoresPage";
+import CadastroTipoDocumentoPage from "./pages/CadastroTipoDocumentoPage";
 import CriarVersaoPage from "./pages/CriarVersaoPage";
+import HistoricoSolicitacoesPage from "./pages/HistoricoSolicitacoesPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
 import PainelDocumentos from "./pages/PainelDocumentos";
+import PainelRncPage from "./pages/PainelRncPage";
 import SearchPage from "./pages/SearchPage";
 import SolicitacoesPage from "./pages/SolicitacoesPage";
 import { clearStoredToken, getStoredToken, login, storeToken } from "./services/api";
 import { parseJwtPayload } from "./utils/jwt";
+import { canAccessAdminUsers, canAccessPainel, canAccessSolicitacoes } from "./utils/roles";
 
 function buildSession(token) {
   if (!token) {
@@ -22,6 +29,7 @@ function buildSession(token) {
     email: payload.sub,
     role: payload.role,
     userId: payload.user_id ?? null,
+    sectorId: payload.sector_id ?? null,
     expiresAt: typeof payload.exp === "number" ? payload.exp : null,
   };
 }
@@ -58,27 +66,66 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} errorMessage={authError} />;
   }
 
+  const canOpenPainel = canAccessPainel(session.role);
+  const canOpenSolicitacoes = canAccessSolicitacoes(session.role);
+  const canOpenAdminUsers = canAccessAdminUsers(session.role);
+
+  const resolvedPage =
+    ((activePage === "painel-documentos" || activePage === "painel-rnc") && !canOpenPainel) ||
+    (activePage === "central-aprovacao" && !canOpenSolicitacoes) ||
+    ((activePage === "painel-usuarios" ||
+      activePage === "cadastro-setores" ||
+      activePage === "cadastro-empresas" ||
+      activePage === "cadastro-tipo-documento") &&
+      !canOpenAdminUsers)
+      ? "search"
+      : activePage;
+
   return (
     <AppShell
-      activePage={activePage}
+      activePage={resolvedPage}
       onPageChange={setActivePage}
       session={session}
       onLogout={() => handleLogout("")}
     >
-      {activePage === "search" && (
+      {resolvedPage === "search" && (
         <SearchPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
-      {activePage === "painel" && (
+      {resolvedPage === "painel-documentos" && (
         <PainelDocumentos onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
-      {activePage === "novo-documento" && (
+      {resolvedPage === "painel-rnc" && <PainelRncPage />}
+      {resolvedPage === "novo-documento" && (
         <NovoDocumentoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
-      {activePage === "criar-versao" && (
+      {resolvedPage === "atualizar-documento" && (
         <CriarVersaoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
-      {activePage === "solicitacoes" && (
-        <SolicitacoesPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
+      {resolvedPage === "central-aprovacao" && (
+        <SolicitacoesPage
+          session={session}
+          onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")}
+        />
+      )}
+      {resolvedPage === "historico-solicitacoes" && (
+        <HistoricoSolicitacoesPage
+          session={session}
+          onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")}
+        />
+      )}
+      {resolvedPage === "painel-usuarios" && (
+        <AdminUsuariosPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
+      )}
+      {resolvedPage === "cadastro-setores" && (
+        <CadastroSetoresPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
+      )}
+      {resolvedPage === "cadastro-empresas" && (
+        <CadastroEmpresasPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
+      )}
+      {resolvedPage === "cadastro-tipo-documento" && (
+        <CadastroTipoDocumentoPage
+          onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")}
+        />
       )}
     </AppShell>
   );

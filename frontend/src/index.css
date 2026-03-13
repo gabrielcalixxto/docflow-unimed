@@ -159,6 +159,15 @@ select:focus {
   gap: 8px;
 }
 
+.nav-section-title {
+  margin: 10px 6px 4px;
+  font-size: 0.69rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.74;
+  font-weight: 800;
+}
+
 .nav-item {
   border: 1px solid transparent;
   background: transparent;
@@ -179,6 +188,10 @@ select:focus {
 .nav-item.active {
   background: rgba(255, 255, 255, 0.18);
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+.nav-subitem {
+  margin-left: 8px;
 }
 
 .nav-icon {
@@ -329,6 +342,14 @@ select:focus {
   padding: 14px;
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
+  gap: 10px;
+}
+
+.painel-filters-grid {
+  margin-top: 14px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -485,6 +506,10 @@ select:focus {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
+.admin-users-grid {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
 .workflow-tabs {
   margin-top: 14px;
   padding: 8px;
@@ -527,6 +552,10 @@ select:focus {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+
+.form-grid-vertical {
+  grid-template-columns: 1fr;
 }
 
 .document-file-stack {

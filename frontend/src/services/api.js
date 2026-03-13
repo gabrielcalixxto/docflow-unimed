@@ -120,6 +120,21 @@ export async function createVersion(documentId, payload) {
   });
 }
 
+export async function updateDraftDocument(documentId, payload) {
+  return request({
+    method: "patch",
+    url: `/documents/${documentId}/draft`,
+    data: payload,
+  });
+}
+
+export async function deleteDraftDocument(documentId) {
+  return request({
+    method: "delete",
+    url: `/documents/${documentId}/draft`,
+  });
+}
+
 export async function submitForReview(documentId) {
   return request({
     method: "post",
@@ -139,5 +154,94 @@ export async function rejectDocument(documentId, payload = {}) {
     method: "post",
     url: `/documents/${documentId}/reject`,
     data: payload,
+  });
+}
+
+export async function getAdminUsers() {
+  return request({
+    method: "get",
+    url: "/admin/users",
+  });
+}
+
+export async function getAdminUserOptions() {
+  return request({
+    method: "get",
+    url: "/admin/users/options",
+  });
+}
+
+export async function createAdminUser(payload) {
+  return request({
+    method: "post",
+    url: "/admin/users",
+    data: payload,
+  });
+}
+
+export async function updateAdminUser(userId, payload) {
+  return request({
+    method: "put",
+    url: `/admin/users/${userId}`,
+    data: payload,
+  });
+}
+
+export async function deleteAdminUser(userId) {
+  return request({
+    method: "delete",
+    url: `/admin/users/${userId}`,
+  });
+}
+
+export async function getAdminCatalogOptions() {
+  return request({
+    method: "get",
+    url: "/admin/catalog/options",
+  });
+}
+
+export async function createAdminCompany(payload) {
+  return request({
+    method: "post",
+    url: "/admin/catalog/companies",
+    data: payload,
+  });
+}
+
+export async function deleteAdminCompany(companyId) {
+  return request({
+    method: "delete",
+    url: `/admin/catalog/companies/${companyId}`,
+  });
+}
+
+export async function createAdminSector(payload) {
+  return request({
+    method: "post",
+    url: "/admin/catalog/sectors",
+    data: payload,
+  });
+}
+
+export async function deleteAdminSector(sectorId) {
+  return request({
+    method: "delete",
+    url: `/admin/catalog/sectors/${sectorId}`,
+  });
+}
+
+export async function createAdminDocumentType(payload) {
+  return request({
+    method: "post",
+    url: "/admin/catalog/document-types",
+    data: payload,
+  });
+}
+
+export async function deleteAdminDocumentType(documentTypeId) {
+  return request({
+    method: "delete",
+    url: `/admin/catalog/document-types/${documentTypeId}`,
   });
 }

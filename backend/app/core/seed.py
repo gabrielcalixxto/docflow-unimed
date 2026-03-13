@@ -5,17 +5,19 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.enums import UserRole
 from app.models.company import Company
+from app.models.document_type import DocumentType
 from app.models.sector import Sector
 from app.core.security import hash_password
 from app.models.user import User
 
 _DEFAULT_COMPANY_NAME = "DocFlow Unimed"
 _DEFAULT_SECTORS = ["Qualidade", "Nutricao", "Enfermagem"]
+_DEFAULT_DOCUMENT_TYPES = ["POP", "IT", "MANUAL", "POLITICA", "PROTOCOLO"]
 
 _DEFAULT_USERS: list[tuple[str, str, UserRole, str | None]] = [
-    ("Admin DocFlow", "admin@docflow.local", UserRole.ADMIN, None),
+    ("Admin DocFlow", "admin@teste.com", UserRole.ADMIN, None),
     ("Coordenacao Qualidade", "coord@teste.com", UserRole.COORDENADOR, "Qualidade"),
-    ("Autor DocFlow", "autor@teste.com", UserRole.AUTOR, "Qualidade"),
+    ("Revisor DocFlow", "autor@teste.com", UserRole.AUTOR, "Qualidade"),
     ("Leitor DocFlow", "leitor@teste.com", UserRole.LEITOR, "Qualidade"),
 ]
 
@@ -50,6 +52,13 @@ def seed_default_users() -> None:
                 db.flush()
                 created_or_updated = True
             sectors_by_name[sector_name] = sector
+
+        for document_type_name in _DEFAULT_DOCUMENT_TYPES:
+            document_type_statement = select(DocumentType).where(DocumentType.name == document_type_name)
+            document_type = db.scalar(document_type_statement)
+            if document_type is None:
+                db.add(DocumentType(name=document_type_name))
+                created_or_updated = True
 
         for name, email, role, sector_name in _DEFAULT_USERS:
             sector_id = sectors_by_name[sector_name].id if sector_name is not None else None

@@ -7,7 +7,13 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
-from app.schemas.document import DocumentCreate, DocumentFormOptionsRead, DocumentRead, DocumentRejectRequest
+from app.schemas.document import (
+    DocumentCreate,
+    DocumentDraftUpdate,
+    DocumentFormOptionsRead,
+    DocumentRead,
+    DocumentRejectRequest,
+)
 from app.services.audit_service import AuditService
 from app.services.document_service import DocumentService
 from app.services.errors import ServiceError
@@ -66,6 +72,33 @@ def get_document(
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     return document
+
+
+@router.patch("/{document_id}/draft", response_model=MessageResponse)
+def update_draft_document(
+    document_id: int,
+    payload: DocumentDraftUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_document_service(db)
+    try:
+        return service.update_draft_document(document_id, payload, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.delete("/{document_id}/draft", response_model=MessageResponse)
+def delete_draft_document(
+    document_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_document_service(db)
+    try:
+        return service.delete_draft_document(document_id, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/{document_id}/submit-review", response_model=MessageResponse)

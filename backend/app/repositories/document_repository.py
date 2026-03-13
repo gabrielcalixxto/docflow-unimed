@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.company import Company
 from app.models.document import Document
+from app.models.document_type import DocumentType
 from app.models.sector import Sector
 from app.schemas.document import DocumentCreate
 
@@ -37,6 +38,10 @@ class DocumentRepository:
         self.db.add(document)
         self.db.flush()
 
+    def delete(self, document: Document) -> None:
+        self.db.delete(document)
+        self.db.flush()
+
     def get_company_by_id(self, company_id: int) -> Company | None:
         statement = select(Company).where(Company.id == company_id)
         return self.db.scalar(statement)
@@ -60,4 +65,8 @@ class DocumentRepository:
             .distinct()
             .order_by(Document.document_type.asc())
         )
+        return list(self.db.scalars(statement).all())
+
+    def list_document_types(self) -> list[DocumentType]:
+        statement = select(DocumentType).order_by(DocumentType.name.asc())
         return list(self.db.scalars(statement).all())

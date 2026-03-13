@@ -41,6 +41,12 @@ class DocumentRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class DocumentDraftUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    file_path: str | None = Field(default=None, min_length=1, max_length=255)
+    expiration_date: date | None = None
+
+
 class DocumentRead(BaseModel):
     id: int
     code: str

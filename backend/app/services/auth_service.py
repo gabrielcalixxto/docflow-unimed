@@ -20,5 +20,6 @@ class AuthService:
             subject=user.email,
             role=user.role,
             user_id=user.id,
+            sector_id=getattr(user, "sector_id", None),
         )
         return TokenResponse(access_token=access_token, token_type="bearer")

@@ -1,203 +1,84 @@
-# AI_INSTRUCTIONS.md
+# AI_INSTRUCTIONS
 
-## Purpose
+Guia de implementacao para agentes de codigo neste repositorio.
 
-This file defines implementation rules for AI coding agents working in this repository.
+## 1. Contexto do projeto
 
-The goal is to keep generated code aligned with the architecture, domain constraints, and engineering standards of the project.
+Plataforma de gestao documental com:
 
-Agents must read and follow this file before creating, editing, or refactoring code.
+- versionamento
+- fluxo de aprovacao
+- segregacao por perfil/setor
+- busca protegida
 
-## 1. Project Context
+Nao tratar como CRUD generico.
 
-This repository contains the MVP core of a document management platform for regulated environments.
+## 2. Stack atual (nao assumir diferente)
 
-The project is centered on:
+- Frontend: React + Vite + CSS
+- Backend: FastAPI + SQLAlchemy
+- Banco: PostgreSQL
+- Auth: JWT Bearer Token
+- Orquestracao local: Docker Compose
 
-- lifecycle control
-- structural versioning
-- approval workflow
-- sector-aware visibility
-- role-based access control
-- immutable audit trail
-- safe search that returns only active content by default
+## 3. Regras de dominio obrigatorias
 
-This is not a generic CRUD project.
+### 3.1 Taxonomia minima
 
-## 2. Mandatory Stack
+Criacao/atualizacao devem considerar:
 
-- Frontend: React with Tailwind CSS
-- Backend: Python with FastAPI
-- Database: PostgreSQL
-- Authentication: JWT Bearer Token
-- Containerization: separate Docker containers for frontend and backend
+- setor
+- tipo documental
+- data de vencimento
 
-Do not replace the stack unless explicitly instructed.
+### 3.2 Status de versao
 
-## 3. Non-Negotiable Domain Rules
-
-### 3.1 Mandatory taxonomy
-
-Every document must include, at minimum:
-
-- `sector`
-- `document_type`
-- `expiration_date`
-
-Modeling expectation:
-
-- `sector` belongs to the document identity
-- `document_type` belongs to the document identity
-- `expiration_date` belongs to the document version
-
-Do not accept creation or update flows that omit required taxonomy fields.
-
-### 3.2 Lifecycle statuses
-
-The only valid statuses are:
+Somente:
 
 - `RASCUNHO`
 - `EM_REVISAO`
 - `VIGENTE`
 - `OBSOLETO`
 
-### 3.3 Allowed transitions
-
-Only these transitions are valid:
+### 3.3 Transicoes validas
 
 - `RASCUNHO -> EM_REVISAO`
-- `EM_REVISAO -> RASCUNHO` when a coordinator rejects the draft
-- `EM_REVISAO -> VIGENTE` when a coordinator approves the draft
+- `EM_REVISAO -> RASCUNHO`
+- `EM_REVISAO -> VIGENTE`
 - `VIGENTE -> OBSOLETO`
 
-Do not create extra statuses unless the project owner explicitly changes the domain.
+Nao criar status novo sem alinhamento explicito do dono do produto.
 
-Do not allow invalid transitions in the backend.
+### 3.4 Codigo do documento
 
-Rejection must not create a new workflow status. It returns the same version to `RASCUNHO` and should store a reason.
+Padrao atual:
 
-### 3.4 Versioning rules
+- `TIPO-SET-ID` (ex.: `POP-ENF-8`)
 
-These rules are mandatory:
+### 3.5 Edicao/exclusao de rascunho
 
-1. A document may have multiple versions.
-2. For one logical document in one sector, only one version may be `VIGENTE` at a time.
-3. Editing a `VIGENTE` version must not overwrite the active version in place.
-4. Editing a `VIGENTE` document must create a new version in `RASCUNHO`.
-5. When a new version becomes `VIGENTE`, the previous `VIGENTE` version must automatically become `OBSOLETO`.
+Permitido somente quando:
 
-Never simplify this behavior into a plain update.
+- usuario autenticado e o solicitante da criacao (`document.created_by`)
+- ultima versao esta em `RASCUNHO`
 
-### 3.5 Search rules
+## 4. Perfis e permissoes
 
-Default search behavior must protect the user.
+Perfis:
 
-Mandatory behavior:
-
-- search results return only `VIGENTE` versions by default
-- `RASCUNHO`, `EM_REVISAO`, and `OBSOLETO` do not appear in standard reader search flows
-- old versions are exposed only in explicit administrative or audit flows
-
-Do not expose obsolete or non-approved versions in normal listing endpoints.
-
-### 3.6 Visibility rules
-
-Documents have one of these scopes:
-
-- `CORPORATIVO`
-- `LOCAL`
-
-Scope meaning:
-
-- `CORPORATIVO`: visible to authenticated users with reading permission across sectors
-- `LOCAL`: visible only to users from the related sector, still respecting role permissions
-
-Visibility must always be enforced in the backend.
-
-### 3.7 Roles and permissions
-
-Minimum roles:
-
-- `AUTOR`
+- `AUTOR` (rotulado como `REVISOR` no frontend)
 - `COORDENADOR`
 - `LEITOR`
 - `ADMIN`
 
-Role behavior:
+Regras essenciais:
 
-`AUTOR`
+- `AUTOR`: cria e envia para revisao
+- `COORDENADOR`: aprova/reprova em revisao (restricao por setor quando definida)
+- `LEITOR`: leitura/busca
+- `ADMIN`: administracao e operacao ampliada
 
-- can create drafts
-- can edit drafts
-- can submit drafts for review
-- cannot approve or publish outside the defined workflow
-
-`COORDENADOR`
-
-- can review drafts from the same sector
-- can approve drafts from the same sector
-- can reject drafts from the same sector
-- cannot approve drafts from unrelated sectors unless a future rule explicitly allows it
-
-`LEITOR`
-
-- can search and view permitted `VIGENTE` documents
-- cannot edit
-- cannot approve
-- cannot change workflow state
-
-`ADMIN`
-
-- can manage administrative data
-- can manage users, roles, and configuration
-- does not bypass domain rules unless the service layer explicitly defines a safe administrative action
-
-Do not hardcode frontend permissions as the source of truth.
-
-### 3.8 Governance fields
-
-The system must explicitly record:
-
-- `created_by`
-- `approved_by`
-
-These fields are part of the domain model, not optional metadata.
-
-### 3.9 Audit rules
-
-Audit is part of the domain, not an optional technical detail.
-
-The system must keep an immutable event log for critical actions.
-
-Minimum events:
-
-- `document_created`
-- `version_created`
-- `submitted_for_review`
-- `approved`
-- `rejected`
-- `set_to_vigente`
-- `marked_obsolete`
-- `document_viewed`
-
-Each event must be associated with:
-
-- document
-- version
-- user
-- timestamp
-
-Recommended additional fields:
-
-- sector
-- action context
-- reason or notes
-
-Do not silently bypass audit creation in domain flows.
-
-## 4. Backend Architecture Rules
-
-Expected structure:
+## 5. Arquitetura backend
 
 ```text
 backend/
@@ -211,218 +92,32 @@ backend/
   main.py
 ```
 
-### Layer responsibilities
+Responsabilidades:
 
-`routers`
+- `routers`: HTTP e mapping de erros
+- `services`: regra de negocio
+- `repositories`: persistencia
+- `models`: ORM
+- `schemas`: contratos de API
+- `core`: config, db, seed, seguranca, logging
 
-- receive HTTP requests
-- validate request shape with schemas
-- call services
-- translate domain errors into HTTP responses
-- do not contain complex business logic
+## 6. Endpoints (familias)
 
-`services`
+- auth (`/auth`)
+- documents (`/documents`)
+- versions (subrotas de `/documents`)
+- search (`/documents/search`)
+- admin users (`/admin/users`)
+- admin catalog (`/admin/catalog`)
 
-- implement business rules
-- validate transitions
-- orchestrate versioning
-- apply permissions
-- generate audit events
+## 7. Boas praticas para agentes
 
-`repositories`
+- Validar regra no backend; nao confiar apenas no frontend.
+- Evitar logica de negocio em router.
+- Cobrir alteracoes com testes de unidade e/ou API.
+- Atualizar documentacao quando mudar regra de dominio.
 
-- encapsulate database access
-- isolate ORM and query code
-- do not implement business rules
+## 8. Limitacoes atuais que devem ser respeitadas
 
-`models`
-
-- define ORM entities and constraints
-
-`schemas`
-
-- define request and response contracts
-
-`core`
-
-- authentication
-- configuration
-- shared dependencies
-- shared enums and helpers
-
-## 5. Data Modeling Expectations
-
-Minimum entities:
-
-- `users`
-- `roles`
-- `user_roles`
-- `companies`
-- `sectors`
-- `document_types`
-- `documents`
-- `document_versions`
-- `document_events`
-
-Recommended fields:
-
-`documents`
-
-- `id`
-- `code`
-- `title`
-- `company_id`
-- `sector_id`
-- `document_type_id`
-- `scope`
-- `created_by`
-- `created_at`
-
-`document_versions`
-
-- `id`
-- `document_id`
-- `version_number`
-- `status`
-- `file_path`
-- `expiration_date`
-- `review_reason`
-- `created_by`
-- `approved_by`
-- `created_at`
-- `approved_at`
-
-`document_events`
-
-- `id`
-- `document_id`
-- `version_id`
-- `user_id`
-- `event_type`
-- `event_reason`
-- `created_at`
-
-Recommended constraints:
-
-- only one active version per document
-- unique version number per document
-- document code uniqueness according to the chosen business scope
-
-## 6. API Rules
-
-Use REST semantics correctly.
-
-Expected route families:
-
-- authentication
-- documents
-- versions
-- review and approval
-- search
-- audit
-
-Example routes:
-
-- `POST /auth/login`
-- `POST /documents`
-- `GET /documents`
-- `GET /documents/{id}`
-- `POST /documents/{id}/versions`
-- `POST /documents/{id}/submit-review`
-- `POST /documents/{id}/approve`
-- `POST /documents/{id}/reject`
-- `GET /documents/search`
-
-Expected status codes:
-
-- `200 OK`
-- `201 Created`
-- `400 Bad Request`
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict`
-
-Use `409 Conflict` for workflow violations, uniqueness conflicts, or state collisions.
-
-## 7. Security Rules
-
-Protected routes require JWT authentication.
-
-Authorization must be validated in the backend using:
-
-- user identity
-- role
-- sector relationship
-- document scope
-- document status
-- workflow state
-
-Never trust frontend checks as final authorization.
-
-## 8. Development Guidelines
-
-Agents should prioritize:
-
-1. project structure
-2. FastAPI bootstrap
-3. PostgreSQL integration
-4. ORM models
-5. Pydantic schemas
-6. JWT authentication
-7. repositories
-8. services
-9. routers
-10. audit integration
-11. seed data
-12. tests
-
-High-priority tests:
-
-- valid and invalid transitions
-- rejection returning `EM_REVISAO` to `RASCUNHO`
-- versioning behavior without in-place overwrite
-- only one `VIGENTE` version at a time
-- permissions by role and sector
-- visibility by scope
-- search returning only `VIGENTE`
-
-## 9. Constraints for AI Agents
-
-Agents may:
-
-- scaffold the project
-- create models, schemas, repositories, services, and routers
-- configure JWT authentication
-- prepare Docker setup
-- add tests for business rules
-
-Agents must not:
-
-- invent domain rules not defined in the documentation
-- place business logic in routers
-- place persistence logic in unrelated layers
-- treat versioning as a simple update
-- trust frontend permissions as final authorization
-- fake run instructions or setup details that do not exist in the repository
-
-If the repository is still in a scaffold phase, document missing runtime steps explicitly instead of inventing them.
-
-## 10. Documentation Rules
-
-When changing the architecture or domain behavior, update these files together:
-
-- `ARCHITECTURE.md`
-- `AI_INSTRUCTIONS.md`
-- `README.md`
-
-The three documents must stay consistent about:
-
-- stack
-- lifecycle
-- rejection behavior
-- taxonomy
-- versioning
-- permissions
-- audit requirements
-- setup expectations
+- `AuditService` ainda e placeholder (sem persistencia real de eventos).
+- Sem Alembic no fluxo atual (`create_all` no startup).

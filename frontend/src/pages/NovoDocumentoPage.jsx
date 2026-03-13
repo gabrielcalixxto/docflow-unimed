@@ -128,7 +128,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
           <p className="kicker">Cadastro manual</p>
           <h2>Novo documento</h2>
           <p>
-            O codigo e criado automaticamente no formato `TIPO-ID-SET` e a versao 1 (RASCUNHO)
+            O codigo e criado automaticamente no formato `TIPO-SET-ID` e a versao 1 (RASCUNHO)
             tambem e criada automaticamente.
           </p>
         </div>
@@ -140,9 +140,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         <form className="panel-float workflow-card" onSubmit={handleCreateDocument}>
           <h3>Criar documento</h3>
           <p className="workflow-hint">O codigo e o numero da primeira versao sao definidos pelo backend.</p>
-          <div className="form-grid">
+          <div className="form-grid form-grid-vertical">
             <label>
-              Titulo
+              Nome do Documento
               <input
                 required
                 value={documentForm.title}
@@ -150,7 +150,52 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               />
             </label>
             <label>
-              Company ID
+              Setor
+              <select
+                required
+                value={documentForm.sectorId}
+                disabled={loadingOptions || availableSectors.length === 0}
+                onChange={(event) =>
+                  setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
+                }
+              >
+                <option value="" disabled>
+                  {loadingOptions ? "Carregando..." : "Selecione"}
+                </option>
+                {availableSectors.map((sector) => (
+                  <option key={sector.id} value={String(sector.id)}>
+                    {sector.id} - {sector.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Escopo
+              <select
+                value={documentForm.scope}
+                disabled={loadingOptions}
+                onChange={(event) => setDocumentForm((prev) => ({ ...prev, scope: event.target.value }))}
+              >
+                {options.scopes.map((scopeOption) => (
+                  <option key={scopeOption} value={scopeOption}>
+                    {scopeOption}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Caminho/URL do arquivo
+              <input
+                required
+                value={documentForm.filePath}
+                onChange={(event) =>
+                  setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
+                }
+                placeholder="https://... ou /tmp/arquivo.pdf"
+              />
+            </label>
+            <label>
+              Empresa
               <select
                 required
                 value={documentForm.companyId}
@@ -178,27 +223,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               </select>
             </label>
             <label>
-              Sector ID
-              <select
-                required
-                value={documentForm.sectorId}
-                disabled={loadingOptions || availableSectors.length === 0}
-                onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
-                }
-              >
-                <option value="" disabled>
-                  {loadingOptions ? "Carregando..." : "Selecione"}
-                </option>
-                {availableSectors.map((sector) => (
-                  <option key={sector.id} value={String(sector.id)}>
-                    {sector.id} - {sector.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Tipo documental
+              Tipo de documento
               <select
                 required
                 value={documentForm.documentType}
@@ -218,43 +243,16 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               </select>
             </label>
             <label>
-              Escopo
-              <select
-                value={documentForm.scope}
-                disabled={loadingOptions}
-                onChange={(event) => setDocumentForm((prev) => ({ ...prev, scope: event.target.value }))}
-              >
-                {options.scopes.map((scopeOption) => (
-                  <option key={scopeOption} value={scopeOption}>
-                    {scopeOption}
-                  </option>
-                ))}
-              </select>
+              Data de vencimento
+              <input
+                required
+                type="date"
+                value={documentForm.expirationDate}
+                onChange={(event) =>
+                  setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))
+                }
+              />
             </label>
-            <div className="document-file-stack span-2">
-              <label>
-                Caminho/URL do arquivo
-                <input
-                  required
-                  value={documentForm.filePath}
-                  onChange={(event) =>
-                    setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
-                  }
-                  placeholder="https://... ou /tmp/arquivo.pdf"
-                />
-              </label>
-              <label>
-                Data de vencimento
-                <input
-                  required
-                  type="date"
-                  value={documentForm.expirationDate}
-                  onChange={(event) =>
-                    setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
           </div>
           <button type="submit" className="compact-submit" disabled={submitting}>
             Criar documento
