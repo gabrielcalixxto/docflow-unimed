@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   canAccessAdminCatalog,
@@ -206,30 +206,15 @@ export default function AppShell({ children, activePage, onPageChange, session, 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
-    solicitacoes: true,
-    "painel-indicadores": true,
-    "gestao-cadastros": true,
+    solicitacoes: false,
+    "painel-indicadores": false,
+    "gestao-cadastros": false,
   });
   const sessionRoles = session.roles || session.role;
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => !item.isVisible || item.isVisible(sessionRoles)),
   })).filter((group) => group.items.length > 0);
-
-  useEffect(() => {
-    const activeGroup = visibleGroups.find((group) =>
-      group.items.some((item) => item.id === activePage),
-    );
-    if (!activeGroup) {
-      return;
-    }
-    if (!openGroups[activeGroup.id]) {
-      setOpenGroups((prev) => ({
-        ...prev,
-        [activeGroup.id]: true,
-      }));
-    }
-  }, [activePage, visibleGroups, openGroups]);
 
   const handleToggleGroup = (groupId) => {
     if (collapsed) {

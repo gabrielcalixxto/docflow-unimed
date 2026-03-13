@@ -88,6 +88,8 @@ def fake_search_response() -> DocumentSearchResponse:
                 document_id=1,
                 code="DOC-001",
                 title="Manual de Nutricao",
+                company_id=1,
+                sector_id=10,
                 document_type="POP",
                 scope=DocumentScope.LOCAL,
                 active_version_id=11,

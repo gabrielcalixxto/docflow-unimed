@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { getDocument, getDocumentVersions, searchDocuments } from "../services/api";
+import useViewportPreserver from "../hooks/useViewportPreserver";
+import { getDocument, getDocumentFormOptions, getDocumentVersions, searchDocuments } from "../services/api";
 
 function extractFileName(path) {
   if (!path) {
@@ -18,10 +19,19 @@ function isEmbeddablePath(path) {
 }
 
 export default function SearchPage({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [filters, setFilters] = useState({
     term: "",
+    companyId: "ALL",
+    sectorId: "ALL",
+    documentType: "ALL",
     scope: "ALL",
-    documentType: "",
+  });
+  const [searchOptions, setSearchOptions] = useState({
+    companies: [],
+    sectors: [],
+    documentTypes: [],
+    scopes: [],
   });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +47,27 @@ export default function SearchPage({ onUnauthorized }) {
     setLoading(true);
     setError("");
     try {
-      const data = await searchDocuments();
-      setItems(data.items || []);
+      const [searchData, formOptions] = await Promise.all([searchDocuments(), getDocumentFormOptions()]);
+      setItems(searchData.items || []);
+      const companies = Array.isArray(formOptions?.companies) ? formOptions.companies : [];
+      const sectors = Array.isArray(formOptions?.sectors) ? formOptions.sectors : [];
+      const documentTypes = Array.isArray(formOptions?.document_types) ? formOptions.document_types : [];
+      const scopes = Array.isArray(formOptions?.scopes) ? formOptions.scopes : [];
+      setSearchOptions({ companies, sectors, documentTypes, scopes });
+      setFilters((prev) => ({
+        ...prev,
+        companyId:
+          prev.companyId === "ALL" || companies.some((company) => String(company.id) === prev.companyId)
+            ? prev.companyId
+            : "ALL",
+        sectorId:
+          prev.sectorId === "ALL" || sectors.some((sector) => String(sector.id) === prev.sectorId)
+            ? prev.sectorId
+            : "ALL",
+        documentType:
+          prev.documentType === "ALL" || documentTypes.includes(prev.documentType) ? prev.documentType : "ALL",
+        scope: prev.scope === "ALL" || scopes.includes(prev.scope) ? prev.scope : "ALL",
+      }));
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
@@ -54,20 +83,41 @@ export default function SearchPage({ onUnauthorized }) {
     loadResults();
   }, []);
 
+  const availableSectors = useMemo(() => {
+    if (filters.companyId === "ALL") {
+      return searchOptions.sectors;
+    }
+    return searchOptions.sectors.filter((sector) => String(sector.company_id) === filters.companyId);
+  }, [filters.companyId, searchOptions.sectors]);
+
+  useEffect(() => {
+    if (filters.sectorId === "ALL") {
+      return;
+    }
+    if (!availableSectors.some((sector) => String(sector.id) === filters.sectorId)) {
+      setFilters((prev) => ({ ...prev, sectorId: "ALL" }));
+    }
+  }, [availableSectors, filters.sectorId]);
+
   const filteredItems = useMemo(() => {
     const term = filters.term.trim().toLowerCase();
-    const type = filters.documentType.trim().toLowerCase();
 
     return items.filter((item) => {
+      if (filters.companyId !== "ALL" && String(item.company_id) !== filters.companyId) {
+        return false;
+      }
+      if (filters.sectorId !== "ALL" && String(item.sector_id) !== filters.sectorId) {
+        return false;
+      }
       if (filters.scope !== "ALL" && item.scope !== filters.scope) {
         return false;
       }
-      if (type && !String(item.document_type || "").toLowerCase().includes(type)) {
+      if (filters.documentType !== "ALL" && item.document_type !== filters.documentType) {
         return false;
       }
       if (term) {
         const fileName = extractFileName(item.file_path).toLowerCase();
-        const haystack = [item.code, item.title, fileName].join(" ").toLowerCase();
+        const haystack = [item.code, item.title, item.document_type, item.scope, fileName].join(" ").toLowerCase();
         if (!haystack.includes(term)) {
           return false;
         }
@@ -107,27 +157,95 @@ export default function SearchPage({ onUnauthorized }) {
         <div>
           <p className="kicker">Busca simplificada</p>
           <h2>Documentos vigentes</h2>
-          <p>Filtre por nome, codigo, escopo e tipo documental. Clique em um item para abrir a visualizacao.</p>
+          <p>Use filtros combinados por empresa, setor, tipo documental, escopo e termo livre.</p>
         </div>
         <button type="button" className="ghost-btn" onClick={loadResults} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar lista"}
         </button>
       </section>
 
-      <section className="panel-float filters-grid">
+      <section className="panel-float painel-filters-grid">
         <label>
           Busca por termo
           <input
             type="text"
-            placeholder="Nome do arquivo, codigo ou titulo"
+            placeholder="Nome, codigo ou palavra-chave"
             value={filters.term}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                term: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  term: event.target.value,
+                })),
+              )
             }
           />
+        </label>
+
+        <label>
+          Empresa
+          <select
+            value={filters.companyId}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  companyId: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {searchOptions.companies.map((company) => (
+              <option key={company.id} value={String(company.id)}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Setor
+          <select
+            value={filters.sectorId}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  sectorId: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {availableSectors.map((sector) => (
+              <option key={sector.id} value={String(sector.id)}>
+                {sector.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Tipo de documento
+          <select
+            value={filters.documentType}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  documentType: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {searchOptions.documentTypes.map((documentType) => (
+              <option key={documentType} value={documentType}>
+                {documentType}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label>
@@ -135,31 +253,21 @@ export default function SearchPage({ onUnauthorized }) {
           <select
             value={filters.scope}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                scope: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  scope: event.target.value,
+                })),
+              )
             }
           >
             <option value="ALL">Todos</option>
-            <option value="LOCAL">LOCAL</option>
-            <option value="CORPORATIVO">CORPORATIVO</option>
+            {searchOptions.scopes.map((scopeValue) => (
+              <option key={scopeValue} value={scopeValue}>
+                {scopeValue}
+              </option>
+            ))}
           </select>
-        </label>
-
-        <label>
-          Tipo documental
-          <input
-            type="text"
-            placeholder="POP, Manual, IT..."
-            value={filters.documentType}
-            onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                documentType: event.target.value,
-              }))
-            }
-          />
         </label>
       </section>
 

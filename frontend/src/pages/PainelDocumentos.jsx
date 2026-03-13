@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
 
 export default function PainelDocumentos({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -102,10 +104,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <select
             value={filters.company}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                company: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  company: event.target.value,
+                })),
+              )
             }
           >
             <option value="ALL">Todas</option>
@@ -122,10 +126,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <select
             value={filters.sector}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                sector: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  sector: event.target.value,
+                })),
+              )
             }
           >
             <option value="ALL">Todos</option>
@@ -142,10 +148,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <select
             value={filters.status}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                status: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  status: event.target.value,
+                })),
+              )
             }
           >
             <option value="ALL">Todos</option>
@@ -162,10 +170,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <select
             value={filters.scope}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                scope: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  scope: event.target.value,
+                })),
+              )
             }
           >
             <option value="ALL">Todos</option>
@@ -181,10 +191,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
             placeholder="POP, IT, MANUAL..."
             value={filters.documentType}
             onChange={(event) =>
-              setFilters((prev) => ({
-                ...prev,
-                documentType: event.target.value,
-              }))
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  documentType: event.target.value,
+                })),
+              )
             }
           />
         </label>

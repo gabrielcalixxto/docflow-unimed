@@ -9,6 +9,8 @@ class DocumentSearchResult(BaseModel):
     document_id: int
     code: str
     title: str
+    company_id: int
+    sector_id: int
     document_type: str
     scope: DocumentScope
     active_version_id: int

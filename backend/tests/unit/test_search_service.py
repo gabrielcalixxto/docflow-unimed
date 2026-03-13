@@ -14,6 +14,8 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
                 id=1,
                 code="DOC-001",
                 title="Manual de Nutricao",
+                company_id=1,
+                sector_id=10,
                 document_type="POP",
                 scope=DocumentScope.LOCAL,
             ),
@@ -32,6 +34,8 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
     assert len(response.items) == 1
     item = response.items[0]
     assert item.document_id == 1
+    assert item.company_id == 1
+    assert item.sector_id == 10
     assert item.active_version_id == 11
     assert item.scope == DocumentScope.LOCAL
     repository.search_active_documents.assert_called_once_with()

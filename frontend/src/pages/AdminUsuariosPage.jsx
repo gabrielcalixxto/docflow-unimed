@@ -39,8 +39,10 @@ function asStringIdList(values) {
   return values.map((value) => String(value));
 }
 
-function toggleValue(values, value) {
-  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+function toggleRoleSelection(currentRoles, role) {
+  return currentRoles.includes(role)
+    ? currentRoles.filter((currentRole) => currentRole !== role)
+    : [...currentRoles, role];
 }
 
 function getFilteredSectorIds(sectorIds, sectors, companyIds) {
@@ -70,7 +72,7 @@ function sortRolesByDisplayOrder(roles) {
 function buildSectorGroups(sectors, companyIds, companyNameById) {
   return companyIds.map((companyId) => ({
     companyId,
-    companyName: companyNameById.get(companyId) || `ID ${companyId}`,
+    companyName: companyNameById.get(companyId) || "Empresa nao encontrada",
     sectors: sectors
       .filter((sector) => String(sector.company_id) === companyId)
       .sort((left, right) => String(left.name).localeCompare(String(right.name))),
@@ -239,7 +241,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response = await createAdminUser({
+      await createAdminUser({
         name: createForm.name.trim(),
         email: createForm.email.trim().toLowerCase(),
         roles: createForm.roles,
@@ -247,7 +249,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         sector_ids: createForm.sectorIds.map((value) => Number(value)),
         password: createForm.password,
       });
-      showFeedback("success", response.message || "Usuario criado.");
+      showFeedback("success", "Usuario criado.");
       setCreateForm((prev) => ({
         ...INITIAL_CREATE_FORM,
         roles: prev.roles,
@@ -312,7 +314,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response = await updateAdminUser(editForm.userId, {
+      await updateAdminUser(editForm.userId, {
         name: editForm.name.trim(),
         email: editForm.email.trim().toLowerCase(),
         roles: editForm.roles,
@@ -320,7 +322,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         sector_ids: editForm.sectorIds.map((value) => Number(value)),
         password: editForm.password.trim() ? editForm.password : null,
       });
-      showFeedback("success", response.message || "Usuario atualizado.");
+      showFeedback("success", "Usuario atualizado.");
       setEditForm(INITIAL_EDIT_FORM);
       setEditSectorToAddByCompany({});
       await loadData();
@@ -343,8 +345,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response = await deleteAdminUser(userId);
-      showFeedback("success", response.message || "Usuario removido.");
+      await deleteAdminUser(userId);
+      showFeedback("success", "Usuario removido.");
       if (editForm.userId === userId) {
         setEditForm(INITIAL_EDIT_FORM);
       }
@@ -418,7 +420,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 )}
                 {createForm.companyIds.map((companyId) => (
                   <div key={`create-company-${companyId}`} className="selected-chip">
-                    <span>{companyNameById.get(companyId) || `ID ${companyId}`}</span>
+                    <span>{companyNameById.get(companyId) || "Empresa nao encontrada"}</span>
                     <button
                       type="button"
                       onClick={() =>
@@ -450,7 +452,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                       onChange={() =>
                         setCreateForm((prev) => ({
                           ...prev,
-                          roles: toggleValue(prev.roles, role),
+                          roles: toggleRoleSelection(prev.roles, role),
                         }))
                       }
                     />
@@ -507,7 +509,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                               )
                               .map((sectorId) => (
                                 <div key={`create-selected-sector-${group.companyId}-${sectorId}`} className="selected-chip">
-                                  <span>{sectorNameById.get(sectorId) || `ID ${sectorId}`}</span>
+                                  <span>{sectorNameById.get(sectorId) || "Setor nao encontrado"}</span>
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -602,7 +604,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   )}
                   {editForm.companyIds.map((companyId) => (
                     <div key={`edit-company-${companyId}`} className="selected-chip">
-                      <span>{companyNameById.get(companyId) || `ID ${companyId}`}</span>
+                      <span>{companyNameById.get(companyId) || "Empresa nao encontrada"}</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -634,7 +636,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                         onChange={() =>
                           setEditForm((prev) => ({
                             ...prev,
-                            roles: toggleValue(prev.roles, role),
+                            roles: toggleRoleSelection(prev.roles, role),
                           }))
                         }
                       />
@@ -691,7 +693,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                                 )
                                 .map((sectorId) => (
                                   <div key={`edit-selected-sector-${group.companyId}-${sectorId}`} className="selected-chip">
-                                    <span>{sectorNameById.get(sectorId) || `ID ${sectorId}`}</span>
+                                    <span>{sectorNameById.get(sectorId) || "Setor nao encontrado"}</span>
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -765,9 +767,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Nome</th>
                 <th>Login</th>
+                <th>Nome</th>
                 <th>Email</th>
                 <th>Papeis</th>
                 <th>Empresas</th>
@@ -790,17 +791,16 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                     : [];
 
                 const companiesLabel = companyIds
-                  .map((companyId) => companyNameById.get(companyId) || `ID ${companyId}`)
+                  .map((companyId) => companyNameById.get(companyId) || "Empresa nao encontrada")
                   .join(", ");
                 const sectorsLabel = sectorIds
-                  .map((sectorId) => sectorNameById.get(sectorId) || `ID ${sectorId}`)
+                  .map((sectorId) => sectorNameById.get(sectorId) || "Setor nao encontrado")
                   .join(", ");
 
                 return (
                   <tr key={user.id}>
-                    <td>{user.id}</td>
-                    <td>{user.name}</td>
                     <td>{user.username || "-"}</td>
+                    <td>{user.name}</td>
                     <td>{user.email}</td>
                     <td>{displayRole(roles)}</td>
                     <td>{companiesLabel || "-"}</td>
@@ -828,7 +828,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               })}
               {!loading && users.length === 0 && (
                 <tr>
-                  <td colSpan={8}>Nenhum usuario encontrado.</td>
+                  <td colSpan={7}>Nenhum usuario encontrado.</td>
                 </tr>
               )}
             </tbody>

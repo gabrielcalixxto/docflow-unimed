@@ -9,7 +9,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
-from app.core.seed import seed_default_users
 from app.models import company, document, document_event, document_type, document_version, sector, user  # noqa: F401
 from app.routers import admin_catalog, admin_users, auth, documents, search, versions
 
@@ -122,7 +121,6 @@ async def lifespan(_: FastAPI):
         ensure_user_role_enum_values()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
-        seed_default_users()
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
     yield

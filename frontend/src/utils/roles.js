@@ -50,7 +50,7 @@ export function displayRole(roleOrRoles) {
 }
 
 export function canAccessSearch(roleOrRoles) {
-  return !isAdmin(roleOrRoles);
+  return true;
 }
 
 export function canAccessNovoDocumento(roleOrRoles) {

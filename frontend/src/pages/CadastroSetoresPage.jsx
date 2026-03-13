@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminSector,
   deleteAdminSector,
@@ -12,6 +13,7 @@ const INITIAL_FORM = {
 };
 
 export default function CadastroSetoresPage({ onUnauthorized }) {
+  const { preserveViewport, preserveViewportAsync } = useViewportPreserver();
   const [companies, setCompanies] = useState([]);
   const [sectors, setSectors] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
@@ -98,7 +100,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
         ...prev,
         name: "",
       }));
-      await loadData();
+      await preserveViewportAsync(() => loadData());
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
@@ -120,7 +122,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
     try {
       const response = await deleteAdminSector(sectorId);
       showFeedback("success", response.message || "Setor removido.");
-      await loadData();
+      await preserveViewportAsync(() => loadData());
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
@@ -208,7 +210,9 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
             <select
               value={filterCompanyId}
               disabled={loading || companies.length === 0}
-              onChange={(event) => setFilterCompanyId(event.target.value)}
+              onChange={(event) =>
+                preserveViewport(() => setFilterCompanyId(event.target.value))
+              }
             >
               <option value="ALL">Todas as empresas</option>
               {companies.map((company) => (
