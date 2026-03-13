@@ -90,6 +90,15 @@ export default function SearchPage({ onUnauthorized }) {
     return searchOptions.sectors.filter((sector) => String(sector.company_id) === filters.companyId);
   }, [filters.companyId, searchOptions.sectors]);
 
+  const companyNameById = useMemo(
+    () => new Map(searchOptions.companies.map((company) => [String(company.id), company.name])),
+    [searchOptions.companies],
+  );
+  const sectorNameById = useMemo(
+    () => new Map(searchOptions.sectors.map((sector) => [String(sector.id), sector.name])),
+    [searchOptions.sectors],
+  );
+
   useEffect(() => {
     if (filters.sectorId === "ALL") {
       return;
@@ -282,13 +291,22 @@ export default function SearchPage({ onUnauthorized }) {
             onClick={() => openViewer(item)}
             style={{ animationDelay: `${index * 40}ms` }}
           >
-            <p className="result-title">{item.title}</p>
-            <div className="result-meta">
-              <span>{item.code}</span>
-              <span>{item.document_type}</span>
-              <span>{item.scope}</span>
-              <span>v{item.active_version_number}</span>
+            <div className="result-head">
+              <span className="result-type-pill">{item.code}</span>
+              <span className="result-head-title">{item.title}</span>
             </div>
+            <div className="result-midline">
+              <span className="result-head-meta">
+                v{item.active_version_number}
+                {"    "}
+                {item.scope}
+              </span>
+            </div>
+            <p className="result-code">
+              {(companyNameById.get(String(item.company_id)) || "Empresa desconhecida") +
+                " - " +
+                (sectorNameById.get(String(item.sector_id)) || "Setor desconhecido")}
+            </p>
           </button>
         ))}
       </section>

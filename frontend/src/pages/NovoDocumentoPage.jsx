@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { createDocument, getDocumentFormOptions } from "../services/api";
-import { getCurrentLocalDateISO } from "../utils/date";
+import { getCurrentLocalDateISO, getLocalDatePlusYearsISO } from "../utils/date";
 
 const INITIAL_DOCUMENT_FORM = {
   title: "",
@@ -13,9 +13,20 @@ const INITIAL_DOCUMENT_FORM = {
   expirationDate: "",
 };
 
+function buildInitialDocumentForm(initialExpirationDate) {
+  return {
+    ...INITIAL_DOCUMENT_FORM,
+    expirationDate: initialExpirationDate,
+  };
+}
+
 export default function NovoDocumentoPage({ onUnauthorized }) {
   const minExpirationDate = getCurrentLocalDateISO();
-  const [documentForm, setDocumentForm] = useState(INITIAL_DOCUMENT_FORM);
+  const suggestedExpirationDate = getLocalDatePlusYearsISO(1);
+  const maxExpirationDate = getLocalDatePlusYearsISO(2);
+  const [documentForm, setDocumentForm] = useState(() =>
+    buildInitialDocumentForm(suggestedExpirationDate),
+  );
   const [options, setOptions] = useState({
     companies: [],
     sectors: [],
@@ -36,7 +47,31 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         const data = await getDocumentFormOptions();
         const companies = Array.isArray(data.companies) ? data.companies : [];
         const sectors = Array.isArray(data.sectors) ? data.sectors : [];
-        const documentTypes = Array.isArray(data.document_types) ? data.document_types : [];
+        const rawDocumentTypeOptions = Array.isArray(data.document_type_options)
+          ? data.document_type_options
+          : [];
+        const fallbackDocumentTypes = Array.isArray(data.document_types) ? data.document_types : [];
+        const documentTypes =
+          rawDocumentTypeOptions.length > 0
+            ? rawDocumentTypeOptions
+                .map((item) => {
+                  const sigla = String(item?.sigla || "").trim().toUpperCase();
+                  if (!sigla) {
+                    return null;
+                  }
+                  const name = String(item?.name || "").trim() || sigla;
+                  return { sigla, name };
+                })
+                .filter(Boolean)
+            : fallbackDocumentTypes
+                .map((siglaRaw) => {
+                  const sigla = String(siglaRaw || "").trim().toUpperCase();
+                  if (!sigla) {
+                    return null;
+                  }
+                  return { sigla, name: sigla };
+                })
+                .filter(Boolean);
         const scopes =
           Array.isArray(data.scopes) && data.scopes.length > 0 ? data.scopes : ["LOCAL", "CORPORATIVO"];
 
@@ -54,8 +89,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
             ...prev,
             companyId: fallbackCompanyId,
             sectorId: fallbackSectorId ? String(fallbackSectorId) : "",
-            documentType: prev.documentType || documentTypes[0] || "",
+            documentType: prev.documentType || documentTypes[0]?.sigla || "",
             scope: scopes.includes(prev.scope) ? prev.scope : scopes[0] || "LOCAL",
+            expirationDate: prev.expirationDate || suggestedExpirationDate,
           };
         });
       } catch (requestError) {
@@ -70,7 +106,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
     };
 
     loadOptions();
-  }, [onUnauthorized]);
+  }, [onUnauthorized, suggestedExpirationDate]);
 
   const availableSectors = useMemo(
     () =>
@@ -105,7 +141,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         ...prev,
         title: "",
         filePath: "",
-        expirationDate: "",
+        expirationDate: suggestedExpirationDate,
       }));
       showFeedback("success", response.message || "Documento criado.");
     } catch (requestError) {
@@ -157,8 +193,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                   {loadingOptions ? "Carregando..." : "Selecione"}
                 </option>
                 {options.documentTypes.map((documentType) => (
-                  <option key={documentType} value={documentType}>
-                    {documentType}
+                  <option key={documentType.sigla} value={documentType.sigla}>
+                    {documentType.name}
                   </option>
                 ))}
               </select>
@@ -250,6 +286,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 required
                 type="date"
                 min={minExpirationDate}
+                max={maxExpirationDate}
                 value={documentForm.expirationDate}
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))

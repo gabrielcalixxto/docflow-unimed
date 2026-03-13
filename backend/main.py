@@ -114,6 +114,51 @@ def ensure_document_types_table_supports_sigla() -> None:
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_document_types_sigla ON document_types (sigla)"))
 
 
+def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE sectors ADD COLUMN IF NOT EXISTS sigla VARCHAR(40)"))
+        connection.execute(
+            text(
+                "UPDATE sectors "
+                "SET sigla = UPPER(REGEXP_REPLACE(COALESCE(sigla, ''), '[^A-Za-z0-9]+', '', 'g')) "
+                "WHERE sigla IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE sectors "
+                "SET sigla = UPPER(SUBSTRING(REGEXP_REPLACE(COALESCE(name, ''), '[^A-Za-z0-9]+', '', 'g') FOR 3)) "
+                "WHERE sigla IS NULL OR BTRIM(sigla) = ''"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE sectors "
+                "SET sigla = 'SET' || id::text "
+                "WHERE sigla IS NULL OR BTRIM(sigla) = ''"
+            )
+        )
+        connection.execute(text("ALTER TABLE sectors ALTER COLUMN sigla SET NOT NULL"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_sectors_sigla ON sectors (sigla)"))
+        connection.execute(
+            text(
+                "UPDATE documents d "
+                "SET code = ("
+                "  CASE "
+                "    WHEN BTRIM(UPPER(REGEXP_REPLACE(COALESCE(d.document_type, ''), '[^A-Za-z0-9]+', '', 'g'))) = '' "
+                "    THEN 'DOC' "
+                "    ELSE UPPER(REGEXP_REPLACE(COALESCE(d.document_type, ''), '[^A-Za-z0-9]+', '', 'g')) "
+                "  END"
+                ") || '-' || s.sigla || '-' || d.id::text "
+                "FROM sectors s "
+                "WHERE d.sector_id = s.id"
+            )
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
@@ -121,6 +166,7 @@ async def lifespan(_: FastAPI):
         ensure_user_role_enum_values()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
+        ensure_sectors_table_supports_sigla_and_sync_document_codes()
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
     yield

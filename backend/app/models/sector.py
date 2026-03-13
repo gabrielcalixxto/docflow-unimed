@@ -9,6 +9,7 @@ class Sector(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), index=True)
+    sigla: Mapped[str] = mapped_column(String(40), index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
 
     company = relationship("Company", back_populates="sectors")

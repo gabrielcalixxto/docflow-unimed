@@ -5,7 +5,14 @@ import pytest
 
 from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser
-from app.schemas.admin_catalog import AdminCompanyCreate, AdminDocumentTypeCreate, AdminSectorCreate
+from app.schemas.admin_catalog import (
+    AdminCompanyCreate,
+    AdminCompanyUpdate,
+    AdminDocumentTypeCreate,
+    AdminDocumentTypeUpdate,
+    AdminSectorCreate,
+    AdminSectorUpdate,
+)
 from app.schemas.common import MessageResponse
 from app.services.admin_catalog_service import AdminCatalogService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
@@ -81,6 +88,40 @@ def test_create_company_normalizes_title_case_with_do_de_da() -> None:
     repository.db.commit.assert_called_once_with()
 
 
+def test_create_company_preserves_explicit_uppercase_words() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_name.return_value = None
+    repository.create_company.return_value = SimpleNamespace(id=5)
+    service = build_service(repository=repository)
+
+    response = service.create_company(
+        AdminCompanyCreate(name="  hospital ceu 1  "),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.create_company.assert_called_once_with("Hospital Ceu 1")
+    repository.db.commit.assert_called_once_with()
+
+
+def test_create_company_preserves_uppercase_acronym_word() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_name.return_value = None
+    repository.create_company.return_value = SimpleNamespace(id=6)
+    service = build_service(repository=repository)
+
+    response = service.create_company(
+        AdminCompanyCreate(name="  hospital CEU 2  "),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.create_company.assert_called_once_with("Hospital CEU 2")
+    repository.db.commit.assert_called_once_with()
+
+
 def test_create_company_blocks_duplicate_name() -> None:
     repository = Mock()
     repository.get_company_by_name.return_value = SimpleNamespace(id=1)
@@ -90,13 +131,32 @@ def test_create_company_blocks_duplicate_name() -> None:
         service.create_company(AdminCompanyCreate(name="DocFlow Unimed"), admin_user())
 
 
+def test_update_company_updates_name() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    company = SimpleNamespace(id=3, name="DocFlow Unimed")
+    repository.get_company_by_id.return_value = company
+    repository.get_company_by_name.return_value = None
+    service = build_service(repository=repository)
+
+    response = service.update_company(
+        3,
+        AdminCompanyUpdate(name="  hospital da mulher  "),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.update_company.assert_called_once_with(company, name="Hospital da Mulher")
+    repository.db.commit.assert_called_once_with()
+
+
 def test_create_sector_requires_existing_company() -> None:
     repository = Mock()
     repository.get_company_by_id.return_value = None
     service = build_service(repository=repository)
 
     with pytest.raises(NotFoundServiceError):
-        service.create_sector(AdminSectorCreate(name="Nutricao", company_id=99), admin_user())
+        service.create_sector(AdminSectorCreate(name="Nutricao", sigla="NUT", company_id=99), admin_user())
 
 
 def test_create_sector_normalizes_title_case_with_do_de_da() -> None:
@@ -104,17 +164,42 @@ def test_create_sector_normalizes_title_case_with_do_de_da() -> None:
     repository.db = Mock()
     repository.get_company_by_id.return_value = SimpleNamespace(id=1, name="Hospital")
     repository.get_sector_by_name_and_company.return_value = None
-    repository.create_sector.return_value = SimpleNamespace(id=11)
+    repository.get_sector_by_sigla_and_company.return_value = None
+    repository.create_sector.return_value = SimpleNamespace(id=11, sigla="FCC")
     service = build_service(repository=repository)
 
     response = service.create_sector(
-        AdminSectorCreate(name="  farmacia do centro cirurgico  ", company_id=1),
+        AdminSectorCreate(name="  farmacia do centro cirurgico  ", sigla=" f.c.c ", company_id=1),
         admin_user(),
     )
 
     assert isinstance(response, MessageResponse)
     repository.create_sector.assert_called_once_with(
         name="Farmacia do Centro Cirurgico",
+        sigla="FCC",
+        company_id=1,
+    )
+    repository.db.commit.assert_called_once_with()
+
+
+def test_create_sector_preserves_uppercase_acronym_word() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_id.return_value = SimpleNamespace(id=1, name="Hospital")
+    repository.get_sector_by_name_and_company.return_value = None
+    repository.get_sector_by_sigla_and_company.return_value = None
+    repository.create_sector.return_value = SimpleNamespace(id=12, sigla="CEU")
+    service = build_service(repository=repository)
+
+    response = service.create_sector(
+        AdminSectorCreate(name="  centro CEU 2  ", sigla="ceu", company_id=1),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.create_sector.assert_called_once_with(
+        name="Centro CEU 2",
+        sigla="CEU",
         company_id=1,
     )
     repository.db.commit.assert_called_once_with()
@@ -129,6 +214,38 @@ def test_delete_sector_blocks_when_it_has_dependencies() -> None:
 
     with pytest.raises(ConflictServiceError):
         service.delete_sector(10, admin_user())
+
+
+def test_update_sector_updates_name_and_moves_documents_when_company_changes() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    sector = SimpleNamespace(id=10, name="Qualidade", sigla="QLD", company_id=1)
+    repository.get_sector_by_id.return_value = sector
+    repository.get_company_by_id.return_value = SimpleNamespace(id=2, name="Hospital")
+    repository.get_sector_by_name_and_company.return_value = None
+    repository.get_sector_by_sigla_and_company.return_value = None
+    repository.remap_documents_company_for_sector.return_value = 4
+    repository.list_documents_by_sector_id.return_value = []
+    service = build_service(repository=repository)
+
+    response = service.update_sector(
+        10,
+        AdminSectorUpdate(name="  qualidade do centro  ", sigla="QUAL", company_id=2),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.update_sector.assert_called_once_with(
+        sector,
+        name="Qualidade do Centro",
+        sigla="QUAL",
+        company_id=2,
+    )
+    repository.remap_documents_company_for_sector.assert_called_once_with(
+        sector_id=10,
+        target_company_id=2,
+    )
+    repository.db.commit.assert_called_once_with()
 
 
 def test_create_document_type_normalizes_sigla_and_name() -> None:
@@ -155,6 +272,30 @@ def test_create_document_type_normalizes_sigla_and_name() -> None:
     repository.db.commit.assert_called_once_with()
 
 
+def test_create_document_type_preserves_uppercase_acronym_word_in_name() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_type_by_sigla.return_value = None
+    repository.get_document_type_by_name.return_value = None
+    repository.create_document_type.return_value = SimpleNamespace(id=23, sigla="IT")
+    service = build_service(repository=repository)
+
+    response = service.create_document_type(
+        AdminDocumentTypeCreate(
+            sigla="it",
+            name="  instrucao CEU 1  ",
+        ),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.create_document_type.assert_called_once_with(
+        sigla="IT",
+        name="Instrucao CEU 1",
+    )
+    repository.db.commit.assert_called_once_with()
+
+
 def test_delete_document_type_returns_not_found_for_unknown_id() -> None:
     repository = Mock()
     repository.get_document_type_by_id.return_value = None
@@ -162,3 +303,32 @@ def test_delete_document_type_returns_not_found_for_unknown_id() -> None:
 
     with pytest.raises(NotFoundServiceError):
         service.delete_document_type(999, admin_user())
+
+
+def test_update_document_type_remaps_linked_documents() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    document_type = SimpleNamespace(id=7, sigla="POP", name="Procedimento Operacional Padrao")
+    repository.get_document_type_by_id.return_value = document_type
+    repository.get_document_type_by_sigla.return_value = None
+    repository.get_document_type_by_name.return_value = None
+    repository.list_documents_by_document_type.return_value = []
+    service = build_service(repository=repository)
+
+    response = service.update_document_type(
+        7,
+        AdminDocumentTypeUpdate(sigla="it", name="instrucao de trabalho"),
+        admin_user(),
+    )
+
+    assert isinstance(response, MessageResponse)
+    repository.update_document_type.assert_called_once_with(
+        document_type,
+        sigla="IT",
+        name="Instrucao de Trabalho",
+    )
+    repository.remap_documents_document_type.assert_called_once_with(
+        source_values={"POP", "Procedimento Operacional Padrao"},
+        target_sigla="IT",
+    )
+    repository.db.commit.assert_called_once_with()

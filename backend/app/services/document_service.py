@@ -54,7 +54,7 @@ class DocumentService:
             document.code = self._build_document_code(
                 document_type=payload.document_type,
                 document_id=document.id,
-                sector_name=sector.name,
+                sector_sigla=getattr(sector, "sigla", None),
             )
             self.repository.save(document)
 
@@ -93,22 +93,35 @@ class DocumentService:
         sectors = self.repository.list_sectors()
         configured_document_types = self.repository.list_document_types()
         existing_document_types = self.repository.list_distinct_document_types()
-        normalized_catalog = [
-            item.sigla.strip().upper()
-            for item in configured_document_types
-            if getattr(item, "sigla", None) and item.sigla.strip()
-        ]
-        normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
+        document_type_options: list[dict[str, str]] = []
+        seen_siglas: set[str] = set()
 
-        document_types: list[str] = []
-        for item in [*normalized_catalog, *normalized_existing]:
-            if item not in document_types:
-                document_types.append(item)
+        for item in configured_document_types:
+            sigla_raw = getattr(item, "sigla", None)
+            if not sigla_raw or not str(sigla_raw).strip():
+                continue
+            sigla = str(sigla_raw).strip().upper()
+            if sigla in seen_siglas:
+                continue
+            seen_siglas.add(sigla)
+            name_raw = getattr(item, "name", None)
+            name = str(name_raw).strip() if name_raw else sigla
+            document_type_options.append({"sigla": sigla, "name": name or sigla})
+
+        normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
+        for sigla in normalized_existing:
+            if sigla in seen_siglas:
+                continue
+            seen_siglas.add(sigla)
+            document_type_options.append({"sigla": sigla, "name": sigla})
+
+        document_types = [item["sigla"] for item in document_type_options]
 
         return DocumentFormOptionsRead(
             companies=companies,
             sectors=sectors,
             document_types=document_types,
+            document_type_options=document_type_options,
             scopes=list(DocumentScope),
         )
 
@@ -356,11 +369,10 @@ class DocumentService:
         return document, latest_version
 
     @staticmethod
-    def _build_document_code(*, document_type: str, document_id: int, sector_name: str) -> str:
+    def _build_document_code(*, document_type: str, document_id: int, sector_sigla: str | None) -> str:
         normalized_type = DocumentService._slug_segment(document_type) or "DOC"
-        normalized_sector = DocumentService._slug_segment(sector_name) or "SET"
-        sector_part = normalized_sector[:3].ljust(3, "X")
-        return f"{normalized_type}-{sector_part}-{document_id}"
+        normalized_sector = DocumentService._slug_segment(sector_sigla or "") or "SET"
+        return f"{normalized_type}-{normalized_sector}-{document_id}"
 
     @staticmethod
     def _slug_segment(value: str) -> str:

@@ -11,16 +11,14 @@ class DocumentVersionBase(BaseModel):
     file_path: str
     expiration_date: date
 
+
+class DocumentVersionCreate(DocumentVersionBase):
     @field_validator("expiration_date")
     @classmethod
     def validate_expiration_date(cls, value: date) -> date:
         if value < date.today():
             raise ValueError("Expiration date cannot be earlier than today.")
         return value
-
-
-class DocumentVersionCreate(DocumentVersionBase):
-    pass
 
 
 class DocumentVersionRead(DocumentVersionBase):

@@ -61,6 +61,19 @@ def test_create_company_returns_201(admin_authorized_client, monkeypatch) -> Non
     assert response.json() == {"message": "created"}
 
 
+def test_update_company_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.update_company.return_value = MessageResponse(message="updated")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.put("/admin/catalog/companies/5", json={"name": "Hospital"})
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "updated"}
+
+
 def test_delete_sector_returns_200(admin_authorized_client, monkeypatch) -> None:
     import app.routers.admin_catalog as admin_catalog_router
 
@@ -101,3 +114,19 @@ def test_create_document_type_returns_409_on_conflict(admin_authorized_client, m
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Document type already exists."}
+
+
+def test_update_document_type_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.update_document_type.return_value = MessageResponse(message="updated")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.put(
+        "/admin/catalog/document-types/7",
+        json={"sigla": "IT", "name": "Instrucao de Trabalho"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "updated"}

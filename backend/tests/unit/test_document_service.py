@@ -36,7 +36,12 @@ def test_create_document_persists_entity_and_emits_event(document_payload, curre
     repository = Mock()
     repository.db = Mock()
     repository.get_company_by_id.return_value = SimpleNamespace(id=1)
-    repository.get_sector_by_id.return_value = SimpleNamespace(id=10, name="Qualidade", company_id=1)
+    repository.get_sector_by_id.return_value = SimpleNamespace(
+        id=10,
+        name="Qualidade",
+        sigla="QUA",
+        company_id=1,
+    )
     repository.create_document.return_value = SimpleNamespace(id=12, code="PENDING")
     version_repository = Mock()
     version_repository.create_version.return_value = SimpleNamespace(id=24)
@@ -362,7 +367,7 @@ def test_get_document_delegates_to_repository(fake_document) -> None:
 def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     repository = Mock()
     repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
-    repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
+    repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", sigla="QLD", company_id=1)]
     repository.list_document_types.return_value = [
         SimpleNamespace(id=1, sigla="POP", name="Procedimento Operacional Padrao"),
         SimpleNamespace(id=2, sigla="it", name="Instrucao de Trabalho"),
@@ -377,6 +382,9 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     assert "POP" in options.document_types
     assert "MANUAL" in options.document_types
     assert "INSTRUCAO" in options.document_types
+    assert options.document_type_options[0].sigla == "POP"
+    assert options.document_type_options[0].name == "Procedimento Operacional Padrao"
+    assert any(item.sigla == "MANUAL" and item.name == "MANUAL" for item in options.document_type_options)
     assert options.scopes == list(DocumentScope)
 
 

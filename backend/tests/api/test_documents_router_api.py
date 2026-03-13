@@ -45,8 +45,12 @@ def test_get_document_form_options_returns_items(authorized_client, monkeypatch)
     service = Mock()
     service.get_form_options.return_value = {
         "companies": [{"id": 1, "name": "DocFlow Unimed"}],
-        "sectors": [{"id": 10, "name": "Qualidade", "company_id": 1}],
+        "sectors": [{"id": 10, "name": "Qualidade", "sigla": "QLD", "company_id": 1}],
         "document_types": ["POP", "IT"],
+        "document_type_options": [
+            {"sigla": "POP", "name": "Procedimento Operacional Padrao"},
+            {"sigla": "IT", "name": "Instrucao de Trabalho"},
+        ],
         "scopes": ["LOCAL", "CORPORATIVO"],
     }
     monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)

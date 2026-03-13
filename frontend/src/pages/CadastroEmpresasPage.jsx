@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   createAdminCompany,
-  deleteAdminCompany,
   getAdminCatalogOptions,
+  updateAdminCompany,
 } from "../services/api";
 
 const INITIAL_FORM = {
@@ -17,6 +17,8 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [editingCompanyId, setEditingCompanyId] = useState(null);
+  const [editingCompanyName, setEditingCompanyName] = useState("");
 
   const showFeedback = (type, message) => setFeedback({ type, message });
 
@@ -77,23 +79,41 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
     }
   };
 
-  const handleDelete = async (companyId) => {
-    const confirmed = window.confirm("Confirma exclusao da empresa?");
-    if (!confirmed) {
+  const startEditingCompany = (company) => {
+    setEditingCompanyId(Number(company.id));
+    setEditingCompanyName(company.name || "");
+  };
+
+  const cancelEditingCompany = () => {
+    setEditingCompanyId(null);
+    setEditingCompanyName("");
+  };
+
+  const handleUpdateCompany = async () => {
+    if (!editingCompanyId) {
       return;
     }
+    const normalizedName = editingCompanyName.trim();
+    if (!normalizedName) {
+      showFeedback("error", "Informe o nome da empresa.");
+      return;
+    }
+
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response = await deleteAdminCompany(companyId);
-      showFeedback("success", response.message || "Empresa removida.");
+      const response = await updateAdminCompany(editingCompanyId, {
+        name: normalizedName,
+      });
+      showFeedback("success", response.message || "Empresa alterada.");
+      cancelEditingCompany();
       await loadData();
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
         return;
       }
-      showFeedback("error", requestError.message || "Falha ao excluir empresa.");
+      showFeedback("error", requestError.message || "Falha ao alterar empresa.");
     } finally {
       setSubmitting(false);
     }
@@ -151,17 +171,48 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
             <tbody>
               {companies.map((company) => (
                 <tr key={company.id}>
-                  <td>{company.name}</td>
+                  <td>
+                    {editingCompanyId === Number(company.id) ? (
+                      <input
+                        value={editingCompanyName}
+                        disabled={submitting}
+                        onChange={(event) => setEditingCompanyName(event.target.value)}
+                      />
+                    ) : (
+                      company.name
+                    )}
+                  </td>
                   <td>{sectorsByCompany.get(Number(company.id)) || 0}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="table-btn"
-                      disabled={submitting}
-                      onClick={() => handleDelete(company.id)}
-                    >
-                      Excluir
-                    </button>
+                    {editingCompanyId === Number(company.id) ? (
+                      <>
+                        <button
+                          type="button"
+                          className="table-btn"
+                          disabled={submitting}
+                          onClick={handleUpdateCompany}
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          type="button"
+                          className="table-btn"
+                          disabled={submitting}
+                          onClick={cancelEditingCompany}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="table-btn"
+                        disabled={submitting}
+                        onClick={() => startEditingCompany(company)}
+                      >
+                        Alterar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
