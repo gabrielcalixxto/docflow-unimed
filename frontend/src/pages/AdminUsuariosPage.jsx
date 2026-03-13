@@ -160,7 +160,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         return;
       }
       if (requestError.status === 403) {
-        showFeedback("error", "Apenas ADMIN pode acessar o painel de usuarios.");
+        showFeedback("error", "Apenas ADMIN pode acessar o cadastro de usuarios.");
         return;
       }
       showFeedback("error", requestError.message || "Falha ao carregar usuarios.");
@@ -367,7 +367,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       <section className="hero-block">
         <div>
           <p className="kicker">Administracao</p>
-          <h2>Painel de usuarios</h2>
+          <h2>Cadastro de usuarios</h2>
           <p>Crie, edite e remova usuarios com multiplos papeis, empresas e setores.</p>
         </div>
         <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
