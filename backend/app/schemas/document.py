@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.enums import DocumentScope
 
@@ -13,6 +13,13 @@ class DocumentCreate(BaseModel):
     scope: DocumentScope
     file_path: str
     expiration_date: date
+
+    @field_validator("expiration_date")
+    @classmethod
+    def validate_expiration_date(cls, value: date) -> date:
+        if value < date.today():
+            raise ValueError("Expiration date cannot be earlier than today.")
+        return value
 
 
 class CompanyOption(BaseModel):
@@ -45,6 +52,13 @@ class DocumentDraftUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     file_path: str | None = Field(default=None, min_length=1, max_length=255)
     expiration_date: date | None = None
+
+    @field_validator("expiration_date")
+    @classmethod
+    def validate_expiration_date(cls, value: date | None) -> date | None:
+        if value is not None and value < date.today():
+            raise ValueError("Expiration date cannot be earlier than today.")
+        return value
 
 
 class DocumentRead(BaseModel):

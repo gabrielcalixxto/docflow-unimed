@@ -108,7 +108,6 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Codigo</th>
                 <th>Titulo</th>
                 <th>Company</th>
@@ -122,7 +121,6 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
             <tbody>
               {visibleItems.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.id}</td>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
                   <td>{item.companyName}</td>
@@ -197,7 +195,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
               ))}
               {!loading && visibleItems.length === 0 && (
                 <tr>
-                  <td colSpan={9}>Nenhuma solicitacao encontrada.</td>
+                  <td colSpan={8}>Nenhuma solicitacao encontrada.</td>
                 </tr>
               )}
             </tbody>

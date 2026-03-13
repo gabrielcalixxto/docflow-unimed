@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { createVersion } from "../services/api";
+import { getCurrentLocalDateISO } from "../utils/date";
 
 const INITIAL_VERSION_FORM = {
   documentId: "",
@@ -10,6 +11,7 @@ const INITIAL_VERSION_FORM = {
 };
 
 export default function CriarVersaoPage({ onUnauthorized }) {
+  const minExpirationDate = getCurrentLocalDateISO();
   const [versionForm, setVersionForm] = useState(INITIAL_VERSION_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -104,6 +106,7 @@ export default function CriarVersaoPage({ onUnauthorized }) {
               <input
                 required
                 type="date"
+                min={minExpirationDate}
                 value={versionForm.expirationDate}
                 onChange={(event) =>
                   setVersionForm((prev) => ({ ...prev, expirationDate: event.target.value }))

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { deleteDraftDocument, updateDraftDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
+import { getCurrentLocalDateISO } from "../utils/date";
 
 function formatDateTime(value) {
   if (!value) {
@@ -15,6 +16,7 @@ function formatDateTime(value) {
 }
 
 export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
+  const minExpirationDate = getCurrentLocalDateISO();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -238,6 +240,7 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
                 <input
                   required
                   type="date"
+                  min={minExpirationDate}
                   value={editForm.expirationDate}
                   onChange={(event) =>
                     setEditForm((prev) => ({
@@ -277,10 +280,9 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Codigo</th>
                 <th>Titulo</th>
-                <th>Company</th>
+                <th>Empresas</th>
                 <th>Setor</th>
                 <th>Tipo solicitacao</th>
                 <th>Status</th>
@@ -293,7 +295,6 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
             <tbody>
               {historyItems.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.id}</td>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
                   <td>{item.companyName}</td>
@@ -335,7 +336,7 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
               ))}
               {!loading && historyItems.length === 0 && (
                 <tr>
-                  <td colSpan={11}>Nenhuma solicitacao no seu historico.</td>
+                  <td colSpan={10}>Nenhuma solicitacao no seu historico.</td>
                 </tr>
               )}
             </tbody>

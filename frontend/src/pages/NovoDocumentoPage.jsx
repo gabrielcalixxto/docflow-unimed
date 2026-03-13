@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { createDocument, getDocumentFormOptions } from "../services/api";
+import { getCurrentLocalDateISO } from "../utils/date";
 
 const INITIAL_DOCUMENT_FORM = {
   title: "",
@@ -13,6 +14,7 @@ const INITIAL_DOCUMENT_FORM = {
 };
 
 export default function NovoDocumentoPage({ onUnauthorized }) {
+  const minExpirationDate = getCurrentLocalDateISO();
   const [documentForm, setDocumentForm] = useState(INITIAL_DOCUMENT_FORM);
   const [options, setOptions] = useState({
     companies: [],
@@ -142,29 +144,21 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
           <p className="workflow-hint">O codigo e o numero da primeira versao sao definidos pelo backend.</p>
           <div className="form-grid form-grid-vertical">
             <label>
-              Nome do Documento
-              <input
-                required
-                value={documentForm.title}
-                onChange={(event) => setDocumentForm((prev) => ({ ...prev, title: event.target.value }))}
-              />
-            </label>
-            <label>
-              Setor
+              Tipo de documento
               <select
                 required
-                value={documentForm.sectorId}
-                disabled={loadingOptions || availableSectors.length === 0}
+                value={documentForm.documentType}
+                disabled={loadingOptions || options.documentTypes.length === 0}
                 onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
+                  setDocumentForm((prev) => ({ ...prev, documentType: event.target.value }))
                 }
               >
                 <option value="" disabled>
                   {loadingOptions ? "Carregando..." : "Selecione"}
                 </option>
-                {availableSectors.map((sector) => (
-                  <option key={sector.id} value={String(sector.id)}>
-                    {sector.name}
+                {options.documentTypes.map((documentType) => (
+                  <option key={documentType} value={documentType}>
+                    {documentType}
                   </option>
                 ))}
               </select>
@@ -182,17 +176,6 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                   </option>
                 ))}
               </select>
-            </label>
-            <label>
-              Caminho/URL do arquivo
-              <input
-                required
-                value={documentForm.filePath}
-                onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
-                }
-                placeholder="https://... ou /tmp/arquivo.pdf"
-              />
             </label>
             <label>
               Empresa
@@ -223,30 +206,50 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               </select>
             </label>
             <label>
-              Tipo de documento
+              Setor
               <select
                 required
-                value={documentForm.documentType}
-                disabled={loadingOptions || options.documentTypes.length === 0}
+                value={documentForm.sectorId}
+                disabled={loadingOptions || availableSectors.length === 0}
                 onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, documentType: event.target.value }))
+                  setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
                 }
               >
                 <option value="" disabled>
                   {loadingOptions ? "Carregando..." : "Selecione"}
                 </option>
-                {options.documentTypes.map((documentType) => (
-                  <option key={documentType} value={documentType}>
-                    {documentType}
+                {availableSectors.map((sector) => (
+                  <option key={sector.id} value={String(sector.id)}>
+                    {sector.name}
                   </option>
                 ))}
               </select>
+            </label>
+            <label>
+              Titulo
+              <input
+                required
+                value={documentForm.title}
+                onChange={(event) => setDocumentForm((prev) => ({ ...prev, title: event.target.value }))}
+              />
+            </label>
+            <label>
+              Caminho URL do arquivo
+              <input
+                required
+                value={documentForm.filePath}
+                onChange={(event) =>
+                  setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
+                }
+                placeholder="https://... ou /tmp/arquivo.pdf"
+              />
             </label>
             <label>
               Data de vencimento
               <input
                 required
                 type="date"
+                min={minExpirationDate}
                 value={documentForm.expirationDate}
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))

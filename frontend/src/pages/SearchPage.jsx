@@ -282,7 +282,6 @@ export default function SearchPage({ onUnauthorized }) {
             onClick={() => openViewer(item)}
             style={{ animationDelay: `${index * 40}ms` }}
           >
-            <p className="result-file">{extractFileName(item.file_path)}</p>
             <p className="result-title">{item.title}</p>
             <div className="result-meta">
               <span>{item.code}</span>
