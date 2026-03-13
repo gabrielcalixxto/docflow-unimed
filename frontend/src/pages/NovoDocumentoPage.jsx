@@ -1,57 +1,110 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { createDocument, createVersion } from "../services/api";
+import { createDocument, getDocumentFormOptions } from "../services/api";
 
 const INITIAL_DOCUMENT_FORM = {
-  code: "",
   title: "",
-  companyId: "1",
-  sectorId: "1",
-  documentType: "POP",
+  companyId: "",
+  sectorId: "",
+  documentType: "",
   scope: "LOCAL",
-};
-
-const INITIAL_VERSION_FORM = {
-  documentId: "",
-  versionNumber: "1",
   filePath: "",
   expirationDate: "",
 };
 
-function parseDocumentIdFromMessage(message) {
-  if (!message) {
-    return null;
-  }
-  const match = /id=(\d+)/i.exec(message);
-  return match ? match[1] : null;
-}
-
 export default function NovoDocumentoPage({ onUnauthorized }) {
   const [documentForm, setDocumentForm] = useState(INITIAL_DOCUMENT_FORM);
-  const [versionForm, setVersionForm] = useState(INITIAL_VERSION_FORM);
+  const [options, setOptions] = useState({
+    companies: [],
+    sectors: [],
+    documentTypes: [],
+    scopes: ["LOCAL", "CORPORATIVO"],
+  });
+  const [loadingOptions, setLoadingOptions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
 
   const showFeedback = (type, message) => setFeedback({ type, message });
 
+  useEffect(() => {
+    const loadOptions = async () => {
+      setLoadingOptions(true);
+      setFeedback({ type: "", message: "" });
+      try {
+        const data = await getDocumentFormOptions();
+        const companies = Array.isArray(data.companies) ? data.companies : [];
+        const sectors = Array.isArray(data.sectors) ? data.sectors : [];
+        const documentTypes = Array.isArray(data.document_types) ? data.document_types : [];
+        const scopes =
+          Array.isArray(data.scopes) && data.scopes.length > 0 ? data.scopes : ["LOCAL", "CORPORATIVO"];
+
+        setOptions({ companies, sectors, documentTypes, scopes });
+        setDocumentForm((prev) => {
+          const fallbackCompanyId =
+            prev.companyId || (companies[0] ? String(companies[0].id) : "");
+          const sectorsForCompany = sectors.filter(
+            (sector) => String(sector.company_id) === fallbackCompanyId,
+          );
+          const fallbackSectorId =
+            sectorsForCompany.find((sector) => String(sector.id) === prev.sectorId)?.id ??
+            sectorsForCompany[0]?.id;
+          return {
+            ...prev,
+            companyId: fallbackCompanyId,
+            sectorId: fallbackSectorId ? String(fallbackSectorId) : "",
+            documentType: prev.documentType || documentTypes[0] || "",
+            scope: scopes.includes(prev.scope) ? prev.scope : scopes[0] || "LOCAL",
+          };
+        });
+      } catch (requestError) {
+        if (requestError.status === 401) {
+          onUnauthorized?.();
+          return;
+        }
+        showFeedback("error", requestError.message || "Falha ao carregar opcoes do formulario.");
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
+    loadOptions();
+  }, [onUnauthorized]);
+
+  const availableSectors = useMemo(
+    () =>
+      options.sectors.filter((sector) => {
+        if (!documentForm.companyId) {
+          return true;
+        }
+        return String(sector.company_id) === documentForm.companyId;
+      }),
+    [options.sectors, documentForm.companyId],
+  );
+
   const handleCreateDocument = async (event) => {
     event.preventDefault();
+    if (!documentForm.companyId || !documentForm.sectorId || !documentForm.documentType) {
+      showFeedback("error", "Selecione empresa, setor e tipo documental.");
+      return;
+    }
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
       const response = await createDocument({
-        code: documentForm.code.trim(),
         title: documentForm.title.trim(),
         company_id: Number(documentForm.companyId),
         sector_id: Number(documentForm.sectorId),
         document_type: documentForm.documentType.trim(),
         scope: documentForm.scope,
+        file_path: documentForm.filePath.trim(),
+        expiration_date: documentForm.expirationDate,
       });
-      const createdId = parseDocumentIdFromMessage(response.message);
-      if (createdId) {
-        setVersionForm((prev) => ({ ...prev, documentId: createdId }));
-      }
-      setDocumentForm(INITIAL_DOCUMENT_FORM);
+      setDocumentForm((prev) => ({
+        ...prev,
+        title: "",
+        filePath: "",
+        expirationDate: "",
+      }));
       showFeedback("success", response.message || "Documento criado.");
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -68,41 +121,16 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
     }
   };
 
-  const handleCreateVersion = async (event) => {
-    event.preventDefault();
-    if (!versionForm.documentId) {
-      showFeedback("error", "Informe o ID do documento para criar a versao.");
-      return;
-    }
-    setSubmitting(true);
-    setFeedback({ type: "", message: "" });
-    try {
-      const response = await createVersion(Number(versionForm.documentId), {
-        version_number: Number(versionForm.versionNumber),
-        status: "RASCUNHO",
-        file_path: versionForm.filePath.trim(),
-        expiration_date: versionForm.expirationDate,
-      });
-      setVersionForm((prev) => ({ ...INITIAL_VERSION_FORM, documentId: prev.documentId }));
-      showFeedback("success", response.message || "Versao criada.");
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        onUnauthorized?.();
-        return;
-      }
-      showFeedback("error", requestError.message || "Falha ao criar versao.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className="page-animation">
       <section className="hero-block">
         <div>
           <p className="kicker">Cadastro manual</p>
           <h2>Novo documento</h2>
-          <p>Preencha os campos obrigatorios para teste e crie a primeira versao em seguida.</p>
+          <p>
+            O codigo e criado automaticamente no formato `TIPO-ID-SET` e a versao 1 (RASCUNHO)
+            tambem e criada automaticamente.
+          </p>
         </div>
       </section>
 
@@ -110,19 +138,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreateDocument}>
-          <h3>1. Criar documento</h3>
-          <p className="workflow-hint">
-            Dica inicial: `company_id=1` e `sector_id=1` (seed padrao local).
-          </p>
+          <h3>Criar documento</h3>
+          <p className="workflow-hint">O codigo e o numero da primeira versao sao definidos pelo backend.</p>
           <div className="form-grid">
-            <label>
-              Codigo
-              <input
-                required
-                value={documentForm.code}
-                onChange={(event) => setDocumentForm((prev) => ({ ...prev, code: event.target.value }))}
-              />
-            </label>
             <label>
               Titulo
               <input
@@ -133,90 +151,94 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
             </label>
             <label>
               Company ID
-              <input
+              <select
                 required
-                type="number"
-                min="1"
                 value={documentForm.companyId}
-                onChange={(event) =>
-                  setDocumentForm((prev) => ({ ...prev, companyId: event.target.value }))
-                }
-              />
+                disabled={loadingOptions || options.companies.length === 0}
+                onChange={(event) => {
+                  const companyId = event.target.value;
+                  const sectorsForCompany = options.sectors.filter(
+                    (sector) => String(sector.company_id) === companyId,
+                  );
+                  setDocumentForm((prev) => ({
+                    ...prev,
+                    companyId,
+                    sectorId: sectorsForCompany[0] ? String(sectorsForCompany[0].id) : "",
+                  }));
+                }}
+              >
+                <option value="" disabled>
+                  {loadingOptions ? "Carregando..." : "Selecione"}
+                </option>
+                {options.companies.map((company) => (
+                  <option key={company.id} value={String(company.id)}>
+                    {company.id} - {company.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Sector ID
-              <input
+              <select
                 required
-                type="number"
-                min="1"
                 value={documentForm.sectorId}
+                disabled={loadingOptions || availableSectors.length === 0}
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
                 }
-              />
+              >
+                <option value="" disabled>
+                  {loadingOptions ? "Carregando..." : "Selecione"}
+                </option>
+                {availableSectors.map((sector) => (
+                  <option key={sector.id} value={String(sector.id)}>
+                    {sector.id} - {sector.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Tipo documental
-              <input
+              <select
                 required
                 value={documentForm.documentType}
+                disabled={loadingOptions || options.documentTypes.length === 0}
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, documentType: event.target.value }))
                 }
-              />
+              >
+                <option value="" disabled>
+                  {loadingOptions ? "Carregando..." : "Selecione"}
+                </option>
+                {options.documentTypes.map((documentType) => (
+                  <option key={documentType} value={documentType}>
+                    {documentType}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Escopo
               <select
                 value={documentForm.scope}
+                disabled={loadingOptions}
                 onChange={(event) => setDocumentForm((prev) => ({ ...prev, scope: event.target.value }))}
               >
-                <option value="LOCAL">LOCAL</option>
-                <option value="CORPORATIVO">CORPORATIVO</option>
+                {options.scopes.map((scopeOption) => (
+                  <option key={scopeOption} value={scopeOption}>
+                    {scopeOption}
+                  </option>
+                ))}
               </select>
-            </label>
-          </div>
-          <button type="submit" disabled={submitting}>
-            Criar documento
-          </button>
-        </form>
-
-        <form className="panel-float workflow-card" onSubmit={handleCreateVersion}>
-          <h3>2. Criar versao</h3>
-          <p className="workflow-hint">
-            Informe o ID do documento e crie a versao inicial com status `RASCUNHO`.
-          </p>
-          <div className="form-grid">
-            <label>
-              Documento ID
-              <input
-                required
-                type="number"
-                min="1"
-                value={versionForm.documentId}
-                onChange={(event) =>
-                  setVersionForm((prev) => ({ ...prev, documentId: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Numero da versao
-              <input
-                required
-                type="number"
-                min="1"
-                value={versionForm.versionNumber}
-                onChange={(event) =>
-                  setVersionForm((prev) => ({ ...prev, versionNumber: event.target.value }))
-                }
-              />
             </label>
             <label className="span-2">
               Caminho/URL do arquivo
               <input
                 required
-                value={versionForm.filePath}
-                onChange={(event) => setVersionForm((prev) => ({ ...prev, filePath: event.target.value }))}
+                value={documentForm.filePath}
+                onChange={(event) =>
+                  setDocumentForm((prev) => ({ ...prev, filePath: event.target.value }))
+                }
                 placeholder="https://... ou /tmp/arquivo.pdf"
               />
             </label>
@@ -225,19 +247,19 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               <input
                 required
                 type="date"
-                value={versionForm.expirationDate}
+                value={documentForm.expirationDate}
                 onChange={(event) =>
-                  setVersionForm((prev) => ({ ...prev, expirationDate: event.target.value }))
+                  setDocumentForm((prev) => ({ ...prev, expirationDate: event.target.value }))
                 }
               />
             </label>
             <label>
-              Status inicial
-              <input value="RASCUNHO" disabled />
+              Versao inicial
+              <input value="1 (automatico)" disabled />
             </label>
           </div>
           <button type="submit" disabled={submitting}>
-            Criar versao
+            Criar documento
           </button>
         </form>
       </section>

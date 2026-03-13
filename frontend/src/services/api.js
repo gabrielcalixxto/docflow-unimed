@@ -105,6 +105,13 @@ export async function createDocument(payload) {
   });
 }
 
+export async function getDocumentFormOptions() {
+  return request({
+    method: "get",
+    url: "/documents/form-options",
+  });
+}
+
 export async function createVersion(documentId, payload) {
   return request({
     method: "post",

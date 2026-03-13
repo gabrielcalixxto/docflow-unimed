@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.core.enums import DocumentEventType, DocumentStatus, UserRole
+from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.schemas.common import MessageResponse
 from app.services.document_service import DocumentService
@@ -33,21 +33,70 @@ def build_service(
 def test_create_document_persists_entity_and_emits_event(document_payload, current_user) -> None:
     repository = Mock()
     repository.db = Mock()
-    repository.create_document.return_value = SimpleNamespace(id=12)
+    repository.get_company_by_id.return_value = SimpleNamespace(id=1)
+    repository.get_sector_by_id.return_value = SimpleNamespace(id=10, name="Qualidade", company_id=1)
+    repository.create_document.return_value = SimpleNamespace(id=12, code="PENDING")
+    version_repository = Mock()
+    version_repository.create_version.return_value = SimpleNamespace(id=24)
     audit_service = Mock()
-    service = build_service(repository=repository, audit_service=audit_service)
+    service = build_service(
+        repository=repository,
+        version_repository=version_repository,
+        audit_service=audit_service,
+    )
 
     response = service.create_document(document_payload, current_user)
 
     assert isinstance(response, MessageResponse)
     assert "created" in response.message.lower()
-    repository.create_document.assert_called_once_with(payload=document_payload, created_by=current_user.user_id)
-    audit_service.create_placeholder_event.assert_called_once_with(
+    repository.create_document.assert_called_once_with(
+        payload=document_payload,
+        code="PENDING",
+        created_by=current_user.user_id,
+    )
+    assert repository.create_document.return_value.code == "POP-12-QUA"
+    version_repository.create_version.assert_called_once()
+    version_payload = version_repository.create_version.call_args.kwargs["payload"]
+    assert version_payload.version_number == 1
+    assert version_payload.status == DocumentStatus.RASCUNHO
+    assert version_payload.file_path == document_payload.file_path
+    assert version_payload.expiration_date == document_payload.expiration_date
+    assert audit_service.create_placeholder_event.call_count == 2
+    audit_service.create_placeholder_event.assert_any_call(
         event_type=DocumentEventType.DOCUMENT_CREATED,
         document_id=12,
         user_id=current_user.user_id,
     )
+    audit_service.create_placeholder_event.assert_any_call(
+        event_type=DocumentEventType.VERSION_CREATED,
+        document_id=12,
+        version_id=24,
+        user_id=current_user.user_id,
+    )
     repository.db.commit.assert_called_once_with()
+
+
+def test_create_document_raises_not_found_when_company_does_not_exist(document_payload, current_user) -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_id.return_value = None
+    service = build_service(repository=repository)
+
+    with pytest.raises(NotFoundServiceError):
+        service.create_document(document_payload, current_user)
+
+
+def test_create_document_raises_conflict_when_sector_company_do_not_match(
+    document_payload, current_user
+) -> None:
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_id.return_value = SimpleNamespace(id=1)
+    repository.get_sector_by_id.return_value = SimpleNamespace(id=10, name="Qualidade", company_id=2)
+    service = build_service(repository=repository)
+
+    with pytest.raises(ConflictServiceError):
+        service.create_document(document_payload, current_user)
 
 
 def test_create_document_blocks_reader_role(document_payload) -> None:
@@ -296,3 +345,20 @@ def test_get_document_delegates_to_repository(fake_document) -> None:
 
     assert result == fake_document
     repository.get_document_by_id.assert_called_once_with(1)
+
+
+def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
+    repository = Mock()
+    repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
+    repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
+    repository.list_distinct_document_types.return_value = ["Pop", "manual", "instrucao"]
+    service = build_service(repository=repository)
+
+    options = service.get_form_options()
+
+    assert options.companies[0].id == 1
+    assert options.sectors[0].id == 10
+    assert "POP" in options.document_types
+    assert "MANUAL" in options.document_types
+    assert "INSTRUCAO" in options.document_types
+    assert options.scopes == list(DocumentScope)
