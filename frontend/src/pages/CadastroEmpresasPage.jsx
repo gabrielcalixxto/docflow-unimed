@@ -143,7 +143,6 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Nome</th>
                 <th>Setores vinculados</th>
                 <th>Acoes</th>
@@ -152,7 +151,6 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
             <tbody>
               {companies.map((company) => (
                 <tr key={company.id}>
-                  <td>{company.id}</td>
                   <td>{company.name}</td>
                   <td>{sectorsByCompany.get(Number(company.id)) || 0}</td>
                   <td>
@@ -169,7 +167,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
               ))}
               {!loading && companies.length === 0 && (
                 <tr>
-                  <td colSpan={4}>Nenhuma empresa cadastrada.</td>
+                  <td colSpan={3}>Nenhuma empresa cadastrada.</td>
                 </tr>
               )}
             </tbody>

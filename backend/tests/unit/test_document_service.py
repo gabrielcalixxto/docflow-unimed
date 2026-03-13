@@ -364,8 +364,8 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
     repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
     repository.list_document_types.return_value = [
-        SimpleNamespace(id=1, name="POP"),
-        SimpleNamespace(id=2, name="manual"),
+        SimpleNamespace(id=1, sigla="POP", name="Procedimento Operacional Padrao"),
+        SimpleNamespace(id=2, sigla="it", name="Instrucao de Trabalho"),
     ]
     repository.list_distinct_document_types.return_value = ["Pop", "manual", "instrucao"]
     service = build_service(repository=repository)

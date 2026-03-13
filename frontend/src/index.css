@@ -176,8 +176,11 @@ select:focus {
   min-height: 48px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   padding: 8px 10px;
+  width: 100%;
+  text-align: left;
   transition: background-color 180ms ease, border-color 180ms ease;
 }
 
@@ -191,7 +194,7 @@ select:focus {
 }
 
 .nav-subitem {
-  margin-left: 8px;
+  margin-left: 0;
 }
 
 .nav-icon {
@@ -208,6 +211,41 @@ select:focus {
 
 .nav-label {
   font-weight: 700;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav-group-button {
+  padding-right: 10px;
+}
+
+.nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav-group-chevron {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 180ms ease;
+}
+
+.nav-group-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-group-chevron.open {
+  transform: rotate(180deg);
 }
 
 .sidebar-foot {
@@ -616,6 +654,10 @@ select:focus {
   gap: 8px;
 }
 
+.check-grid-vertical {
+  grid-template-columns: 1fr;
+}
+
 .check-item {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -641,6 +683,26 @@ select:focus {
 
 .check-item span {
   font-size: 0.83rem;
+}
+
+.sector-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.sector-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(211, 242, 230, 0.18);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sector-group-title {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--brand-1);
 }
 
 .form-grid {
@@ -743,6 +805,20 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.catalog-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+
+.catalog-filter-row {
   margin-bottom: 10px;
 }
 

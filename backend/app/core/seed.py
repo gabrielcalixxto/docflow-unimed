@@ -12,7 +12,13 @@ from app.models.user import User
 
 _DEFAULT_COMPANY_NAME = "DocFlow Unimed"
 _DEFAULT_SECTORS = ["Qualidade", "Nutricao", "Enfermagem"]
-_DEFAULT_DOCUMENT_TYPES = ["POP", "IT", "MANUAL", "POLITICA", "PROTOCOLO"]
+_DEFAULT_DOCUMENT_TYPES: list[tuple[str, str]] = [
+    ("POP", "Procedimento Operacional Padrao"),
+    ("IT", "Instrucao de Trabalho"),
+    ("MANUAL", "Manual"),
+    ("POLITICA", "Politica"),
+    ("PROTOCOLO", "Protocolo"),
+]
 
 _DEFAULT_USERS: list[tuple[str, str, str, list[UserRole], list[str], list[str]]] = [
     ("Admin DocFlow", "admin.docflow", "admin@teste.com", [UserRole.ADMIN], [], []),
@@ -61,12 +67,25 @@ def seed_default_users() -> None:
                 created_or_updated = True
             sectors_by_name[sector_name] = sector
 
-        for document_type_name in _DEFAULT_DOCUMENT_TYPES:
-            document_type_statement = select(DocumentType).where(DocumentType.name == document_type_name)
+        for document_type_sigla, document_type_name in _DEFAULT_DOCUMENT_TYPES:
+            document_type_statement = select(DocumentType).where(
+                DocumentType.sigla == document_type_sigla,
+            )
             document_type = db.scalar(document_type_statement)
             if document_type is None:
-                db.add(DocumentType(name=document_type_name))
+                db.add(DocumentType(sigla=document_type_sigla, name=document_type_name))
                 created_or_updated = True
+            else:
+                document_type_updated = False
+                if document_type.name != document_type_name:
+                    document_type.name = document_type_name
+                    document_type_updated = True
+                if document_type.sigla != document_type_sigla:
+                    document_type.sigla = document_type_sigla
+                    document_type_updated = True
+                if document_type_updated:
+                    db.add(document_type)
+                    created_or_updated = True
 
         companies_by_name = {_DEFAULT_COMPANY_NAME: company}
 

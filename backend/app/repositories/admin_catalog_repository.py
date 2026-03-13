@@ -90,7 +90,7 @@ class AdminCatalogRepository:
         return int(self.db.scalar(statement) or 0)
 
     def list_document_types(self) -> list[DocumentType]:
-        statement = select(DocumentType).order_by(DocumentType.name.asc())
+        statement = select(DocumentType).order_by(DocumentType.sigla.asc(), DocumentType.name.asc())
         return list(self.db.scalars(statement).all())
 
     def get_document_type_by_id(self, document_type_id: int) -> DocumentType | None:
@@ -101,8 +101,12 @@ class AdminCatalogRepository:
         statement = select(DocumentType).where(func.lower(DocumentType.name) == name.lower())
         return self.db.scalar(statement)
 
-    def create_document_type(self, name: str) -> DocumentType:
-        document_type = DocumentType(name=name)
+    def get_document_type_by_sigla(self, sigla: str) -> DocumentType | None:
+        statement = select(DocumentType).where(func.lower(DocumentType.sigla) == sigla.lower())
+        return self.db.scalar(statement)
+
+    def create_document_type(self, *, sigla: str, name: str) -> DocumentType:
+        document_type = DocumentType(sigla=sigla, name=name)
         self.db.add(document_type)
         self.db.flush()
         return document_type

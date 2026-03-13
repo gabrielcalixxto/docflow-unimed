@@ -26,11 +26,13 @@ class AdminSectorRead(BaseModel):
 
 
 class AdminDocumentTypeCreate(BaseModel):
+    sigla: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=2, max_length=120)
 
 
 class AdminDocumentTypeRead(BaseModel):
     id: int
+    sigla: str
     name: str
 
     model_config = ConfigDict(from_attributes=True)

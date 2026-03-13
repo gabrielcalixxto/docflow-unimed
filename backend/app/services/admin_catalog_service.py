@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.enums import UserRole
@@ -14,6 +17,8 @@ from app.services.errors import ConflictServiceError, ForbiddenServiceError, Not
 
 
 class AdminCatalogService:
+    _LOWERCASE_WORDS = {"de", "do", "da"}
+
     def __init__(self, repository: AdminCatalogRepository):
         self.repository = repository
 
@@ -31,7 +36,7 @@ class AdminCatalogService:
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
         self._ensure_admin(current_user)
-        normalized_name = self._normalize_text(payload.name)
+        normalized_name = self._normalize_company_name(payload.name)
         if self.repository.get_company_by_name(normalized_name) is not None:
             raise ConflictServiceError("Company already exists.")
 
@@ -76,7 +81,7 @@ class AdminCatalogService:
         if company is None:
             raise NotFoundServiceError("Company not found.")
 
-        normalized_name = self._normalize_text(payload.name)
+        normalized_name = self._normalize_sector_name(payload.name)
         if self.repository.get_sector_by_name_and_company(normalized_name, payload.company_id) is not None:
             raise ConflictServiceError("Sector already exists for this company.")
 
@@ -115,18 +120,26 @@ class AdminCatalogService:
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
         self._ensure_admin(current_user)
-        normalized_name = self._normalize_text(payload.name, upper=True)
+        normalized_sigla = self._normalize_document_type_sigla(payload.sigla)
+        normalized_name = self._normalize_document_type_name(payload.name)
+        if self.repository.get_document_type_by_sigla(normalized_sigla) is not None:
+            raise ConflictServiceError("Document type acronym already exists.")
         if self.repository.get_document_type_by_name(normalized_name) is not None:
             raise ConflictServiceError("Document type already exists.")
 
         try:
-            document_type = self.repository.create_document_type(normalized_name)
+            document_type = self.repository.create_document_type(
+                sigla=normalized_sigla,
+                name=normalized_name,
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not create document type.") from exc
 
-        return MessageResponse(message=f"Document type created successfully (id={document_type.id}).")
+        return MessageResponse(
+            message=f"Document type created successfully (id={document_type.id}, sigla={document_type.sigla})."
+        )
 
     def delete_document_type(self, document_type_id: int, current_user: AuthenticatedUser) -> MessageResponse:
         self._ensure_admin(current_user)
@@ -151,6 +164,40 @@ class AdminCatalogService:
         if len(normalized) < 2:
             raise ConflictServiceError("Value must contain at least 2 non-space characters.")
         return normalized
+
+    @classmethod
+    def _normalize_sector_name(cls, value: str) -> str:
+        return cls._normalize_title_words_with_exceptions(value)
+
+    @classmethod
+    def _normalize_company_name(cls, value: str) -> str:
+        return cls._normalize_title_words_with_exceptions(value)
+
+    @classmethod
+    def _normalize_document_type_name(cls, value: str) -> str:
+        return cls._normalize_title_words_with_exceptions(value)
+
+    @classmethod
+    def _normalize_document_type_sigla(cls, value: str) -> str:
+        normalized = cls._normalize_text(value, upper=True)
+        ascii_only = unicodedata.normalize("NFKD", normalized).encode("ascii", "ignore").decode("ascii")
+        alphanumeric_only = re.sub(r"[^A-Za-z0-9]+", "", ascii_only).upper()
+        if len(alphanumeric_only) < 2:
+            raise ConflictServiceError("Acronym must contain at least 2 alphanumeric characters.")
+        return alphanumeric_only
+
+    @classmethod
+    def _normalize_title_words_with_exceptions(cls, value: str) -> str:
+        normalized = cls._normalize_text(value)
+        words = normalized.split(" ")
+        transformed_words = []
+        for index, word in enumerate(words):
+            lower_word = word.lower()
+            if index > 0 and lower_word in cls._LOWERCASE_WORDS:
+                transformed_words.append(lower_word)
+                continue
+            transformed_words.append(lower_word.capitalize())
+        return " ".join(transformed_words)
 
     @staticmethod
     def _ensure_admin(current_user: AuthenticatedUser) -> None:

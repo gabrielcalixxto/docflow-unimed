@@ -164,7 +164,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 </option>
                 {availableSectors.map((sector) => (
                   <option key={sector.id} value={String(sector.id)}>
-                    {sector.id} - {sector.name}
+                    {sector.name}
                   </option>
                 ))}
               </select>
@@ -217,7 +217,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 </option>
                 {options.companies.map((company) => (
                   <option key={company.id} value={String(company.id)}>
-                    {company.id} - {company.name}
+                    {company.name}
                   </option>
                 ))}
               </select>

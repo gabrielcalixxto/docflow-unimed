@@ -9,6 +9,8 @@ import {
 } from "../services/api";
 import { displayRole } from "../utils/roles";
 
+const ROLE_DISPLAY_ORDER = ["LEITOR", "AUTOR", "REVISOR", "COORDENADOR", "ADMIN"];
+
 const INITIAL_CREATE_FORM = {
   name: "",
   email: "",
@@ -53,6 +55,41 @@ function getFilteredSectorIds(sectorIds, sectors, companyIds) {
   return sectorIds.filter((sectorId) => allowedSectorIds.has(sectorId));
 }
 
+function sortRolesByDisplayOrder(roles) {
+  const rankMap = new Map(ROLE_DISPLAY_ORDER.map((role, index) => [role, index]));
+  return [...roles].sort((left, right) => {
+    const leftRank = rankMap.has(left) ? rankMap.get(left) : Number.MAX_SAFE_INTEGER;
+    const rightRank = rankMap.has(right) ? rankMap.get(right) : Number.MAX_SAFE_INTEGER;
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+    return String(left).localeCompare(String(right));
+  });
+}
+
+function buildSectorGroups(sectors, companyIds, companyNameById) {
+  return companyIds.map((companyId) => ({
+    companyId,
+    companyName: companyNameById.get(companyId) || `ID ${companyId}`,
+    sectors: sectors
+      .filter((sector) => String(sector.company_id) === companyId)
+      .sort((left, right) => String(left.name).localeCompare(String(right.name))),
+  }));
+}
+
+function normalizeSectorPickerByCompany(currentMap, sectorGroups) {
+  const nextMap = {};
+  sectorGroups.forEach((group) => {
+    if (group.sectors.length === 0) {
+      return;
+    }
+    const availableIds = group.sectors.map((sector) => String(sector.id));
+    const currentValue = currentMap[group.companyId];
+    nextMap[group.companyId] = currentValue && availableIds.includes(currentValue) ? currentValue : availableIds[0];
+  });
+  return nextMap;
+}
+
 export default function AdminUsuariosPage({ onUnauthorized }) {
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({ roles: [], companies: [], sectors: [] });
@@ -60,6 +97,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   const [editForm, setEditForm] = useState(INITIAL_EDIT_FORM);
   const [createCompanyToAdd, setCreateCompanyToAdd] = useState("");
   const [editCompanyToAdd, setEditCompanyToAdd] = useState("");
+  const [createSectorToAddByCompany, setCreateSectorToAddByCompany] = useState({});
+  const [editSectorToAddByCompany, setEditSectorToAddByCompany] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -75,18 +114,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     [options.sectors],
   );
 
-  const createVisibleSectors = useMemo(
-    () =>
-      options.sectors.filter((sector) =>
-        createForm.companyIds.includes(String(sector.company_id)),
-      ),
-    [options.sectors, createForm.companyIds],
+  const createSectorGroups = useMemo(
+    () => buildSectorGroups(options.sectors, createForm.companyIds, companyNameById),
+    [options.sectors, createForm.companyIds, companyNameById],
   );
 
-  const editVisibleSectors = useMemo(
-    () =>
-      options.sectors.filter((sector) => editForm.companyIds.includes(String(sector.company_id))),
-    [options.sectors, editForm.companyIds],
+  const editSectorGroups = useMemo(
+    () => buildSectorGroups(options.sectors, editForm.companyIds, companyNameById),
+    [options.sectors, editForm.companyIds, companyNameById],
   );
 
   const loadData = async () => {
@@ -96,7 +131,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       const [usersResponse, optionsResponse] = await Promise.all([getAdminUsers(), getAdminUserOptions()]);
       setUsers(Array.isArray(usersResponse) ? usersResponse : []);
 
-      const roles = Array.isArray(optionsResponse.roles) ? optionsResponse.roles : [];
+      const roles = sortRolesByDisplayOrder(
+        Array.isArray(optionsResponse.roles) ? optionsResponse.roles : [],
+      );
       const companies = Array.isArray(optionsResponse.companies) ? optionsResponse.companies : [];
       const sectors = Array.isArray(optionsResponse.sectors) ? optionsResponse.sectors : [];
       setOptions({ roles, companies, sectors });
@@ -134,6 +171,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     loadData();
   }, []);
 
+  useEffect(() => {
+    setCreateSectorToAddByCompany((prev) => normalizeSectorPickerByCompany(prev, createSectorGroups));
+  }, [createSectorGroups]);
+
+  useEffect(() => {
+    setEditSectorToAddByCompany((prev) => normalizeSectorPickerByCompany(prev, editSectorGroups));
+  }, [editSectorGroups]);
+
   const addCompanyToCreateForm = () => {
     if (!createCompanyToAdd) {
       return;
@@ -155,6 +200,28 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       companyIds: prev.companyIds.includes(editCompanyToAdd)
         ? prev.companyIds
         : [...prev.companyIds, editCompanyToAdd],
+    }));
+  };
+
+  const addSectorToCreateForm = (companyId) => {
+    const sectorId = createSectorToAddByCompany[companyId];
+    if (!sectorId) {
+      return;
+    }
+    setCreateForm((prev) => ({
+      ...prev,
+      sectorIds: prev.sectorIds.includes(sectorId) ? prev.sectorIds : [...prev.sectorIds, sectorId],
+    }));
+  };
+
+  const addSectorToEditForm = (companyId) => {
+    const sectorId = editSectorToAddByCompany[companyId];
+    if (!sectorId) {
+      return;
+    }
+    setEditForm((prev) => ({
+      ...prev,
+      sectorIds: prev.sectorIds.includes(sectorId) ? prev.sectorIds : [...prev.sectorIds, sectorId],
     }));
   };
 
@@ -185,6 +252,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         ...INITIAL_CREATE_FORM,
         roles: prev.roles,
       }));
+      setCreateSectorToAddByCompany({});
       await loadData();
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -198,7 +266,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   };
 
   const handleOpenEdit = (user) => {
-    const roles = Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [];
+    const roles = sortRolesByDisplayOrder(
+      Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [],
+    );
     const companyIds = Array.isArray(user.company_ids)
       ? asStringIdList(user.company_ids)
       : user.company_id != null
@@ -221,6 +291,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       passwordConfirm: "",
     });
     setEditCompanyToAdd(options.companies[0] ? String(options.companies[0].id) : "");
+    setEditSectorToAddByCompany({});
     setFeedback({ type: "", message: "" });
   };
 
@@ -251,6 +322,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       });
       showFeedback("success", response.message || "Usuario atualizado.");
       setEditForm(INITIAL_EDIT_FORM);
+      setEditSectorToAddByCompany({});
       await loadData();
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -325,7 +397,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               />
             </label>
 
-            <div className="span-2">
+            <div>
               <p className="admin-field-label">Empresas</p>
               <div className="company-picker-row">
                 <select value={createCompanyToAdd} onChange={(event) => setCreateCompanyToAdd(event.target.value)}>
@@ -367,9 +439,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               </div>
             </div>
 
-            <div className="span-2">
-              <p className="admin-field-label">Papel</p>
-              <div className="check-grid">
+            <div>
+              <p className="admin-field-label">Papeis</p>
+              <div className="check-grid check-grid-vertical">
                 {options.roles.map((role) => (
                   <label key={`create-role-${role}`} className="check-item">
                     <input
@@ -393,25 +465,67 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               {createForm.companyIds.length === 0 ? (
                 <p className="workflow-hint">Selecione ao menos uma empresa para liberar os setores.</p>
               ) : (
-                <div className="check-grid">
-                  {createVisibleSectors.map((sector) => {
-                    const sectorId = String(sector.id);
-                    return (
-                      <label key={`create-sector-${sector.id}`} className="check-item">
-                        <input
-                          type="checkbox"
-                          checked={createForm.sectorIds.includes(sectorId)}
-                          onChange={() =>
-                            setCreateForm((prev) => ({
-                              ...prev,
-                              sectorIds: toggleValue(prev.sectorIds, sectorId),
-                            }))
-                          }
-                        />
-                        <span>{sector.name}</span>
-                      </label>
-                    );
-                  })}
+                <div className="sector-groups">
+                  {createSectorGroups.map((group) => (
+                    <div key={`create-sector-group-${group.companyId}`} className="sector-group">
+                      <p className="sector-group-title">{group.companyName}</p>
+                      {group.sectors.length === 0 ? (
+                        <p className="workflow-hint">Nenhum setor cadastrado para esta empresa.</p>
+                      ) : (
+                        <>
+                          <div className="company-picker-row">
+                            <select
+                              value={createSectorToAddByCompany[group.companyId] || String(group.sectors[0].id)}
+                              onChange={(event) =>
+                                setCreateSectorToAddByCompany((prev) => ({
+                                  ...prev,
+                                  [group.companyId]: event.target.value,
+                                }))
+                              }
+                            >
+                              {group.sectors.map((sector) => (
+                                <option key={`create-sector-option-${sector.id}`} value={String(sector.id)}>
+                                  {sector.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="company-add-btn"
+                              onClick={() => addSectorToCreateForm(group.companyId)}
+                            >
+                              +
+                            </button>
+                          </div>
+                          <div className="selected-chip-list">
+                            {createForm.sectorIds.filter((sectorId) =>
+                              group.sectors.some((sector) => String(sector.id) === sectorId),
+                            ).length === 0 && <p className="workflow-hint">Nenhum setor adicionado.</p>}
+                            {createForm.sectorIds
+                              .filter((sectorId) =>
+                                group.sectors.some((sector) => String(sector.id) === sectorId),
+                              )
+                              .map((sectorId) => (
+                                <div key={`create-selected-sector-${group.companyId}-${sectorId}`} className="selected-chip">
+                                  <span>{sectorNameById.get(sectorId) || `ID ${sectorId}`}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCreateForm((prev) => ({
+                                        ...prev,
+                                        sectorIds: prev.sectorIds.filter((value) => value !== sectorId),
+                                      }))
+                                    }
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -467,7 +581,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 />
               </label>
 
-              <div className="span-2">
+              <div>
                 <p className="admin-field-label">Empresas</p>
                 <div className="company-picker-row">
                   <select value={editCompanyToAdd} onChange={(event) => setEditCompanyToAdd(event.target.value)}>
@@ -509,9 +623,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 </div>
               </div>
 
-              <div className="span-2">
+              <div>
                 <p className="admin-field-label">Papeis</p>
-                <div className="check-grid">
+                <div className="check-grid check-grid-vertical">
                   {options.roles.map((role) => (
                     <label key={`edit-role-${role}`} className="check-item">
                       <input
@@ -535,25 +649,67 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 {editForm.companyIds.length === 0 ? (
                   <p className="workflow-hint">Selecione ao menos uma empresa para liberar os setores.</p>
                 ) : (
-                  <div className="check-grid">
-                    {editVisibleSectors.map((sector) => {
-                      const sectorId = String(sector.id);
-                      return (
-                        <label key={`edit-sector-${sector.id}`} className="check-item">
-                          <input
-                            type="checkbox"
-                            checked={editForm.sectorIds.includes(sectorId)}
-                            onChange={() =>
-                              setEditForm((prev) => ({
-                                ...prev,
-                                sectorIds: toggleValue(prev.sectorIds, sectorId),
-                              }))
-                            }
-                          />
-                          <span>{sector.name}</span>
-                        </label>
-                      );
-                    })}
+                  <div className="sector-groups">
+                    {editSectorGroups.map((group) => (
+                      <div key={`edit-sector-group-${group.companyId}`} className="sector-group">
+                        <p className="sector-group-title">{group.companyName}</p>
+                        {group.sectors.length === 0 ? (
+                          <p className="workflow-hint">Nenhum setor cadastrado para esta empresa.</p>
+                        ) : (
+                          <>
+                            <div className="company-picker-row">
+                              <select
+                                value={editSectorToAddByCompany[group.companyId] || String(group.sectors[0].id)}
+                                onChange={(event) =>
+                                  setEditSectorToAddByCompany((prev) => ({
+                                    ...prev,
+                                    [group.companyId]: event.target.value,
+                                  }))
+                                }
+                              >
+                                {group.sectors.map((sector) => (
+                                  <option key={`edit-sector-option-${sector.id}`} value={String(sector.id)}>
+                                    {sector.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="company-add-btn"
+                                onClick={() => addSectorToEditForm(group.companyId)}
+                              >
+                                +
+                              </button>
+                            </div>
+                            <div className="selected-chip-list">
+                              {editForm.sectorIds.filter((sectorId) =>
+                                group.sectors.some((sector) => String(sector.id) === sectorId),
+                              ).length === 0 && <p className="workflow-hint">Nenhum setor adicionado.</p>}
+                              {editForm.sectorIds
+                                .filter((sectorId) =>
+                                  group.sectors.some((sector) => String(sector.id) === sectorId),
+                                )
+                                .map((sectorId) => (
+                                  <div key={`edit-selected-sector-${group.companyId}-${sectorId}`} className="selected-chip">
+                                    <span>{sectorNameById.get(sectorId) || `ID ${sectorId}`}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditForm((prev) => ({
+                                          ...prev,
+                                          sectorIds: prev.sectorIds.filter((value) => value !== sectorId),
+                                        }))
+                                      }
+                                    >
+                                      Remover
+                                    </button>
+                                  </div>
+                                ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

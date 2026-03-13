@@ -7,6 +7,7 @@ import {
 } from "../services/api";
 
 const INITIAL_FORM = {
+  sigla: "",
   name: "",
 };
 
@@ -50,6 +51,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       const response = await createAdminDocumentType({
+        sigla: form.sigla.trim(),
         name: form.name.trim(),
       });
       showFeedback("success", response.message || "Tipo documental criado.");
@@ -107,14 +109,35 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
         <form className="panel-float workflow-card" onSubmit={handleCreate}>
           <h3>Novo tipo documental</h3>
           <div className="form-grid">
+            <label>
+              Sigla
+              <input
+                required
+                minLength={2}
+                maxLength={40}
+                value={form.sigla}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    sigla: event.target.value.toUpperCase(),
+                  }))
+                }
+                placeholder="Ex: POP"
+              />
+            </label>
             <label className="span-2">
-              Nome do tipo
+              Nome do documento
               <input
                 required
                 minLength={2}
                 value={form.name}
-                onChange={(event) => setForm({ name: event.target.value })}
-                placeholder="Ex: POP"
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Ex: Procedimento Operacional Padrao"
               />
             </label>
           </div>
@@ -132,7 +155,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Sigla</th>
                 <th>Tipo documental</th>
                 <th>Acoes</th>
               </tr>
@@ -140,7 +163,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
             <tbody>
               {documentTypes.map((documentType) => (
                 <tr key={documentType.id}>
-                  <td>{documentType.id}</td>
+                  <td>{documentType.sigla}</td>
                   <td>{documentType.name}</td>
                   <td>
                     <button

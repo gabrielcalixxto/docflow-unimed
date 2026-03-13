@@ -94,9 +94,9 @@ class DocumentService:
         configured_document_types = self.repository.list_document_types()
         existing_document_types = self.repository.list_distinct_document_types()
         normalized_catalog = [
-            item.name.strip().upper()
+            item.sigla.strip().upper()
             for item in configured_document_types
-            if item.name and item.name.strip()
+            if getattr(item, "sigla", None) and item.sigla.strip()
         ]
         normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
 

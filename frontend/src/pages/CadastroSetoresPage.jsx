@@ -15,6 +15,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
   const [companies, setCompanies] = useState([]);
   const [sectors, setSectors] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [filterCompanyId, setFilterCompanyId] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -43,6 +44,12 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
               ? String(nextCompanies[0].id)
               : "",
       }));
+      setFilterCompanyId((prev) => {
+        if (prev === "ALL") {
+          return "ALL";
+        }
+        return nextCompanies.some((company) => String(company.id) === prev) ? prev : "ALL";
+      });
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
@@ -61,6 +68,17 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+
+  const filteredSectors = useMemo(
+    () =>
+      sectors.filter((sector) => {
+        if (filterCompanyId === "ALL") {
+          return true;
+        }
+        return String(sector.company_id) === filterCompanyId;
+      }),
+    [sectors, filterCompanyId],
+  );
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -149,7 +167,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
                 {companies.length === 0 && <option value="">Nenhuma empresa</option>}
                 {companies.map((company) => (
                   <option key={company.id} value={String(company.id)}>
-                    {company.id} - {company.name}
+                    {company.name}
                   </option>
                 ))}
               </select>
@@ -184,22 +202,37 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
         <div className="workflow-list-head">
           <h3>Setores cadastrados</h3>
         </div>
+        <div className="catalog-filter-row">
+          <label className="catalog-filter">
+            Filtrar por empresa
+            <select
+              value={filterCompanyId}
+              disabled={loading || companies.length === 0}
+              onChange={(event) => setFilterCompanyId(event.target.value)}
+            >
+              <option value="ALL">Todas as empresas</option>
+              {companies.map((company) => (
+                <option key={`filter-company-${company.id}`} value={String(company.id)}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Setor</th>
                 <th>Empresa</th>
+                <th>Setor</th>
                 <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
-              {sectors.map((sector) => (
+              {filteredSectors.map((sector) => (
                 <tr key={sector.id}>
-                  <td>{sector.id}</td>
+                  <td>{companyNameById.get(Number(sector.company_id)) || "-"}</td>
                   <td>{sector.name}</td>
-                  <td>{companyNameById.get(Number(sector.company_id)) || `ID ${sector.company_id}`}</td>
                   <td>
                     <button
                       type="button"
@@ -212,9 +245,9 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
                   </td>
                 </tr>
               ))}
-              {!loading && sectors.length === 0 && (
+              {!loading && filteredSectors.length === 0 && (
                 <tr>
-                  <td colSpan={4}>Nenhum setor cadastrado.</td>
+                  <td colSpan={3}>Nenhum setor cadastrado.</td>
                 </tr>
               )}
             </tbody>

@@ -37,7 +37,7 @@ def test_get_catalog_options_returns_data(admin_authorized_client, monkeypatch) 
     service.get_options.return_value = {
         "companies": [{"id": 1, "name": "DocFlow Unimed"}],
         "sectors": [{"id": 10, "name": "Qualidade", "company_id": 1}],
-        "document_types": [{"id": 100, "name": "POP"}],
+        "document_types": [{"id": 100, "sigla": "POP", "name": "Procedimento Operacional Padrao"}],
     }
     monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
 
@@ -45,7 +45,7 @@ def test_get_catalog_options_returns_data(admin_authorized_client, monkeypatch) 
 
     assert response.status_code == 200
     assert response.json()["companies"][0]["id"] == 1
-    assert response.json()["document_types"][0]["name"] == "POP"
+    assert response.json()["document_types"][0]["sigla"] == "POP"
 
 
 def test_create_company_returns_201(admin_authorized_client, monkeypatch) -> None:
@@ -94,7 +94,10 @@ def test_create_document_type_returns_409_on_conflict(admin_authorized_client, m
     service.create_document_type.side_effect = ConflictServiceError("Document type already exists.")
     monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
 
-    response = admin_authorized_client.post("/admin/catalog/document-types", json={"name": "POP"})
+    response = admin_authorized_client.post(
+        "/admin/catalog/document-types",
+        json={"sigla": "POP", "name": "Procedimento Operacional Padrao"},
+    )
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Document type already exists."}

@@ -91,12 +91,37 @@ def ensure_users_table_supports_multi_access() -> None:
         )
 
 
+def ensure_document_types_table_supports_sigla() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE document_types ADD COLUMN IF NOT EXISTS sigla VARCHAR(40)"))
+        connection.execute(
+            text(
+                "UPDATE document_types "
+                "SET sigla = UPPER(REGEXP_REPLACE(COALESCE(name, ''), '[^A-Za-z0-9]+', '', 'g')) "
+                "WHERE sigla IS NULL OR BTRIM(sigla) = ''"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE document_types "
+                "SET sigla = 'TIPO' || id::text "
+                "WHERE sigla IS NULL OR BTRIM(sigla) = ''"
+            )
+        )
+        connection.execute(text("ALTER TABLE document_types ALTER COLUMN sigla SET NOT NULL"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_document_types_sigla ON document_types (sigla)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         ensure_user_role_enum_values()
         ensure_users_table_supports_multi_access()
+        ensure_document_types_table_supports_sigla()
         seed_default_users()
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
