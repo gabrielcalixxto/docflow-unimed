@@ -20,5 +20,5 @@ def login(payload: LoginRequest, service: AuthService = Depends(get_auth_service
     except InvalidCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Invalid username or password.",
         ) from exc

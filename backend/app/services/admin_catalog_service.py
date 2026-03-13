@@ -54,6 +54,8 @@ class AdminCatalogService:
             raise ConflictServiceError("Cannot delete company with linked sectors.")
         if self.repository.count_company_documents(company_id) > 0:
             raise ConflictServiceError("Cannot delete company with linked documents.")
+        if self.repository.count_company_users(company_id) > 0:
+            raise ConflictServiceError("Cannot delete company with linked users.")
 
         try:
             self.repository.delete_company(company)
@@ -152,5 +154,5 @@ class AdminCatalogService:
 
     @staticmethod
     def _ensure_admin(current_user: AuthenticatedUser) -> None:
-        if current_user.role != UserRole.ADMIN:
+        if not current_user.has_role(UserRole.ADMIN):
             raise ForbiddenServiceError("Only admin users can manage catalog data.")

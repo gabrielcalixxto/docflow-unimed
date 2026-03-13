@@ -14,12 +14,19 @@ _DEFAULT_COMPANY_NAME = "DocFlow Unimed"
 _DEFAULT_SECTORS = ["Qualidade", "Nutricao", "Enfermagem"]
 _DEFAULT_DOCUMENT_TYPES = ["POP", "IT", "MANUAL", "POLITICA", "PROTOCOLO"]
 
-_DEFAULT_USERS: list[tuple[str, str, UserRole, str | None]] = [
-    ("Admin DocFlow", "admin@teste.com", UserRole.ADMIN, None),
-    ("Autor DocFlow", "autor@teste.com", UserRole.AUTOR, "Qualidade"),
-    ("Revisor DocFlow", "revisor@teste.com", UserRole.REVISOR, "Qualidade"),
-    ("Coordenacao Qualidade", "coord@teste.com", UserRole.COORDENADOR, "Qualidade"),
-    ("Leitor DocFlow", "leitor@teste.com", UserRole.LEITOR, "Qualidade"),
+_DEFAULT_USERS: list[tuple[str, str, str, list[UserRole], list[str], list[str]]] = [
+    ("Admin DocFlow", "admin.docflow", "admin@teste.com", [UserRole.ADMIN], [], []),
+    ("Autor DocFlow", "autor.docflow", "autor@teste.com", [UserRole.AUTOR], [_DEFAULT_COMPANY_NAME], ["Qualidade"]),
+    ("Revisor DocFlow", "revisor.docflow", "revisor@teste.com", [UserRole.REVISOR], [_DEFAULT_COMPANY_NAME], ["Qualidade"]),
+    (
+        "Coordenacao Qualidade",
+        "coordenacao.qualidade",
+        "coord@teste.com",
+        [UserRole.COORDENADOR],
+        [_DEFAULT_COMPANY_NAME],
+        ["Qualidade"],
+    ),
+    ("Leitor DocFlow", "leitor.docflow", "leitor@teste.com", [UserRole.LEITOR], [_DEFAULT_COMPANY_NAME], ["Qualidade"]),
 ]
 
 
@@ -61,18 +68,29 @@ def seed_default_users() -> None:
                 db.add(DocumentType(name=document_type_name))
                 created_or_updated = True
 
-        for name, email, role, sector_name in _DEFAULT_USERS:
-            sector_id = sectors_by_name[sector_name].id if sector_name is not None else None
+        companies_by_name = {_DEFAULT_COMPANY_NAME: company}
+
+        for name, username, email, roles, company_names, sector_names in _DEFAULT_USERS:
+            company_ids = [companies_by_name[company_name].id for company_name in company_names]
+            company_id = company_ids[0] if company_ids else None
+            sector_ids = [sectors_by_name[sector_name].id for sector_name in sector_names]
+            sector_id = sector_ids[0] if sector_ids else None
+            primary_role = roles[0]
             statement = select(User).where(User.email == email)
             user = db.scalar(statement)
             if user is None:
                 db.add(
                     User(
                         name=name,
+                        username=username,
                         email=email,
                         password_hash=password_hash,
-                        role=role,
+                        role=primary_role,
+                        roles=[role.value for role in roles],
+                        company_id=company_id,
+                        company_ids=company_ids,
                         sector_id=sector_id,
+                        sector_ids=sector_ids,
                     )
                 )
                 created_or_updated = True
@@ -82,11 +100,27 @@ def seed_default_users() -> None:
             if user.name != name:
                 user.name = name
                 user_updated = True
-            if user.role != role:
-                user.role = role
+            if user.username != username:
+                user.username = username
+                user_updated = True
+            if user.role != primary_role:
+                user.role = primary_role
+                user_updated = True
+            normalized_roles = [role.value for role in roles]
+            if (user.roles or []) != normalized_roles:
+                user.roles = normalized_roles
+                user_updated = True
+            if user.company_id != company_id:
+                user.company_id = company_id
+                user_updated = True
+            if (user.company_ids or []) != company_ids:
+                user.company_ids = company_ids
                 user_updated = True
             if user.sector_id != sector_id:
                 user.sector_id = sector_id
+                user_updated = True
+            if (user.sector_ids or []) != sector_ids:
+                user.sector_ids = sector_ids
                 user_updated = True
 
             if user_updated:

@@ -548,6 +548,101 @@ select:focus {
   color: var(--ink-1);
 }
 
+.admin-field-label {
+  margin-bottom: 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+
+.company-picker-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.company-add-btn {
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--brand-0), var(--brand-1));
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.selected-chip-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.selected-chip {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(211, 242, 230, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.selected-chip span {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-0);
+}
+
+.selected-chip button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink-1);
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.check-grid {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.check-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ink-0);
+  background: #fff;
+}
+
+.check-item input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--brand-0);
+}
+
+.check-item span {
+  font-size: 0.83rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -579,6 +674,24 @@ select:focus {
   font-weight: 800;
   color: #fff;
   background: linear-gradient(135deg, var(--brand-0), var(--brand-1));
+}
+
+.workflow-card .company-add-btn {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.workflow-card .selected-chip button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink-1);
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .workflow-card .compact-submit {

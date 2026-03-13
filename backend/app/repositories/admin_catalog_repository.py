@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
@@ -42,6 +42,15 @@ class AdminCatalogRepository:
         statement = select(func.count()).select_from(Document).where(Document.company_id == company_id)
         return int(self.db.scalar(statement) or 0)
 
+    def count_company_users(self, company_id: int) -> int:
+        statement = select(func.count()).select_from(User).where(
+            or_(
+                User.company_id == company_id,
+                User.company_ids.contains([company_id]),
+            )
+        )
+        return int(self.db.scalar(statement) or 0)
+
     def list_sectors(self) -> list[Sector]:
         statement = select(Sector).order_by(Sector.name.asc())
         return list(self.db.scalars(statement).all())
@@ -68,7 +77,12 @@ class AdminCatalogRepository:
         self.db.flush()
 
     def count_sector_users(self, sector_id: int) -> int:
-        statement = select(func.count()).select_from(User).where(User.sector_id == sector_id)
+        statement = select(func.count()).select_from(User).where(
+            or_(
+                User.sector_id == sector_id,
+                User.sector_ids.contains([sector_id]),
+            )
+        )
         return int(self.db.scalar(statement) or 0)
 
     def count_sector_documents(self, sector_id: int) -> int:

@@ -303,16 +303,16 @@ class DocumentService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if current_user.role not in {UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}:
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only author, reviewer, or coordinator can modify documents.")
 
     @staticmethod
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
-        if current_user.role != UserRole.REVISOR:
+        if not current_user.has_role(UserRole.REVISOR):
             raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
 
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
-        if current_user.role != UserRole.COORDENADOR:
+        if not current_user.has_role(UserRole.COORDENADOR):
             raise ForbiddenServiceError("Only coordinator role can approve documents.")
 
         document = self.repository.get_document_by_id(document_id)
@@ -323,8 +323,15 @@ class DocumentService:
         if user is None:
             raise ForbiddenServiceError("Authenticated coordinator was not found in database.")
 
+        user_sector_ids: list[int] = []
+        for sector_id in (getattr(user, "sector_ids", None) or []):
+            if isinstance(sector_id, int) and sector_id not in user_sector_ids:
+                user_sector_ids.append(sector_id)
+        if user.sector_id is not None and user.sector_id not in user_sector_ids:
+            user_sector_ids.append(user.sector_id)
+
         # Only enforce sector matching when both sides are explicitly configured.
-        if user.sector_id is not None and document.sector_id != user.sector_id:
+        if user_sector_ids and document.sector_id not in user_sector_ids:
             raise ForbiddenServiceError("Coordinator can only approve documents from the same sector.")
 
     def _get_editable_draft(

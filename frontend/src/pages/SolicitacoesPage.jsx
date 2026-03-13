@@ -33,22 +33,28 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     loadItems();
   }, []);
 
-  const reviewerRole = isReviewer(session?.role);
-  const coordinatorRole = isCoordinator(session?.role);
-  const canOpenSolicitacoes = canAccessCentralAprovacao(session?.role);
+  const sessionRoles = session?.roles || session?.role;
+  const reviewerRole = isReviewer(sessionRoles);
+  const coordinatorRole = isCoordinator(sessionRoles);
+  const canOpenSolicitacoes = canAccessCentralAprovacao(sessionRoles);
 
   const visibleItems = useMemo(() => {
     if (!canOpenSolicitacoes) {
       return [];
     }
     if (coordinatorRole) {
-      if (!session?.sectorId) {
+      const allowedSectorIds = Array.isArray(session?.sectorIds)
+        ? session.sectorIds
+        : session?.sectorId
+          ? [session.sectorId]
+          : [];
+      if (allowedSectorIds.length === 0) {
         return [];
       }
-      return items.filter((item) => Number(item.sector_id) === Number(session.sectorId));
+      return items.filter((item) => allowedSectorIds.includes(Number(item.sector_id)));
     }
     return items;
-  }, [items, canOpenSolicitacoes, coordinatorRole, session?.sectorId]);
+  }, [items, canOpenSolicitacoes, coordinatorRole, session?.sectorId, session?.sectorIds]);
 
   const runAction = async (documentId, action) => {
     if (action === "review") {

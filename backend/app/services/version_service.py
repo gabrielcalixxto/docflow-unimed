@@ -75,5 +75,5 @@ class VersionService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if current_user.role not in {UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}:
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only author, reviewer, or coordinator can create versions.")

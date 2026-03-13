@@ -15,7 +15,15 @@ from main import app
 
 @pytest.fixture
 def current_user() -> AuthenticatedUser:
-    return AuthenticatedUser(email="revisor@example.com", role=UserRole.REVISOR, user_id=99)
+    return AuthenticatedUser(
+        email="revisor@example.com",
+        username="revisor.docflow",
+        role=UserRole.REVISOR,
+        roles=[UserRole.REVISOR],
+        user_id=99,
+        sector_id=10,
+        sector_ids=[10],
+    )
 
 
 @pytest.fixture

@@ -178,9 +178,10 @@ const NAV_SECTIONS = [
 export default function AppShell({ children, activePage, onPageChange, session, onLogout }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const sessionRoles = session.roles || session.role;
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => !item.isVisible || item.isVisible(session.role)),
+    items: section.items.filter((item) => !item.isVisible || item.isVisible(sessionRoles)),
   })).filter((section) => section.items.length > 0);
 
   return (
@@ -200,7 +201,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         </div>
 
         <nav className="sidebar-nav">
-          {(!SEARCH_ITEM.isVisible || SEARCH_ITEM.isVisible(session.role)) && (
+          {(!SEARCH_ITEM.isVisible || SEARCH_ITEM.isVisible(sessionRoles)) && (
             <button
               key={SEARCH_ITEM.id}
               type="button"
@@ -216,7 +217,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             </button>
           )}
 
-          {(!APPROVAL_ITEM.isVisible || APPROVAL_ITEM.isVisible(session.role)) && (
+          {(!APPROVAL_ITEM.isVisible || APPROVAL_ITEM.isVisible(sessionRoles)) && (
             <button
               key={APPROVAL_ITEM.id}
               type="button"
@@ -295,14 +296,14 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <div>
               <p className="topbar-title">Plataforma de documentos</p>
               <p className="topbar-subtitle">
-                Perfil: <strong>{displayRole(session.role)}</strong>
+                Perfil: <strong>{displayRole(session.roles || session.role)}</strong>
               </p>
             </div>
           </div>
 
           <div className="topbar-right">
             <div className="user-chip">
-              <p>{session.email}</p>
+              <p>{session.username || session.email}</p>
             </div>
             <button type="button" className="logout-btn" onClick={onLogout}>
               Sair
