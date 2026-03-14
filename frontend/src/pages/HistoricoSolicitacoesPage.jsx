@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { deleteDraftDocument, updateDraftDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
 import { getCurrentLocalDateISO } from "../utils/date";
+import { formatStatusLabel } from "../utils/status";
 
 function formatDateTime(value) {
   if (!value) {
@@ -115,7 +116,8 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
   }, [items, session?.userId]);
 
   const canManageDraft = (item) =>
-    Number(item.created_by) === Number(session?.userId) && item.latestStatus === "RASCUNHO";
+    Number(item.created_by) === Number(session?.userId) &&
+    ["RASCUNHO", "REVISAR_RASCUNHO"].includes(item.latestStatus);
 
   const handleOpenEdit = (item) => {
     setEditForm({
@@ -302,7 +304,7 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
                   <td>{item.requestType}</td>
                   <td>
                     <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
-                      {item.latestStatus}
+                      {formatStatusLabel(item.latestStatus)}
                     </span>
                   </td>
                   <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>

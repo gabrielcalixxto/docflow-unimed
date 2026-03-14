@@ -31,7 +31,11 @@ def test_create_version_persists_draft_and_emits_event(version_payload, current_
     repository = Mock()
     repository.db = Mock()
     created_version = SimpleNamespace(id=44)
-    repository.get_version_by_number.return_value = None
+    repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=11,
+        version_number=1,
+        status=DocumentStatus.VIGENTE,
+    )
     repository.create_version.return_value = created_version
     document_repository = Mock()
     document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
@@ -46,11 +50,15 @@ def test_create_version_persists_draft_and_emits_event(version_payload, current_
 
     assert isinstance(response, MessageResponse)
     assert "created" in response.message.lower()
-    repository.create_version.assert_called_once_with(
-        document_id=7,
-        payload=version_payload,
-        created_by=current_user.user_id,
-    )
+    repository.create_version.assert_called_once()
+    create_args = repository.create_version.call_args.kwargs
+    assert create_args["document_id"] == 7
+    assert create_args["created_by"] == current_user.user_id
+    created_payload = create_args["payload"]
+    assert created_payload.version_number == 2
+    assert created_payload.status == DocumentStatus.RASCUNHO
+    assert created_payload.file_path == version_payload.file_path
+    assert created_payload.expiration_date == version_payload.expiration_date
     repository.db.commit.assert_called_once_with()
     audit_service.create_placeholder_event.assert_called_once_with(
         event_type=DocumentEventType.VERSION_CREATED,
@@ -83,10 +91,14 @@ def test_create_version_rejects_non_draft_status(version_payload, current_user) 
         service.create_version(7, payload, current_user)
 
 
-def test_create_version_raises_conflict_when_version_number_exists(version_payload, current_user) -> None:
+def test_create_version_raises_conflict_when_latest_version_is_in_progress(version_payload, current_user) -> None:
     repository = Mock()
     repository.db = Mock()
-    repository.get_version_by_number.return_value = SimpleNamespace(id=1)
+    repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=12,
+        version_number=2,
+        status=DocumentStatus.PENDENTE_COORDENACAO,
+    )
     document_repository = Mock()
     document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
     service = build_service(repository=repository, document_repository=document_repository)

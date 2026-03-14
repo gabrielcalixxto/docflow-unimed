@@ -8,14 +8,17 @@ Plataforma web para controle documental com versionamento, fluxo de aprovacao e 
 - Cadastro de documento cria automaticamente:
   - codigo `TIPO-SET-ID` (ex.: `POP-ENF-8`)
   - versao `1` em `RASCUNHO`.
-- Atualizacao de documento por nova versao.
+- Atualizacao de documento por nova versao com numero automatico (`ultima + 1`).
 - Fluxo operacional:
-  - `RASCUNHO -> EM_REVISAO -> VIGENTE`
-  - reprovacao: `EM_REVISAO -> RASCUNHO`
+  - revisor aprova: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+  - revisor desaprova: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+  - coordenador aprova: `PENDENTE_COORDENACAO -> VIGENTE`
+  - coordenador reprova: `PENDENTE_COORDENACAO -> REPROVADO`
   - quando nova versao vira vigente, a vigente anterior vai para `OBSOLETO`.
+- `EM_REVISAO` permanece apenas por compatibilidade com estados legados.
 - Historico de solicitacoes do solicitante (criacao + atualizacao).
 - Edicao e exclusao de rascunho apenas pelo solicitante da criacao.
-- Painel de documentos com filtros.
+- Painel de documentos com filtros por status considerando todas as versoes.
 - Gestao de usuarios com multiplo papel, empresa e setor.
 - Cadastros administrativos:
   - empresas
@@ -58,11 +61,7 @@ Regras ativas em `frontend/src/utils/roles.js`:
 - `COORDENADOR`
   - acesso: novo documento, atualizar documento, historico, central de aprovacao
 - `ADMIN`
-  - acesso: painel de usuarios e catalogos administrativos
-
-Observacao:
-
-- no estado atual, `ADMIN` nao acessa a tela de busca.
+  - acesso: busca, cadastro de usuarios e catalogos administrativos
 
 ## Menu lateral
 
@@ -76,7 +75,7 @@ Observacao:
   - `Painel de Documentos`
   - `Painel de RNC`
 - Grupo `Gestao de Cadastros`
-  - `Painel de Usuarios`
+  - `Cadastro de Usuarios`
   - `Cadastro de Setores`
   - `Cadastro de Empresas`
   - `Cadastro Tipo de Documento`
@@ -121,10 +120,13 @@ Admin catalog:
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
 - `DELETE /admin/catalog/companies/{company_id}`
+- `PUT /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
 - `DELETE /admin/catalog/sectors/{sector_id}`
+- `PUT /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
 - `DELETE /admin/catalog/document-types/{document_type_id}`
+- `PUT /admin/catalog/document-types/{document_type_id}`
 
 ## Cadastros e normalizacao
 

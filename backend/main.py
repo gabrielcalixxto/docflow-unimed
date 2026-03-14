@@ -24,6 +24,16 @@ def ensure_user_role_enum_values() -> None:
         connection.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'REVISOR'"))
 
 
+def ensure_document_status_enum_values() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REVISAR_RASCUNHO'"))
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_COORDENACAO'"))
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REPROVADO'"))
+
+
 def ensure_users_table_supports_multi_access() -> None:
     if engine.dialect.name != "postgresql":
         return
@@ -164,6 +174,7 @@ async def lifespan(_: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         ensure_user_role_enum_values()
+        ensure_document_status_enum_values()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()

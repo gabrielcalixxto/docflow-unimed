@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
+import { formatStatusLabel } from "../utils/status";
+
+const STATUS_ORDER = [
+  "VIGENTE",
+  "PENDENTE_COORDENACAO",
+  "RASCUNHO",
+  "REVISAR_RASCUNHO",
+  "REPROVADO",
+  "OBSOLETO",
+  "EM_REVISAO",
+  "SEM_VERSAO",
+];
 
 export default function PainelDocumentos({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
@@ -37,33 +49,57 @@ export default function PainelDocumentos({ onUnauthorized }) {
     loadItems();
   }, []);
 
+  const versionRows = useMemo(
+    () =>
+      items.flatMap((item) => {
+        const versions = Array.isArray(item.versions) ? item.versions : [];
+        if (versions.length === 0) {
+          return [
+            {
+              ...item,
+              rowKey: `${item.id}-sem-versao`,
+              latestStatus: "SEM_VERSAO",
+              latestVersion: null,
+            },
+          ];
+        }
+        return versions.map((version) => ({
+          ...item,
+          rowKey: `${item.id}-${version.id}`,
+          latestStatus: version.status || "SEM_VERSAO",
+          latestVersion: version,
+        }));
+      }),
+    [items],
+  );
+
   const companies = useMemo(
     () =>
-      [...new Set(items.map((item) => item.companyName).filter(Boolean))].sort((a, b) =>
+      [...new Set(versionRows.map((item) => item.companyName).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [items],
+    [versionRows],
   );
 
   const sectors = useMemo(
     () =>
-      [...new Set(items.map((item) => item.sectorName).filter(Boolean))].sort((a, b) =>
+      [...new Set(versionRows.map((item) => item.sectorName).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [items],
+    [versionRows],
   );
 
-  const statuses = useMemo(
-    () =>
-      [...new Set(items.map((item) => item.latestStatus).filter(Boolean))].sort((a, b) =>
-        String(a).localeCompare(String(b)),
-      ),
-    [items],
-  );
+  const statuses = useMemo(() => {
+    const availableStatuses = new Set(versionRows.map((item) => item.latestStatus).filter(Boolean));
+    const extraStatuses = [...availableStatuses]
+      .filter((status) => !STATUS_ORDER.includes(status))
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    return [...STATUS_ORDER, ...extraStatuses];
+  }, [versionRows]);
 
   const filteredItems = useMemo(() => {
     const typeFilter = filters.documentType.trim().toLowerCase();
-    return items.filter((item) => {
+    return versionRows.filter((item) => {
       if (filters.company !== "ALL" && item.companyName !== filters.company) {
         return false;
       }
@@ -81,7 +117,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
       }
       return true;
     });
-  }, [items, filters]);
+  }, [versionRows, filters]);
 
   const stats = useMemo(() => summarizeWorkflow(filteredItems), [filteredItems]);
 
@@ -91,7 +127,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
         <div>
           <p className="kicker">Visao geral</p>
           <h2>Painel de documentos</h2>
-          <p>Resumo do acervo com status atual da versao mais recente de cada documento.</p>
+          <p>Resumo do acervo considerando todas as versoes de cada documento.</p>
         </div>
         <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar"}
@@ -159,7 +195,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
             <option value="ALL">Todos</option>
             {statuses.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {formatStatusLabel(status)}
               </option>
             ))}
           </select>
@@ -218,18 +254,30 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <strong>{stats.rascunho}</strong>
         </article>
         <article className="panel-float workflow-stat">
-          <p>Em revisao</p>
-          <strong>{stats.emRevisao}</strong>
+          <p>Revisar rascunho</p>
+          <strong>{stats.revisarRascunho}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Pendente coordenacao</p>
+          <strong>{stats.pendenteCoordenacao}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Reprovado</p>
+          <strong>{stats.reprovado}</strong>
         </article>
         <article className="panel-float workflow-stat">
           <p>Vigente</p>
           <strong>{stats.vigente}</strong>
         </article>
+        <article className="panel-float workflow-stat">
+          <p>Obsoleto</p>
+          <strong>{stats.obsoleto}</strong>
+        </article>
       </section>
 
       <section className="panel-float workflow-list">
         <div className="workflow-list-head">
-          <h3>Resumo geral dos documentos</h3>
+          <h3>Resumo geral dos documentos e versoes</h3>
         </div>
         <div className="table-wrap">
           <table>
@@ -237,17 +285,17 @@ export default function PainelDocumentos({ onUnauthorized }) {
               <tr>
                 <th>Codigo</th>
                 <th>Titulo</th>
-                <th>Company</th>
+                <th>Empresas</th>
                 <th>Setor</th>
                 <th>Tipo</th>
                 <th>Escopo</th>
-                <th>Status atual</th>
-                <th>Versao atual</th>
+                <th>Status da versao</th>
+                <th>Versao</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.rowKey}>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
                   <td>{item.companyName}</td>
@@ -256,7 +304,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
                   <td>{item.scope}</td>
                   <td>
                     <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
-                      {item.latestStatus}
+                      {formatStatusLabel(item.latestStatus)}
                     </span>
                   </td>
                   <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>

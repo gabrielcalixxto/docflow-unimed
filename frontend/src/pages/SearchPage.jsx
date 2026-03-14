@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { getDocument, getDocumentFormOptions, getDocumentVersions, searchDocuments } from "../services/api";
+import { formatStatusLabel } from "../utils/status";
 
 function extractFileName(path) {
   if (!path) {
@@ -395,7 +396,9 @@ export default function SearchPage({ onUnauthorized }) {
                 {selectedVersions.map((version) => (
                   <div key={version.id} className="version-item">
                     <span>v{version.version_number}</span>
-                    <span>{version.status}</span>
+                    <span className={`status-pill status-${String(version.status || "").toLowerCase()}`}>
+                      {formatStatusLabel(version.status)}
+                    </span>
                   </div>
                 ))}
                 {selectedVersions.length === 0 && <p>Sem versoes registradas.</p>}

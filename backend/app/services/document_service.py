@@ -201,11 +201,13 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to submit.")
 
-        if latest_version.status != DocumentStatus.RASCUNHO:
-            raise ConflictServiceError("Only draft versions can be submitted for review.")
+        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+            raise ConflictServiceError(
+                "Only draft versions (RASCUNHO or REVISAR_RASCUNHO) can be submitted for coordinator approval."
+            )
 
         try:
-            latest_version.status = DocumentStatus.EM_REVISAO
+            latest_version.status = DocumentStatus.PENDENTE_COORDENACAO
             self.version_repository.save(latest_version)
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.SUBMITTED_FOR_REVIEW,
@@ -218,7 +220,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not submit document for review.") from exc
 
-        return MessageResponse(message="Document submitted for review.")
+        return MessageResponse(message="Document moved to coordinator approval queue.")
 
     def approve_document(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
@@ -228,8 +230,10 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to approve.")
 
-        if latest_version.status != DocumentStatus.EM_REVISAO:
-            raise ConflictServiceError("Only versions in review can be approved.")
+        if latest_version.status not in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
+            raise ConflictServiceError(
+                "Only versions pending coordinator approval can be approved."
+            )
 
         active_version = self.version_repository.get_active_version_for_document(document_id)
 
@@ -276,17 +280,22 @@ class DocumentService:
         reason: str | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        self._ensure_can_approve(current_user, document_id=document_id)
 
         latest_version = self.version_repository.get_latest_version_for_document(document_id)
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to reject.")
 
-        if latest_version.status != DocumentStatus.EM_REVISAO:
-            raise ConflictServiceError("Only versions in review can be rejected.")
-
         try:
-            latest_version.status = DocumentStatus.RASCUNHO
+            if latest_version.status in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+                if not current_user.has_role(UserRole.REVISOR):
+                    raise ForbiddenServiceError("Only reviewer role can reject drafts.")
+                latest_version.status = DocumentStatus.REVISAR_RASCUNHO
+            elif latest_version.status in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
+                self._ensure_can_approve(current_user, document_id=document_id)
+                latest_version.status = DocumentStatus.REPROVADO
+            else:
+                raise ConflictServiceError("Only draft or pending coordinator versions can be rejected.")
+
             latest_version.approved_by = None
             latest_version.approved_at = None
             self.version_repository.save(latest_version)
@@ -304,10 +313,10 @@ class DocumentService:
 
         if reason and reason.strip():
             return MessageResponse(
-                message=f"Document review rejected and returned to draft. Reason: {reason.strip()}"
+                message=f"Document rejected successfully. Reason: {reason.strip()}"
             )
 
-        return MessageResponse(message="Document review rejected and returned to draft.")
+        return MessageResponse(message="Document rejected successfully.")
 
     @staticmethod
     def _ensure_authenticated_user_id(current_user: AuthenticatedUser) -> None:
@@ -363,7 +372,7 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions.")
 
-        if latest_version.status != DocumentStatus.RASCUNHO:
+        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
             raise ConflictServiceError("Only draft documents can be edited or deleted.")
 
         return document, latest_version

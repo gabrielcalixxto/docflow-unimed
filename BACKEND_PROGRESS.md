@@ -14,7 +14,9 @@
   - `name` (nome normalizado).
 - Inicializacao em `main.py` aplica ajustes de schema em runtime para:
   - `users` multi-acesso
-  - `document_types.sigla`.
+  - `document_types.sigla`
+  - `sectors.sigla`
+  - valores novos do enum `document_status`.
 
 ## Routers ativos
 
@@ -65,10 +67,13 @@ Admin catalog:
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
 - `DELETE /admin/catalog/companies/{company_id}`
+- `PUT /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
 - `DELETE /admin/catalog/sectors/{sector_id}`
+- `PUT /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
 - `DELETE /admin/catalog/document-types/{document_type_id}`
+- `PUT /admin/catalog/document-types/{document_type_id}`
 
 ## Regras de negocio implementadas
 
@@ -76,19 +81,23 @@ Documento:
 
 - cria codigo automatico `TIPO-SET-ID`
 - cria versao inicial `1` em `RASCUNHO`.
+- nova versao cria numero automaticamente (`ultima + 1`).
+- bloqueia nova criacao quando ja existe versao em andamento.
 
 Fluxo:
 
-- envio: `RASCUNHO -> EM_REVISAO` (somente perfil `REVISOR`)
-- aprovacao: `EM_REVISAO -> VIGENTE` (somente `COORDENADOR`)
-- reprovacao: `EM_REVISAO -> RASCUNHO` (somente `COORDENADOR`)
+- envio/aprovacao de revisor: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+- desaprovacao de revisor: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+- aprovacao coordenacao: `PENDENTE_COORDENACAO -> VIGENTE`
+- reprovacao coordenacao: `PENDENTE_COORDENACAO -> REPROVADO`
 - ao aprovar nova versao, vigente anterior vira `OBSOLETO`.
+- `EM_REVISAO` e aceito apenas para compatibilidade legada.
 
 Controle de dono do rascunho:
 
 - editar/excluir apenas se:
   - usuario atual e `created_by`
-  - ultima versao esta em `RASCUNHO`.
+  - ultima versao esta em `RASCUNHO` ou `REVISAR_RASCUNHO`.
 
 Restricao de aprovacao por setor:
 
@@ -138,7 +147,7 @@ python -m pytest -q backend/tests
 
 Resultado validado mais recente:
 
-- `93 passed`
+- `110 passed`
 - 1 warning de cache do pytest, sem impacto funcional.
 
 ## Limites conhecidos

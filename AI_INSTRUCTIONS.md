@@ -35,24 +35,32 @@ Nao tratar como CRUD generico.
 Status validos:
 
 - `RASCUNHO`
+- `REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO`
 - `EM_REVISAO`
+- `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
 Transicoes:
 
-- `RASCUNHO -> EM_REVISAO`
-- `EM_REVISAO -> RASCUNHO`
-- `EM_REVISAO -> VIGENTE`
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO -> VIGENTE`
+- `PENDENTE_COORDENACAO -> REPROVADO`
 - `VIGENTE -> OBSOLETO`
+
+Compatibilidade:
+
+- `EM_REVISAO` pode aparecer em dados legados.
 
 ### 3.3 Regras por perfil (backend)
 
-- `REVISOR`: pode enviar rascunho para revisao.
-- `COORDENADOR`: pode aprovar/reprovar documentos em revisao.
+- `REVISOR`: pode aprovar/desaprovar rascunho e enviar para coordenacao.
+- `COORDENADOR`: pode aprovar/reprovar documentos pendentes de coordenacao.
 - coordenador com setor definido aprova apenas documentos do mesmo setor.
 - `AUTOR` nao envia para revisao na regra atual do backend.
-- edicao/exclusao de rascunho: apenas solicitante da criacao.
+- edicao/exclusao de rascunho: apenas solicitante da criacao (`RASCUNHO` ou `REVISAR_RASCUNHO`).
 
 ### 3.4 Regras de cadastro
 

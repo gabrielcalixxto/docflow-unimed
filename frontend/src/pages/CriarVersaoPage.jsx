@@ -5,7 +5,6 @@ import { getCurrentLocalDateISO } from "../utils/date";
 
 const INITIAL_VERSION_FORM = {
   documentId: "",
-  versionNumber: "2",
   filePath: "",
   expirationDate: "",
 };
@@ -28,7 +27,7 @@ export default function CriarVersaoPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       const response = await createVersion(Number(versionForm.documentId), {
-        version_number: Number(versionForm.versionNumber),
+        version_number: 1,
         status: "RASCUNHO",
         file_path: versionForm.filePath.trim(),
         expiration_date: versionForm.expirationDate,
@@ -65,7 +64,8 @@ export default function CriarVersaoPage({ onUnauthorized }) {
         <form className="panel-float workflow-card" onSubmit={handleCreateVersion}>
           <h3>Atualizar Documento</h3>
           <p className="workflow-hint">
-            Informe o documento, numero da versao e os dados do arquivo em rascunho.
+            Informe o documento e os dados do arquivo em rascunho. O numero da versao e gerado
+            automaticamente.
           </p>
           <div className="form-grid">
             <label>
@@ -77,18 +77,6 @@ export default function CriarVersaoPage({ onUnauthorized }) {
                 value={versionForm.documentId}
                 onChange={(event) =>
                   setVersionForm((prev) => ({ ...prev, documentId: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Numero da versao
-              <input
-                required
-                type="number"
-                min="1"
-                value={versionForm.versionNumber}
-                onChange={(event) =>
-                  setVersionForm((prev) => ({ ...prev, versionNumber: event.target.value }))
                 }
               />
             </label>

@@ -965,13 +965,28 @@ th {
 }
 
 .status-rascunho {
-  background: rgba(255, 183, 3, 0.18);
-  color: #8c5a00;
+  background: rgba(255, 193, 7, 0.24);
+  color: #7a4c00;
 }
 
 .status-em_revisao {
   background: rgba(51, 94, 234, 0.16);
   color: #2441a0;
+}
+
+.status-revisar_rascunho {
+  background: rgba(210, 74, 22, 0.26);
+  color: #7f1905;
+}
+
+.status-pendente_coordenacao {
+  background: rgba(51, 94, 234, 0.16);
+  color: #2441a0;
+}
+
+.status-reprovado {
+  background: rgba(205, 31, 31, 0.16);
+  color: #8d1d1d;
 }
 
 .status-vigente {

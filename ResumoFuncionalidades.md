@@ -14,20 +14,23 @@ Resumo direto do que esta implementado hoje no projeto.
   - gera codigo `TIPO-SET-ID`
   - cria versao `1` em `RASCUNHO`.
 - Atualizar documento:
-  - nova versao via `POST /documents/{document_id}/versions`.
+  - nova versao via `POST /documents/{document_id}/versions`
+  - numero da versao gerado automaticamente (`ultima + 1`).
 - Fluxo:
-  - `RASCUNHO -> EM_REVISAO` (submit)
-  - `EM_REVISAO -> VIGENTE` (aprovar)
-  - `EM_REVISAO -> RASCUNHO` (reprovar)
+  - `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor aprova)
+  - `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor desaprova)
+  - `PENDENTE_COORDENACAO -> VIGENTE` (coordenador aprova)
+  - `PENDENTE_COORDENACAO -> REPROVADO` (coordenador reprova)
   - vigente anterior vai para `OBSOLETO` quando nova vigente e aprovada.
+  - `EM_REVISAO` permanece como compatibilidade de dados antigos.
 
 ## Regras por papel (backend)
 
-- `REVISOR`: envia para revisao.
-- `COORDENADOR`: aprova/reprova.
+- `REVISOR`: aprova/desaprova rascunho e envia para coordenacao.
+- `COORDENADOR`: aprova/reprova etapa final.
 - `AUTOR`: cria e atualiza documento, mas nao envia para revisao na regra atual.
 - `LEITOR`: consulta.
-- `ADMIN`: gestao administrativa.
+- `ADMIN`: gestao administrativa e busca.
 
 ## Frontend
 
@@ -40,7 +43,7 @@ Telas ativas:
 - Historico de Solicitacoes
 - Painel de Documentos
 - Painel de RNC (placeholder)
-- Painel de Usuarios
+- Cadastro de Usuarios
 - Cadastro de Setores
 - Cadastro de Empresas
 - Cadastro Tipo de Documento

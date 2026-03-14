@@ -73,23 +73,33 @@ Pontos estruturais:
 Status:
 
 - `RASCUNHO`
+- `REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO`
 - `EM_REVISAO`
+- `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
 Transicoes:
 
-- `RASCUNHO -> EM_REVISAO` (submit)
-- `EM_REVISAO -> VIGENTE` (aprovacao)
-- `EM_REVISAO -> RASCUNHO` (reprovacao)
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor aprova e envia)
+- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor desaprova)
+- `PENDENTE_COORDENACAO -> VIGENTE` (aprovacao coordenacao)
+- `PENDENTE_COORDENACAO -> REPROVADO` (reprovacao coordenacao)
 - `VIGENTE -> OBSOLETO` (promocao de nova vigente)
+
+Observacao:
+
+- `EM_REVISAO` e aceito apenas para compatibilidade com dados legados.
 
 ## 5. Regras de dominio
 
 - codigo do documento: `TIPO-SET-ID`.
 - criacao de documento gera versao `1` em `RASCUNHO`.
-- submit para revisao: apenas `REVISOR`.
-- aprovacao/reprovacao: apenas `COORDENADOR`.
+- criacao de nova versao gera numero automaticamente (`ultima + 1`).
+- nova versao e bloqueada quando ja existe uma versao em andamento (`RASCUNHO`, `REVISAR_RASCUNHO`, `PENDENTE_COORDENACAO` ou `EM_REVISAO`).
+- submit para coordenacao: apenas `REVISOR`.
+- aprovacao/reprovacao final: apenas `COORDENADOR`.
 - coordenador com setor definido aprova apenas mesmo setor.
 - edicao/exclusao de rascunho: apenas solicitante da criacao.
 
@@ -164,10 +174,13 @@ Admin catalog:
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
 - `DELETE /admin/catalog/companies/{company_id}`
+- `PUT /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
 - `DELETE /admin/catalog/sectors/{sector_id}`
+- `PUT /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
 - `DELETE /admin/catalog/document-types/{document_type_id}`
+- `PUT /admin/catalog/document-types/{document_type_id}`
 
 ## 8. Limites conhecidos
 
