@@ -575,14 +575,27 @@ select:focus {
 }
 
 .preview-panel {
-  overflow: hidden;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-height: 0;
+}
+
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .file-frame {
   width: 100%;
-  min-height: 100%;
-  height: calc(100vh - 170px);
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
   border: none;
+  display: block;
 }
 
 .no-preview {
@@ -623,6 +636,10 @@ select:focus {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.dual-workflow-grid {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
 }
 
 .admin-users-grid {
@@ -905,6 +922,8 @@ select:focus {
   display: flex;
   justify-content: flex-start;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
@@ -939,6 +958,76 @@ th {
   padding: 6px 8px;
   margin-right: 6px;
   background: #fff;
+}
+
+.row-selected td {
+  background: rgba(211, 242, 230, 0.38);
+}
+
+.selected-document-box {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink-0);
+  display: flex;
+  align-items: center;
+}
+
+.file-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-upload-hidden {
+  display: none;
+}
+
+.file-drop-zone {
+  width: 100%;
+  min-height: 44px;
+  border: 1px dashed rgba(15, 143, 102, 0.4);
+  border-radius: 12px;
+  background: rgba(211, 242, 230, 0.2);
+  color: var(--ink-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.file-drop-zone.active {
+  border-color: rgba(15, 143, 102, 0.7);
+  background: rgba(211, 242, 230, 0.35);
+}
+
+.selected-file-box {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.selected-file-box span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-remove-btn {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink-1);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
 }
 
 .request-actions {
@@ -1193,6 +1282,10 @@ th {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dual-workflow-grid {
     grid-template-columns: 1fr;
   }
 

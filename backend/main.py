@@ -1,16 +1,24 @@
 from contextlib import asynccontextmanager
 import logging
+import mimetypes
+from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import Base, SessionLocal, engine
 from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
-from app.models import company, document, document_event, document_type, document_version, sector, user  # noqa: F401
-from app.routers import admin_catalog, admin_users, auth, documents, search, versions
+from app.models.document_version import DocumentVersion
+from app.models.stored_file import StoredFile
+from app.models import company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
+from app.routers import admin_catalog, admin_users, auth, documents, files, search, versions
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -169,6 +177,70 @@ def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
         )
 
 
+def migrate_legacy_uploaded_files_to_database(legacy_root: Path) -> None:
+    if not legacy_root.exists():
+        return
+
+    with SessionLocal() as db:
+        session: Session = db
+        try:
+            versions = list(session.scalars(select(DocumentVersion)).all())
+            changed = False
+
+            for version in versions:
+                current_path = (version.file_path or "").strip()
+                if not current_path:
+                    continue
+                if current_path.startswith("/file-storage/"):
+                    continue
+
+                if current_path.startswith("/files/"):
+                    candidate_name = current_path.removeprefix("/files/")
+                elif "/" not in current_path and "\\" not in current_path:
+                    candidate_name = current_path
+                else:
+                    continue
+
+                if not candidate_name:
+                    continue
+
+                existing = session.scalar(select(StoredFile).where(StoredFile.version_id == version.id))
+                if existing is not None:
+                    version.file_path = f"/file-storage/{existing.storage_key}"
+                    changed = True
+                    continue
+
+                source_path = legacy_root / candidate_name
+                if not source_path.exists() or not source_path.is_file():
+                    continue
+
+                content = source_path.read_bytes()
+                if not content:
+                    continue
+
+                storage_key = uuid4().hex
+                guessed_type, _ = mimetypes.guess_type(source_path.name)
+                stored = StoredFile(
+                    storage_key=storage_key,
+                    original_name=source_path.name,
+                    content_type=guessed_type,
+                    size_bytes=len(content),
+                    content=content,
+                    uploaded_by=version.created_by,
+                    document_id=version.document_id,
+                    version_id=version.id,
+                )
+                session.add(stored)
+                version.file_path = f"/file-storage/{storage_key}"
+                changed = True
+
+            if changed:
+                session.commit()
+        except SQLAlchemyError as exc:
+            session.rollback()
+            logger.warning("Legacy file migration skipped: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
@@ -178,12 +250,17 @@ async def lifespan(_: FastAPI):
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()
+        migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+LEGACY_UPLOAD_ROOT = Path(__file__).resolve().parent / "uploads"
+LEGACY_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/files", StaticFiles(directory=LEGACY_UPLOAD_ROOT), name="legacy-uploaded-files")
 
 app.add_middleware(
     CORSMiddleware,
@@ -210,5 +287,6 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(documents.router)
 app.include_router(versions.router)
+app.include_router(files.router)
 app.include_router(admin_users.router)
 app.include_router(admin_catalog.router)

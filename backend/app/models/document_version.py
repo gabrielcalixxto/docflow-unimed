@@ -38,3 +38,4 @@ class DocumentVersion(Base):
     creator = relationship("User", back_populates="created_versions", foreign_keys=[created_by])
     approver = relationship("User", back_populates="approved_versions", foreign_keys=[approved_by])
     events = relationship("DocumentEvent", back_populates="version", cascade="all, delete-orphan")
+    stored_file = relationship("StoredFile", back_populates="version", uselist=False)

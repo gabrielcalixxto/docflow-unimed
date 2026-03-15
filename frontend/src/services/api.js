@@ -120,6 +120,16 @@ export async function createVersion(documentId, payload) {
   });
 }
 
+export async function uploadDocumentFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request({
+    method: "post",
+    url: "/file-storage/upload",
+    data: formData,
+  });
+}
+
 export async function updateDraftDocument(documentId, payload) {
   return request({
     method: "patch",

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminUser,
   deleteAdminUser,
@@ -37,6 +38,26 @@ function asStringIdList(values) {
     return [];
   }
   return values.map((value) => String(value));
+}
+
+function getUserRoles(user) {
+  return Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [];
+}
+
+function getUserCompanyIds(user) {
+  return Array.isArray(user.company_ids)
+    ? asStringIdList(user.company_ids)
+    : user.company_id != null
+      ? [String(user.company_id)]
+      : [];
+}
+
+function getUserSectorIds(user) {
+  return Array.isArray(user.sector_ids)
+    ? asStringIdList(user.sector_ids)
+    : user.sector_id != null
+      ? [String(user.sector_id)]
+      : [];
 }
 
 function toggleRoleSelection(currentRoles, role) {
@@ -93,6 +114,7 @@ function normalizeSectorPickerByCompany(currentMap, sectorGroups) {
 }
 
 export default function AdminUsuariosPage({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({ roles: [], companies: [], sectors: [] });
   const [createForm, setCreateForm] = useState(INITIAL_CREATE_FORM);
@@ -104,6 +126,12 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [tableFilters, setTableFilters] = useState({
+    term: "",
+    role: "ALL",
+    company: "ALL",
+    sector: "ALL",
+  });
 
   const showFeedback = (type, message) => setFeedback({ type, message });
 
@@ -361,6 +389,55 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       setSubmitting(false);
     }
   };
+
+  const sectorFilterOptions = useMemo(
+    () =>
+      [...(options.sectors || [])].sort((left, right) =>
+        String(left.name || "").localeCompare(String(right.name || "")),
+      ),
+    [options.sectors],
+  );
+
+  const filteredUsers = useMemo(() => {
+    const normalizedTerm = tableFilters.term.trim().toLowerCase();
+    return users.filter((user) => {
+      const roles = getUserRoles(user);
+      const companyIds = getUserCompanyIds(user);
+      const sectorIds = getUserSectorIds(user);
+      const companiesLabel = companyIds
+        .map((companyId) => companyNameById.get(companyId) || "Empresa nao encontrada")
+        .join(", ");
+      const sectorsLabel = sectorIds
+        .map((sectorId) => sectorNameById.get(sectorId) || "Setor nao encontrado")
+        .join(", ");
+
+      if (tableFilters.role !== "ALL" && !roles.includes(tableFilters.role)) {
+        return false;
+      }
+      if (tableFilters.company !== "ALL" && !companyIds.includes(tableFilters.company)) {
+        return false;
+      }
+      if (tableFilters.sector !== "ALL" && !sectorIds.includes(tableFilters.sector)) {
+        return false;
+      }
+      if (!normalizedTerm) {
+        return true;
+      }
+
+      const searchable = [
+        user.username || "",
+        user.name || "",
+        user.email || "",
+        displayRole(roles),
+        companiesLabel,
+        sectorsLabel,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
+    });
+  }, [users, tableFilters, companyNameById, sectorNameById]);
 
   return (
     <div className="page-animation">
@@ -759,6 +836,91 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         </form>
       </section>
 
+      <section className="panel-float painel-filters-grid">
+        <label>
+          Pesquisa
+          <input
+            type="text"
+            placeholder="Login, nome, email, papel..."
+            value={tableFilters.term}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  term: event.target.value,
+                })),
+              )
+            }
+          />
+        </label>
+
+        <label>
+          Papel
+          <select
+            value={tableFilters.role}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  role: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {(options.roles || []).map((role) => (
+              <option key={`role-filter-${role}`} value={role}>
+                {displayRole(role)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Empresa
+          <select
+            value={tableFilters.company}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  company: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {(options.companies || []).map((company) => (
+              <option key={`company-filter-${company.id}`} value={String(company.id)}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Setor
+          <select
+            value={tableFilters.sector}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  sector: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {sectorFilterOptions.map((sector) => (
+              <option key={`sector-filter-${sector.id}`} value={String(sector.id)}>
+                {sector.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <section className="panel-float workflow-list">
         <div className="workflow-list-head">
           <h3>Usuarios cadastrados</h3>
@@ -777,18 +939,10 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => {
-                const roles = Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [];
-                const companyIds = Array.isArray(user.company_ids)
-                  ? asStringIdList(user.company_ids)
-                  : user.company_id != null
-                    ? [String(user.company_id)]
-                    : [];
-                const sectorIds = Array.isArray(user.sector_ids)
-                  ? asStringIdList(user.sector_ids)
-                  : user.sector_id != null
-                    ? [String(user.sector_id)]
-                    : [];
+              {filteredUsers.map((user) => {
+                const roles = getUserRoles(user);
+                const companyIds = getUserCompanyIds(user);
+                const sectorIds = getUserSectorIds(user);
 
                 const companiesLabel = companyIds
                   .map((companyId) => companyNameById.get(companyId) || "Empresa nao encontrada")
@@ -826,7 +980,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   </tr>
                 );
               })}
-              {!loading && users.length === 0 && (
+              {!loading && filteredUsers.length === 0 && (
                 <tr>
                   <td colSpan={7}>Nenhum usuario encontrado.</td>
                 </tr>

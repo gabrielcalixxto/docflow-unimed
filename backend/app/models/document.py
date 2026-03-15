@@ -28,4 +28,5 @@ class Document(Base):
     sector = relationship("Sector", back_populates="documents")
     creator = relationship("User", back_populates="created_documents", foreign_keys=[created_by])
     versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
+    stored_files = relationship("StoredFile", back_populates="document")
     events = relationship("DocumentEvent", back_populates="document", cascade="all, delete-orphan")

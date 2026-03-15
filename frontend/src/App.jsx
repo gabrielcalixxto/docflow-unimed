@@ -5,7 +5,6 @@ import AdminUsuariosPage from "./pages/AdminUsuariosPage";
 import CadastroEmpresasPage from "./pages/CadastroEmpresasPage";
 import CadastroSetoresPage from "./pages/CadastroSetoresPage";
 import CadastroTipoDocumentoPage from "./pages/CadastroTipoDocumentoPage";
-import CriarVersaoPage from "./pages/CriarVersaoPage";
 import HistoricoSolicitacoesPage from "./pages/HistoricoSolicitacoesPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
@@ -18,7 +17,6 @@ import { parseJwtPayload } from "./utils/jwt";
 import {
   canAccessAdminCatalog,
   canAccessAdminUsers,
-  canAccessAtualizarDocumento,
   canAccessCentralAprovacao,
   canAccessHistoricoSolicitacoes,
   canAccessNovoDocumento,
@@ -29,7 +27,6 @@ import {
 const PAGE_ACCESS_RULES = {
   search: canAccessSearch,
   "novo-documento": canAccessNovoDocumento,
-  "atualizar-documento": canAccessAtualizarDocumento,
   "historico-solicitacoes": canAccessHistoricoSolicitacoes,
   "central-aprovacao": canAccessCentralAprovacao,
   "painel-documentos": canAccessPainel,
@@ -43,7 +40,6 @@ const PAGE_ACCESS_RULES = {
 const PAGE_FALLBACK_ORDER = [
   "search",
   "novo-documento",
-  "atualizar-documento",
   "historico-solicitacoes",
   "central-aprovacao",
   "painel-documentos",
@@ -153,9 +149,6 @@ export default function App() {
       {resolvedPage === "painel-rnc" && <PainelRncPage />}
       {resolvedPage === "novo-documento" && (
         <NovoDocumentoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
-      )}
-      {resolvedPage === "atualizar-documento" && (
-        <CriarVersaoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
       {resolvedPage === "central-aprovacao" && (
         <SolicitacoesPage

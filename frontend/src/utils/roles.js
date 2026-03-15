@@ -57,10 +57,6 @@ export function canAccessNovoDocumento(roleOrRoles) {
   return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
 }
 
-export function canAccessAtualizarDocumento(roleOrRoles) {
-  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
-}
-
 export function canAccessHistoricoSolicitacoes(roleOrRoles) {
   return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
 }
@@ -82,9 +78,5 @@ export function canAccessAdminCatalog(roleOrRoles) {
 }
 
 export function canAccessSolicitacoesSection(roleOrRoles) {
-  return (
-    canAccessNovoDocumento(roleOrRoles) ||
-    canAccessAtualizarDocumento(roleOrRoles) ||
-    canAccessHistoricoSolicitacoes(roleOrRoles)
-  );
+  return canAccessNovoDocumento(roleOrRoles) || canAccessHistoricoSolicitacoes(roleOrRoles);
 }

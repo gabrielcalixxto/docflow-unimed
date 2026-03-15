@@ -15,17 +15,40 @@ const STATUS_ORDER = [
   "SEM_VERSAO",
 ];
 
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleDateString("pt-BR");
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString("pt-BR");
+}
+
 export default function PainelDocumentos({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({
+    term: "",
     company: "ALL",
     sector: "ALL",
     status: "ALL",
-    scope: "ALL",
-    documentType: "",
+    version: "ALL",
+    expiration: "ALL",
   });
 
   const loadItems = async () => {
@@ -97,9 +120,53 @@ export default function PainelDocumentos({ onUnauthorized }) {
     return [...STATUS_ORDER, ...extraStatuses];
   }, [versionRows]);
 
+  const versions = useMemo(
+    () =>
+      [...new Set(
+        versionRows
+          .map((item) =>
+            item.latestVersion?.version_number != null
+              ? String(item.latestVersion.version_number)
+              : "SEM_VERSAO",
+          )
+          .filter(Boolean),
+      )].sort((a, b) => {
+        if (a === "SEM_VERSAO") {
+          return 1;
+        }
+        if (b === "SEM_VERSAO") {
+          return -1;
+        }
+        return Number(a) - Number(b);
+      }),
+    [versionRows],
+  );
+
+  const expirations = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.latestVersion?.expiration_date || "SEM_VENCIMENTO"))].sort(
+        (a, b) => {
+          if (a === "SEM_VENCIMENTO") {
+            return 1;
+          }
+          if (b === "SEM_VENCIMENTO") {
+            return -1;
+          }
+          return String(a).localeCompare(String(b));
+        },
+      ),
+    [versionRows],
+  );
+
   const filteredItems = useMemo(() => {
-    const typeFilter = filters.documentType.trim().toLowerCase();
+    const normalizedTerm = filters.term.trim().toLowerCase();
     return versionRows.filter((item) => {
+      const versionValue =
+        item.latestVersion?.version_number != null
+          ? String(item.latestVersion.version_number)
+          : "SEM_VERSAO";
+      const expirationValue = item.latestVersion?.expiration_date || "SEM_VENCIMENTO";
+
       if (filters.company !== "ALL" && item.companyName !== filters.company) {
         return false;
       }
@@ -109,13 +176,35 @@ export default function PainelDocumentos({ onUnauthorized }) {
       if (filters.status !== "ALL" && item.latestStatus !== filters.status) {
         return false;
       }
-      if (filters.scope !== "ALL" && item.scope !== filters.scope) {
+      if (filters.version !== "ALL" && versionValue !== filters.version) {
         return false;
       }
-      if (typeFilter && !String(item.document_type || "").toLowerCase().includes(typeFilter)) {
+      if (filters.expiration !== "ALL" && expirationValue !== filters.expiration) {
         return false;
       }
-      return true;
+      if (!normalizedTerm) {
+        return true;
+      }
+
+      const searchable = [
+        item.code,
+        item.title,
+        item.companyName,
+        item.sectorName,
+        item.document_type,
+        item.scope,
+        formatStatusLabel(item.latestStatus),
+        versionValue === "SEM_VERSAO" ? "sem versao" : `v${versionValue}`,
+        expirationValue === "SEM_VENCIMENTO" ? "sem vencimento" : expirationValue,
+        item.latestVersion?.file_path || "",
+        formatDateTime(item.created_at),
+        formatDateTime(item.latestVersion?.created_at),
+        formatDateTime(item.latestVersion?.approved_at),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
     });
   }, [versionRows, filters]);
 
@@ -134,7 +223,61 @@ export default function PainelDocumentos({ onUnauthorized }) {
         </button>
       </section>
 
+      {error && <p className="error-text margin-top">{error}</p>}
+
+      <section className="workflow-summary-grid">
+        <article className="panel-float workflow-stat">
+          <p>Total</p>
+          <strong>{stats.total}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Sem versao</p>
+          <strong>{stats.semVersao}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Rascunho</p>
+          <strong>{stats.rascunho}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Revisar rascunho</p>
+          <strong>{stats.revisarRascunho}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Pendente coordenacao</p>
+          <strong>{stats.pendenteCoordenacao}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Reprovado</p>
+          <strong>{stats.reprovado}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Vigente</p>
+          <strong>{stats.vigente}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Obsoleto</p>
+          <strong>{stats.obsoleto}</strong>
+        </article>
+      </section>
+
       <section className="panel-float painel-filters-grid">
+        <label>
+          Pesquisa
+          <input
+            type="text"
+            placeholder="Codigo, titulo, empresa, setor, tipo..."
+            value={filters.term}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  term: event.target.value,
+                })),
+              )
+            }
+          />
+        </label>
+
         <label>
           Empresa
           <select
@@ -202,77 +345,48 @@ export default function PainelDocumentos({ onUnauthorized }) {
         </label>
 
         <label>
-          Escopo
+          Versao
           <select
-            value={filters.scope}
+            value={filters.version}
             onChange={(event) =>
               preserveViewport(() =>
                 setFilters((prev) => ({
                   ...prev,
-                  scope: event.target.value,
+                  version: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {versions.map((value) => (
+              <option key={value} value={value}>
+                {value === "SEM_VERSAO" ? "Sem versao" : `v${value}`}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Vencimento
+          <select
+            value={filters.expiration}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  expiration: event.target.value,
                 })),
               )
             }
           >
             <option value="ALL">Todos</option>
-            <option value="LOCAL">LOCAL</option>
-            <option value="CORPORATIVO">CORPORATIVO</option>
+            {expirations.map((value) => (
+              <option key={value} value={value}>
+                {value === "SEM_VENCIMENTO" ? "Sem vencimento" : formatDate(value)}
+              </option>
+            ))}
           </select>
         </label>
-
-        <label>
-          Tipo documental
-          <input
-            type="text"
-            placeholder="POP, IT, MANUAL..."
-            value={filters.documentType}
-            onChange={(event) =>
-              preserveViewport(() =>
-                setFilters((prev) => ({
-                  ...prev,
-                  documentType: event.target.value,
-                })),
-              )
-            }
-          />
-        </label>
-      </section>
-
-      {error && <p className="error-text margin-top">{error}</p>}
-
-      <section className="workflow-summary-grid">
-        <article className="panel-float workflow-stat">
-          <p>Total</p>
-          <strong>{stats.total}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Sem versao</p>
-          <strong>{stats.semVersao}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Rascunho</p>
-          <strong>{stats.rascunho}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Revisar rascunho</p>
-          <strong>{stats.revisarRascunho}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Pendente coordenacao</p>
-          <strong>{stats.pendenteCoordenacao}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Reprovado</p>
-          <strong>{stats.reprovado}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Vigente</p>
-          <strong>{stats.vigente}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Obsoleto</p>
-          <strong>{stats.obsoleto}</strong>
-        </article>
       </section>
 
       <section className="panel-float workflow-list">
@@ -291,6 +405,11 @@ export default function PainelDocumentos({ onUnauthorized }) {
                 <th>Escopo</th>
                 <th>Status da versao</th>
                 <th>Versao</th>
+                <th>Vencimento</th>
+                <th>Caminho/URL</th>
+                <th>Criado em</th>
+                <th>Criada em</th>
+                <th>Aprovada em</th>
               </tr>
             </thead>
             <tbody>
@@ -308,11 +427,20 @@ export default function PainelDocumentos({ onUnauthorized }) {
                     </span>
                   </td>
                   <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
+                  <td>
+                    {item.latestVersion?.expiration_date
+                      ? formatDate(item.latestVersion.expiration_date)
+                      : "-"}
+                  </td>
+                  <td>{item.latestVersion?.file_path || "-"}</td>
+                  <td>{formatDateTime(item.created_at)}</td>
+                  <td>{formatDateTime(item.latestVersion?.created_at)}</td>
+                  <td>{formatDateTime(item.latestVersion?.approved_at)}</td>
                 </tr>
               ))}
               {!loading && filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={8}>Nenhum documento encontrado com os filtros atuais.</td>
+                  <td colSpan={13}>Nenhum documento encontrado com os filtros atuais.</td>
                 </tr>
               )}
             </tbody>

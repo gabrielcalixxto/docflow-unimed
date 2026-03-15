@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminCompany,
   getAdminCatalogOptions,
@@ -11,9 +12,11 @@ const INITIAL_FORM = {
 };
 
 export default function CadastroEmpresasPage({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [companies, setCompanies] = useState([]);
   const [sectors, setSectors] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [filterTerm, setFilterTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -30,6 +33,18 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
     }
     return counts;
   }, [sectors]);
+
+  const filteredCompanies = useMemo(() => {
+    const normalizedTerm = filterTerm.trim().toLowerCase();
+    if (!normalizedTerm) {
+      return companies;
+    }
+    return companies.filter((company) => {
+      const sectorsCount = String(sectorsByCompany.get(Number(company.id)) || 0);
+      const searchable = [company.name || "", sectorsCount].join(" ").toLowerCase();
+      return searchable.includes(normalizedTerm);
+    });
+  }, [companies, filterTerm, sectorsByCompany]);
 
   const loadData = async () => {
     setLoading(true);
@@ -159,6 +174,19 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
         <div className="workflow-list-head">
           <h3>Empresas cadastradas</h3>
         </div>
+        <div className="catalog-filter-row">
+          <label className="catalog-filter">
+            Pesquisa
+            <input
+              type="text"
+              placeholder="Nome da empresa..."
+              value={filterTerm}
+              onChange={(event) =>
+                preserveViewport(() => setFilterTerm(event.target.value))
+              }
+            />
+          </label>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -169,7 +197,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {companies.map((company) => (
+              {filteredCompanies.map((company) => (
                 <tr key={company.id}>
                   <td>
                     {editingCompanyId === Number(company.id) ? (
@@ -216,7 +244,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
                   </td>
                 </tr>
               ))}
-              {!loading && companies.length === 0 && (
+              {!loading && filteredCompanies.length === 0 && (
                 <tr>
                   <td colSpan={3}>Nenhuma empresa cadastrada.</td>
                 </tr>

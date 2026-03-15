@@ -19,6 +19,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
   const [sectors, setSectors] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
   const [filterCompanyId, setFilterCompanyId] = useState("ALL");
+  const [filterTerm, setFilterTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -80,11 +81,25 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
     () =>
       sectors.filter((sector) => {
         if (filterCompanyId === "ALL") {
+          // Keep evaluating by search term below.
+        } else if (String(sector.company_id) !== filterCompanyId) {
+          return false;
+        }
+        const normalizedTerm = filterTerm.trim().toLowerCase();
+        if (!normalizedTerm) {
           return true;
         }
-        return String(sector.company_id) === filterCompanyId;
+        const companyName = companyNameById.get(Number(sector.company_id)) || "";
+        const searchable = [
+          companyName,
+          sector.name || "",
+          (sector.sigla || "").toUpperCase(),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return searchable.includes(normalizedTerm);
       }),
-    [sectors, filterCompanyId],
+    [sectors, filterCompanyId, filterTerm, companyNameById],
   );
 
   const handleCreate = async (event) => {
@@ -261,6 +276,17 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
           <h3>Setores cadastrados</h3>
         </div>
         <div className="catalog-filter-row">
+          <label className="catalog-filter">
+            Pesquisa
+            <input
+              type="text"
+              placeholder="Empresa, setor ou sigla..."
+              value={filterTerm}
+              onChange={(event) =>
+                preserveViewport(() => setFilterTerm(event.target.value))
+              }
+            />
+          </label>
           <label className="catalog-filter">
             Filtrar por empresa
             <select

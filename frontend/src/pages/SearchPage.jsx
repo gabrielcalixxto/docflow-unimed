@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { getDocument, getDocumentFormOptions, getDocumentVersions, searchDocuments } from "../services/api";
-import { formatStatusLabel } from "../utils/status";
+import { getDocumentFormOptions, searchDocuments } from "../services/api";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+const PDF_VIEWER_PARAMS = "toolbar=0&navpanes=0&scrollbar=1";
 
 function extractFileName(path) {
   if (!path) {
@@ -12,11 +14,29 @@ function extractFileName(path) {
   return parts[parts.length - 1] || path;
 }
 
-function isEmbeddablePath(path) {
+function resolvePreviewSrc(path) {
   if (!path) {
-    return false;
+    return "";
   }
-  return /^https?:\/\//i.test(path);
+  const value = String(path).trim();
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (value.startsWith("/")) {
+    return `${API_BASE_URL}${value}`;
+  }
+  return "";
+}
+
+function buildViewerSrc(path) {
+  const src = resolvePreviewSrc(path);
+  if (!src) {
+    return "";
+  }
+  if (src.includes("#")) {
+    return src;
+  }
+  return `${src}#${PDF_VIEWER_PARAMS}`;
 }
 
 export default function SearchPage({ onUnauthorized }) {
@@ -38,11 +58,7 @@ export default function SearchPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState("");
   const [selectedResult, setSelectedResult] = useState(null);
-  const [selectedDocument, setSelectedDocument] = useState(null);
-  const [selectedVersions, setSelectedVersions] = useState([]);
 
   const loadResults = async () => {
     setLoading(true);
@@ -136,28 +152,48 @@ export default function SearchPage({ onUnauthorized }) {
     });
   }, [items, filters]);
 
-  const openViewer = async (item) => {
+  const openViewer = (item) => {
     setSelectedResult(item);
     setViewerOpen(true);
-    setViewerLoading(true);
-    setViewerError("");
-    setSelectedDocument(null);
-    setSelectedVersions([]);
+  };
+
+  const handleDownloadSelected = () => {
+    if (!selectedResult) {
+      return;
+    }
+    const src = resolvePreviewSrc(selectedResult.file_path);
+    if (!src) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = src;
+    link.download = extractFileName(selectedResult.file_path);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintSelected = () => {
+    if (!selectedResult) {
+      return;
+    }
+    const src = resolvePreviewSrc(selectedResult.file_path);
+    if (!src) {
+      return;
+    }
+    const printWindow = window.open(src, "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      return;
+    }
     try {
-      const [documentData, versionsData] = await Promise.all([
-        getDocument(item.document_id),
-        getDocumentVersions(item.document_id),
-      ]);
-      setSelectedDocument(documentData);
-      setSelectedVersions(versionsData || []);
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        onUnauthorized?.();
-        return;
-      }
-      setViewerError(requestError.message || "Nao foi possivel abrir o documento.");
-    } finally {
-      setViewerLoading(false);
+      printWindow.addEventListener("load", () => {
+        printWindow.focus();
+        printWindow.print();
+      });
+    } catch {
+      // If browser blocks auto-print on cross-origin, opening the file is still useful.
     }
   };
 
@@ -322,30 +358,38 @@ export default function SearchPage({ onUnauthorized }) {
         <header className="viewer-head">
           <div>
             <p className="kicker">Visualizacao</p>
-            <h3>{selectedResult ? extractFileName(selectedResult.file_path) : "Documento"}</h3>
+            <h3>{selectedResult ? selectedResult.title : "Documento"}</h3>
           </div>
           <button
             type="button"
             className="ghost-btn"
             onClick={() => {
               setViewerOpen(false);
-              setSelectedDocument(null);
-              setSelectedVersions([]);
-              setViewerError("");
+              setSelectedResult(null);
             }}
           >
             Fechar
           </button>
         </header>
 
-        {viewerLoading && <p>Carregando dados do documento...</p>}
-        {viewerError && <p className="error-text">{viewerError}</p>}
-
-        {!viewerLoading && selectedResult && (
+        {selectedResult && (
           <div className="viewer-body">
             <div className="preview-panel panel-float">
-              {isEmbeddablePath(selectedResult.file_path) ? (
-                <iframe title="Visualizacao do arquivo" src={selectedResult.file_path} className="file-frame" />
+              <div className="preview-actions">
+                <button type="button" className="ghost-btn" onClick={handleDownloadSelected}>
+                  Download
+                </button>
+                <button type="button" className="ghost-btn" onClick={handlePrintSelected}>
+                  Imprimir
+                </button>
+              </div>
+              {resolvePreviewSrc(selectedResult.file_path) ? (
+                <iframe
+                  title="Visualizacao do arquivo"
+                  src={buildViewerSrc(selectedResult.file_path)}
+                  className="file-frame"
+                  scrolling="yes"
+                />
               ) : (
                 <div className="no-preview">
                   <p>Pre-visualizacao indisponivel para caminho local.</p>
@@ -372,37 +416,15 @@ export default function SearchPage({ onUnauthorized }) {
                 <li>
                   <strong>Versao ativa:</strong> {selectedResult.active_version_number}
                 </li>
+                <li>
+                  <strong>Empresa:</strong>{" "}
+                  {companyNameById.get(String(selectedResult.company_id)) || "Empresa desconhecida"}
+                </li>
+                <li>
+                  <strong>Setor:</strong>{" "}
+                  {sectorNameById.get(String(selectedResult.sector_id)) || "Setor desconhecido"}
+                </li>
               </ul>
-
-              {selectedDocument && (
-                <>
-                  <h4>Documento</h4>
-                  <ul>
-                    <li>
-                      <strong>ID:</strong> {selectedDocument.id}
-                    </li>
-                    <li>
-                      <strong>Setor:</strong> {selectedDocument.sector_id}
-                    </li>
-                    <li>
-                      <strong>Empresa:</strong> {selectedDocument.company_id}
-                    </li>
-                  </ul>
-                </>
-              )}
-
-              <h4>Historico de versoes</h4>
-              <div className="versions-list">
-                {selectedVersions.map((version) => (
-                  <div key={version.id} className="version-item">
-                    <span>v{version.version_number}</span>
-                    <span className={`status-pill status-${String(version.status || "").toLowerCase()}`}>
-                      {formatStatusLabel(version.status)}
-                    </span>
-                  </div>
-                ))}
-                {selectedVersions.length === 0 && <p>Sem versoes registradas.</p>}
-              </div>
             </div>
           </div>
         )}

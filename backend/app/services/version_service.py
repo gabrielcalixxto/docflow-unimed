@@ -1,9 +1,12 @@
+import re
+
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.enums import DocumentEventType, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.models.document_version import DocumentVersion
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
 from app.schemas.version import DocumentVersionCreate
@@ -17,10 +20,12 @@ class VersionService:
         repository: VersionRepository,
         document_repository: DocumentRepository,
         audit_service: AuditService,
+        file_repository: StoredFileRepository | None = None,
     ):
         self.repository = repository
         self.document_repository = document_repository
         self.audit_service = audit_service
+        self.file_repository = file_repository
 
     def create_version(
         self,
@@ -63,6 +68,11 @@ class VersionService:
                 payload=create_payload,
                 created_by=current_user.user_id,
             )
+            self._attach_uploaded_file_to_version(
+                file_path=payload.file_path,
+                document_id=document_id,
+                version_id=version.id,
+            )
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.VERSION_CREATED,
                 document_id=document_id,
@@ -88,3 +98,26 @@ class VersionService:
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
         if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only author, reviewer, or coordinator can create versions.")
+
+    def _attach_uploaded_file_to_version(self, *, file_path: str, document_id: int, version_id: int) -> None:
+        storage_key = self._extract_storage_key(file_path)
+        if storage_key is None:
+            return
+        self.file_repository.attach_to_version(
+            storage_key=storage_key,
+            document_id=document_id,
+            version_id=version_id,
+        )
+
+    @staticmethod
+    def _extract_storage_key(file_path: str) -> str | None:
+        value = (file_path or "").strip()
+        prefix = "/file-storage/"
+        if not value.startswith(prefix):
+            return None
+        storage_key = value[len(prefix) :]
+        if not storage_key:
+            return None
+        if not re.fullmatch(r"[A-Fa-f0-9]{32}", storage_key):
+            return None
+        return storage_key.lower()

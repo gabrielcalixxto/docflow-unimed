@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
 from app.schemas.version import DocumentVersionCreate, DocumentVersionRead
@@ -18,6 +19,7 @@ def get_version_service(db: Session) -> VersionService:
     return VersionService(
         repository=VersionRepository(db),
         document_repository=DocumentRepository(db),
+        file_repository=StoredFileRepository(db),
         audit_service=AuditService(),
     )
 

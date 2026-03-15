@@ -1,16 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import { approveDocument, rejectDocument, submitForReview } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
 import { canAccessCentralAprovacao, isCoordinator, isReviewer } from "../utils/roles";
 import { formatStatusLabel } from "../utils/status";
 
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleDateString("pt-BR");
+}
+
 export default function SolicitacoesPage({ session, onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [rejectReasons, setRejectReasons] = useState({});
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [filters, setFilters] = useState({
+    term: "",
+    company: "ALL",
+    sector: "ALL",
+    status: "ALL",
+    version: "ALL",
+    expiration: "ALL",
+  });
 
   const showFeedback = (type, message) => setFeedback({ type, message });
   const reviewerStatuses = ["RASCUNHO", "REVISAR_RASCUNHO"];
@@ -59,6 +80,115 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     return items;
   }, [items, canOpenSolicitacoes, coordinatorRole, session?.sectorId, session?.sectorIds]);
 
+  const companies = useMemo(
+    () =>
+      [...new Set(visibleItems.map((item) => item.companyName).filter(Boolean))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [visibleItems],
+  );
+
+  const sectors = useMemo(
+    () =>
+      [...new Set(visibleItems.map((item) => item.sectorName).filter(Boolean))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [visibleItems],
+  );
+
+  const statuses = useMemo(
+    () =>
+      [...new Set(visibleItems.map((item) => item.latestStatus).filter(Boolean))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [visibleItems],
+  );
+
+  const versions = useMemo(
+    () =>
+      [...new Set(
+        visibleItems
+          .map((item) =>
+            item.latestVersion?.version_number != null
+              ? String(item.latestVersion.version_number)
+              : "SEM_VERSAO",
+          )
+          .filter(Boolean),
+      )].sort((a, b) => {
+        if (a === "SEM_VERSAO") {
+          return 1;
+        }
+        if (b === "SEM_VERSAO") {
+          return -1;
+        }
+        return Number(a) - Number(b);
+      }),
+    [visibleItems],
+  );
+
+  const expirations = useMemo(
+    () =>
+      [...new Set(visibleItems.map((item) => item.latestVersion?.expiration_date || "SEM_VENCIMENTO"))].sort(
+        (a, b) => {
+          if (a === "SEM_VENCIMENTO") {
+            return 1;
+          }
+          if (b === "SEM_VENCIMENTO") {
+            return -1;
+          }
+          return String(a).localeCompare(String(b));
+        },
+      ),
+    [visibleItems],
+  );
+
+  const filteredVisibleItems = useMemo(() => {
+    const normalizedTerm = filters.term.trim().toLowerCase();
+    return visibleItems.filter((item) => {
+      const versionValue =
+        item.latestVersion?.version_number != null
+          ? String(item.latestVersion.version_number)
+          : "SEM_VERSAO";
+      const expirationValue = item.latestVersion?.expiration_date || "SEM_VENCIMENTO";
+
+      if (filters.company !== "ALL" && item.companyName !== filters.company) {
+        return false;
+      }
+      if (filters.sector !== "ALL" && item.sectorName !== filters.sector) {
+        return false;
+      }
+      if (filters.status !== "ALL" && item.latestStatus !== filters.status) {
+        return false;
+      }
+      if (filters.version !== "ALL" && versionValue !== filters.version) {
+        return false;
+      }
+      if (filters.expiration !== "ALL" && expirationValue !== filters.expiration) {
+        return false;
+      }
+      if (!normalizedTerm) {
+        return true;
+      }
+
+      const searchable = [
+        item.code,
+        item.title,
+        item.companyName,
+        item.sectorName,
+        formatStatusLabel(item.latestStatus),
+        item.document_type,
+        item.scope,
+        versionValue === "SEM_VERSAO" ? "sem versao" : `v${versionValue}`,
+        expirationValue === "SEM_VENCIMENTO" ? "sem vencimento" : expirationValue,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
+    });
+  }, [visibleItems, filters]);
+
   const runAction = async (documentId, action) => {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
@@ -104,6 +234,135 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
 
+      <section className="panel-float painel-filters-grid">
+        <label>
+          Pesquisa
+          <input
+            type="text"
+            placeholder="Codigo, titulo, empresa, setor..."
+            value={filters.term}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  term: event.target.value,
+                })),
+              )
+            }
+          />
+        </label>
+
+        <label>
+          Empresas
+          <select
+            value={filters.company}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  company: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {companies.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Setor
+          <select
+            value={filters.sector}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  sector: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {sectors.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Status
+          <select
+            value={filters.status}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  status: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {statuses.map((value) => (
+              <option key={value} value={value}>
+                {formatStatusLabel(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Versao
+          <select
+            value={filters.version}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  version: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {versions.map((value) => (
+              <option key={value} value={value}>
+                {value === "SEM_VERSAO" ? "Sem versao" : `v${value}`}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Vencimento
+          <select
+            value={filters.expiration}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  expiration: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {expirations.map((value) => (
+              <option key={value} value={value}>
+                {value === "SEM_VENCIMENTO" ? "Sem vencimento" : formatDate(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <section className="panel-float workflow-list">
         <div className="table-wrap">
           <table>
@@ -120,7 +379,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((item) => (
+              {filteredVisibleItems.map((item) => (
                 <tr key={item.id}>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
@@ -206,7 +465,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                   </td>
                 </tr>
               ))}
-              {!loading && visibleItems.length === 0 && (
+              {!loading && filteredVisibleItems.length === 0 && (
                 <tr>
                   <td colSpan={8}>Nenhuma solicitacao encontrada.</td>
                 </tr>

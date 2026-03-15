@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
 from app.schemas.document import (
@@ -25,6 +26,7 @@ def get_document_service(db: Session) -> DocumentService:
     return DocumentService(
         repository=DocumentRepository(db),
         version_repository=VersionRepository(db),
+        file_repository=StoredFileRepository(db),
         auth_repository=AuthRepository(db),
         audit_service=AuditService(),
     )

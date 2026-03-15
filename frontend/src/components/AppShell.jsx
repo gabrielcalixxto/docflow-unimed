@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   canAccessAdminCatalog,
   canAccessAdminUsers,
-  canAccessAtualizarDocumento,
   canAccessCentralAprovacao,
   canAccessHistoricoSolicitacoes,
   canAccessNovoDocumento,
@@ -61,19 +60,6 @@ const NAV_GROUPS = [
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 0 1 0-2h6V5a1 1 0 0 1 1-1Z"
-              fill="currentColor"
-            />
-          </svg>
-        ),
-      },
-      {
-        id: "atualizar-documento",
-        label: "Atualizar Documento",
-        isVisible: canAccessAtualizarDocumento,
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 3a1 1 0 0 1 1 1v3.1a5.9 5.9 0 0 1 3.9 2.2l2.2-1.3a1 1 0 1 1 1 1.7L18 11a6 6 0 0 1 0 2l2.1 1.3a1 1 0 0 1-1 1.7l-2.2-1.3A6 6 0 1 1 12 7V4a1 1 0 0 1 1-1Zm0 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm-1 2h2v1h1v2h-1v1h-2v-1H10v-2h1v-1Z"
               fill="currentColor"
             />
           </svg>

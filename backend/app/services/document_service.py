@@ -9,6 +9,7 @@ from app.core.security import AuthenticatedUser
 from app.models.document import Document
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
 from app.schemas.document import DocumentCreate, DocumentDraftUpdate, DocumentFormOptionsRead
@@ -24,11 +25,13 @@ class DocumentService:
         version_repository: VersionRepository,
         auth_repository: AuthRepository,
         audit_service: AuditService,
+        file_repository: StoredFileRepository | None = None,
     ):
         self.repository = repository
         self.version_repository = version_repository
         self.auth_repository = auth_repository
         self.audit_service = audit_service
+        self.file_repository = file_repository
 
     def create_document(self, payload: DocumentCreate, current_user: AuthenticatedUser) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
@@ -67,6 +70,11 @@ class DocumentService:
                     expiration_date=payload.expiration_date,
                 ),
                 created_by=current_user.user_id,
+            )
+            self._attach_uploaded_file_to_version(
+                file_path=payload.file_path,
+                document_id=document.id,
+                version_id=initial_version.id,
             )
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.DOCUMENT_CREATED,
@@ -376,6 +384,31 @@ class DocumentService:
             raise ConflictServiceError("Only draft documents can be edited or deleted.")
 
         return document, latest_version
+
+    def _attach_uploaded_file_to_version(self, *, file_path: str, document_id: int, version_id: int) -> None:
+        if self.file_repository is None:
+            return
+        storage_key = self._extract_storage_key(file_path)
+        if storage_key is None:
+            return
+        self.file_repository.attach_to_version(
+            storage_key=storage_key,
+            document_id=document_id,
+            version_id=version_id,
+        )
+
+    @staticmethod
+    def _extract_storage_key(file_path: str) -> str | None:
+        value = (file_path or "").strip()
+        prefix = "/file-storage/"
+        if not value.startswith(prefix):
+            return None
+        storage_key = value[len(prefix) :]
+        if not storage_key:
+            return None
+        if not re.fullmatch(r"[A-Fa-f0-9]{32}", storage_key):
+            return None
+        return storage_key.lower()
 
     @staticmethod
     def _build_document_code(*, document_type: str, document_id: int, sector_sigla: str | None) -> str:

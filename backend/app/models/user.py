@@ -35,4 +35,5 @@ class User(Base):
         back_populates="approver",
         foreign_keys="DocumentVersion.approved_by",
     )
+    uploaded_files = relationship("StoredFile", back_populates="uploader", foreign_keys="StoredFile.uploaded_by")
     events = relationship("DocumentEvent", back_populates="user")
