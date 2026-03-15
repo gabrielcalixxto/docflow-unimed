@@ -28,8 +28,12 @@ def admin_user() -> AuthenticatedUser:
     return AuthenticatedUser(email="admin@docflow.local", role=UserRole.ADMIN, user_id=1)
 
 
-def reviewer_user() -> AuthenticatedUser:
+def author_user() -> AuthenticatedUser:
     return AuthenticatedUser(email="autor@docflow.local", role=UserRole.AUTOR, user_id=10)
+
+
+def reviewer_user() -> AuthenticatedUser:
+    return AuthenticatedUser(email="revisor@docflow.local", role=UserRole.REVISOR, user_id=11)
 
 
 def test_get_options_returns_companies_sectors_and_document_types() -> None:
@@ -49,12 +53,26 @@ def test_get_options_returns_companies_sectors_and_document_types() -> None:
     assert response.document_types[0].name == "Procedimento Operacional Padrao"
 
 
-def test_get_options_blocks_non_admin() -> None:
+def test_get_options_blocks_non_catalog_manager() -> None:
     repository = Mock()
     service = build_service(repository=repository)
 
     with pytest.raises(ForbiddenServiceError):
-        service.get_options(reviewer_user())
+        service.get_options(author_user())
+
+
+def test_get_options_allows_reviewer() -> None:
+    repository = Mock()
+    repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
+    repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
+    repository.list_document_types.return_value = [
+        SimpleNamespace(id=100, sigla="POP", name="Procedimento Operacional Padrao")
+    ]
+    service = build_service(repository=repository)
+
+    response = service.get_options(reviewer_user())
+
+    assert response.companies[0].id == 1
 
 
 def test_create_company_persists_normalized_name() -> None:

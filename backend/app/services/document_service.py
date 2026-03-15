@@ -13,6 +13,7 @@ from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
 from app.schemas.document import DocumentCreate, DocumentDraftUpdate, DocumentFormOptionsRead
+from app.schemas.workflow import WorkflowDocumentListResponse, WorkflowDocumentRead, WorkflowVersionRead
 from app.schemas.version import DocumentVersionCreate
 from app.services.audit_service import AuditService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
@@ -146,6 +147,105 @@ class DocumentService:
         if not self._can_access_document(current_user, document):
             raise ForbiddenServiceError("You do not have permission to access this document.")
         return document
+
+    def list_workflow_documents(
+        self,
+        current_user: AuthenticatedUser,
+        *,
+        term: str | None = None,
+        company_id: int | None = None,
+        sector_id: int | None = None,
+        document_type: str | None = None,
+        scope: DocumentScope | None = None,
+        latest_status: DocumentStatus | None = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> WorkflowDocumentListResponse:
+        self._ensure_can_access_document_registry(current_user)
+
+        normalized_page = max(1, int(page))
+        normalized_page_size = min(500, max(1, int(page_size)))
+        normalized_term = (term or "").strip().lower()
+        normalized_document_type = (document_type or "").strip().upper()
+
+        documents = self.repository.list_documents_with_versions()
+
+        filtered_documents: list[Document] = []
+        for document in documents:
+            if not self._can_access_document(current_user, document):
+                continue
+            if company_id is not None and document.company_id != company_id:
+                continue
+            if sector_id is not None and document.sector_id != sector_id:
+                continue
+            if normalized_document_type and (document.document_type or "").strip().upper() != normalized_document_type:
+                continue
+            if scope is not None and document.scope != scope:
+                continue
+
+            ordered_versions = self._ordered_versions(document)
+            latest_version = ordered_versions[0] if ordered_versions else None
+
+            if latest_status is not None:
+                if latest_version is None or latest_version.status != latest_status:
+                    continue
+
+            if normalized_term:
+                haystack = " ".join(
+                    [
+                        document.code or "",
+                        document.title or "",
+                        document.document_type or "",
+                        document.scope.value if isinstance(document.scope, DocumentScope) else str(document.scope or ""),
+                        getattr(document.company, "name", "") or "",
+                        getattr(document.sector, "name", "") or "",
+                        latest_version.status.value if latest_version is not None else "",
+                    ]
+                ).lower()
+                if normalized_term not in haystack:
+                    continue
+
+            filtered_documents.append(document)
+
+        total = len(filtered_documents)
+        start = (normalized_page - 1) * normalized_page_size
+        end = start + normalized_page_size
+        paged_documents = filtered_documents[start:end]
+
+        items: list[WorkflowDocumentRead] = []
+        for document in paged_documents:
+            ordered_versions = self._ordered_versions(document)
+            versions = [
+                WorkflowVersionRead.model_validate(version)
+                for version in ordered_versions
+            ]
+            latest_status_value = ordered_versions[0].status if ordered_versions else None
+
+            items.append(
+                WorkflowDocumentRead(
+                    id=document.id,
+                    code=document.code,
+                    title=document.title,
+                    company_id=document.company_id,
+                    company_name=getattr(document.company, "name", None),
+                    sector_id=document.sector_id,
+                    sector_name=getattr(document.sector, "name", None),
+                    document_type=document.document_type,
+                    scope=document.scope,
+                    created_by=document.created_by,
+                    created_by_name=document.created_by_name,
+                    created_at=document.created_at,
+                    latest_status=latest_status_value,
+                    versions=versions,
+                )
+            )
+
+        return WorkflowDocumentListResponse(
+            items=items,
+            total=total,
+            page=normalized_page,
+            page_size=normalized_page_size,
+        )
 
     def update_draft_document(
         self,
@@ -372,6 +472,11 @@ class DocumentService:
         if document.scope == DocumentScope.LOCAL:
             return document.sector_id in current_user.normalized_sector_ids()
         return False
+
+    @staticmethod
+    def _ordered_versions(document: Document):
+        versions = getattr(document, "versions", None) or []
+        return sorted(versions, key=lambda version: int(version.version_number or 0), reverse=True)
 
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
         if not current_user.has_role(UserRole.COORDENADOR):

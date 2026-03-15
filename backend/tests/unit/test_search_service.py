@@ -26,6 +26,9 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
                 version_number=2,
                 file_path="/tmp/doc-001-v2.pdf",
                 expiration_date=date(2027, 1, 31),
+                approved_by=7,
+                approved_by_name="Coordenador Qualidade",
+                approved_at=None,
             ),
         )
     ]
@@ -46,4 +49,6 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
     assert item.sector_id == 10
     assert item.active_version_id == 11
     assert item.scope == DocumentScope.LOCAL
+    assert item.approved_by == 7
+    assert item.approved_by_name == "Coordenador Qualidade"
     repository.search_active_documents.assert_called_once_with(current_user)

@@ -26,7 +26,7 @@ class AdminCatalogService:
         self.repository = repository
 
     def get_options(self, current_user: AuthenticatedUser) -> AdminCatalogOptionsRead:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         return AdminCatalogOptionsRead(
             companies=self.repository.list_companies(),
             sectors=self.repository.list_sectors(),
@@ -38,7 +38,7 @@ class AdminCatalogService:
         payload: AdminCompanyCreate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         normalized_name = self._normalize_company_name(payload.name)
         if self.repository.get_company_by_name(normalized_name) is not None:
             raise ConflictServiceError("Company already exists.")
@@ -53,7 +53,7 @@ class AdminCatalogService:
         return MessageResponse(message=f"Company created successfully (id={company.id}).")
 
     def delete_company(self, company_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -80,7 +80,7 @@ class AdminCatalogService:
         payload: AdminCompanyUpdate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -104,7 +104,7 @@ class AdminCatalogService:
         payload: AdminSectorCreate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(payload.company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -130,7 +130,7 @@ class AdminCatalogService:
         return MessageResponse(message=f"Sector created successfully (id={sector.id}, sigla={sector.sigla}).")
 
     def delete_sector(self, sector_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         sector = self.repository.get_sector_by_id(sector_id)
         if sector is None:
             raise NotFoundServiceError("Sector not found.")
@@ -155,7 +155,7 @@ class AdminCatalogService:
         payload: AdminSectorUpdate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         sector = self.repository.get_sector_by_id(sector_id)
         if sector is None:
             raise NotFoundServiceError("Sector not found.")
@@ -216,7 +216,7 @@ class AdminCatalogService:
         payload: AdminDocumentTypeCreate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         normalized_sigla = self._normalize_document_type_sigla(payload.sigla)
         normalized_name = self._normalize_document_type_name(payload.name)
         if self.repository.get_document_type_by_sigla(normalized_sigla) is not None:
@@ -239,7 +239,7 @@ class AdminCatalogService:
         )
 
     def delete_document_type(self, document_type_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         document_type = self.repository.get_document_type_by_id(document_type_id)
         if document_type is None:
             raise NotFoundServiceError("Document type not found.")
@@ -259,7 +259,7 @@ class AdminCatalogService:
         payload: AdminDocumentTypeUpdate,
         current_user: AuthenticatedUser,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         document_type = self.repository.get_document_type_by_id(document_type_id)
         if document_type is None:
             raise NotFoundServiceError("Document type not found.")
@@ -403,6 +403,6 @@ class AdminCatalogService:
         return all(char.isupper() for char in letters)
 
     @staticmethod
-    def _ensure_admin(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_role(UserRole.ADMIN):
-            raise ForbiddenServiceError("Only admin users can manage catalog data.")
+    def _ensure_catalog_manager(current_user: AuthenticatedUser) -> None:
+        if not current_user.has_any_role({UserRole.ADMIN, UserRole.REVISOR}):
+            raise ForbiddenServiceError("Only admin or reviewer users can manage catalog data.")

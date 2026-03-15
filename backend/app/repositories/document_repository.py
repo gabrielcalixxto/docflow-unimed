@@ -1,9 +1,10 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.company import Company
 from app.models.document import Document
 from app.models.document_type import DocumentType
+from app.models.document_version import DocumentVersion
 from app.models.sector import Sector
 from app.schemas.document import DocumentCreate
 
@@ -29,6 +30,23 @@ class DocumentRepository:
     def list_documents(self) -> list[Document]:
         statement = select(Document).options(joinedload(Document.creator)).order_by(Document.created_at.desc())
         return list(self.db.scalars(statement).all())
+
+    def list_documents_with_versions(self) -> list[Document]:
+        statement = (
+            select(Document)
+            .options(
+                joinedload(Document.company),
+                joinedload(Document.sector),
+                joinedload(Document.creator),
+                selectinload(Document.versions).options(
+                    joinedload(DocumentVersion.creator),
+                    joinedload(DocumentVersion.approver),
+                    joinedload(DocumentVersion.invalidator),
+                ),
+            )
+            .order_by(Document.created_at.desc())
+        )
+        return list(self.db.scalars(statement).unique().all())
 
     def get_document_by_id(self, document_id: int) -> Document | None:
         statement = select(Document).options(joinedload(Document.creator)).where(Document.id == document_id)

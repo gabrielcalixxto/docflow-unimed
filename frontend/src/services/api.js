@@ -76,6 +76,14 @@ export async function searchDocuments() {
   });
 }
 
+export async function getWorkflowDocuments(params = {}) {
+  return request({
+    method: "get",
+    url: "/documents/workflow",
+    params,
+  });
+}
+
 export async function getDocuments() {
   return request({
     method: "get",

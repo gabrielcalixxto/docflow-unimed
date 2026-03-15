@@ -1,6 +1,8 @@
+from datetime import UTC, date, datetime
 from unittest.mock import Mock
 
 from app.schemas.common import MessageResponse
+from app.schemas.workflow import WorkflowDocumentListResponse
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
 
@@ -102,6 +104,85 @@ def test_get_document_returns_item_when_found(authorized_client, fake_document, 
 
     assert response.status_code == 200
     assert response.json()["id"] == fake_document.id
+
+
+def test_get_workflow_documents_returns_items(authorized_client, current_user, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.list_workflow_documents.return_value = WorkflowDocumentListResponse(
+        items=[
+            {
+                "id": 1,
+                "code": "POP-QLD-1",
+                "title": "Manual de Nutricao",
+                "company_id": 1,
+                "company_name": "Hospital",
+                "sector_id": 10,
+                "sector_name": "Qualidade",
+                "document_type": "POP",
+                "scope": "LOCAL",
+                "created_by": 99,
+                "created_by_name": "Revisor",
+                "created_at": datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
+                "latest_status": "VIGENTE",
+                "versions": [
+                    {
+                        "id": 11,
+                        "document_id": 1,
+                        "version_number": 1,
+                        "status": "VIGENTE",
+                        "file_path": "/file-storage/abc123abc123abc123abc123abc123ab",
+                        "created_by": 99,
+                        "created_by_name": "Revisor",
+                        "approved_by": 7,
+                        "approved_by_name": "Coordenador",
+                        "invalidated_by": None,
+                        "invalidated_by_name": None,
+                        "created_at": datetime(2026, 3, 1, 10, 0, tzinfo=UTC),
+                        "approved_at": datetime(2026, 3, 2, 9, 0, tzinfo=UTC),
+                        "invalidated_at": None,
+                        "expiration_date": date(2027, 1, 31),
+                    }
+                ],
+            }
+        ],
+        total=1,
+        page=1,
+        page_size=100,
+    )
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.get(
+        "/documents/workflow",
+        params={
+            "term": "nutricao",
+            "company_id": 1,
+            "sector_id": 10,
+            "document_type": "POP",
+            "scope": "LOCAL",
+            "latest_status": "VIGENTE",
+            "page": 1,
+            "page_size": 50,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["code"] == "POP-QLD-1"
+    service.list_workflow_documents.assert_called_once()
+    args = service.list_workflow_documents.call_args.args
+    assert args[0] == current_user
+    kwargs = service.list_workflow_documents.call_args.kwargs
+    assert kwargs["term"] == "nutricao"
+    assert kwargs["company_id"] == 1
+    assert kwargs["sector_id"] == 10
+    assert kwargs["document_type"] == "POP"
+    assert kwargs["scope"].value == "LOCAL"
+    assert kwargs["latest_status"].value == "VIGENTE"
+    assert kwargs["page"] == 1
+    assert kwargs["page_size"] == 50
 
 
 def test_update_draft_document_calls_service_and_returns_message(

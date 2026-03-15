@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.enums import DocumentScope, DocumentStatus
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
@@ -16,6 +17,7 @@ from app.schemas.document import (
     DocumentRead,
     DocumentRejectRequest,
 )
+from app.schemas.workflow import WorkflowDocumentListResponse
 from app.services.audit_service import AuditService
 from app.services.document_service import DocumentService
 from app.services.errors import ServiceError
@@ -63,6 +65,36 @@ def list_documents(
     service = get_document_service(db)
     try:
         return service.list_documents(current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/workflow", response_model=WorkflowDocumentListResponse)
+def list_workflow_documents(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    term: str | None = Query(default=None),
+    company_id: int | None = Query(default=None),
+    sector_id: int | None = Query(default=None),
+    document_type: str | None = Query(default=None),
+    scope: DocumentScope | None = Query(default=None),
+    latest_status: DocumentStatus | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=500),
+) -> WorkflowDocumentListResponse:
+    service = get_document_service(db)
+    try:
+        return service.list_workflow_documents(
+            current_user,
+            term=term,
+            company_id=company_id,
+            sector_id=sector_id,
+            document_type=document_type,
+            scope=scope,
+            latest_status=latest_status,
+            page=page,
+            page_size=page_size,
+        )
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
