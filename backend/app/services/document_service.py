@@ -54,7 +54,7 @@ class DocumentService:
             document.code = self._build_document_code(
                 document_type=payload.document_type,
                 document_id=document.id,
-                sector_name=sector.name,
+                sector_sigla=getattr(sector, "sigla", None),
             )
             self.repository.save(document)
 
@@ -93,22 +93,35 @@ class DocumentService:
         sectors = self.repository.list_sectors()
         configured_document_types = self.repository.list_document_types()
         existing_document_types = self.repository.list_distinct_document_types()
-        normalized_catalog = [
-            item.name.strip().upper()
-            for item in configured_document_types
-            if item.name and item.name.strip()
-        ]
-        normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
+        document_type_options: list[dict[str, str]] = []
+        seen_siglas: set[str] = set()
 
-        document_types: list[str] = []
-        for item in [*normalized_catalog, *normalized_existing]:
-            if item not in document_types:
-                document_types.append(item)
+        for item in configured_document_types:
+            sigla_raw = getattr(item, "sigla", None)
+            if not sigla_raw or not str(sigla_raw).strip():
+                continue
+            sigla = str(sigla_raw).strip().upper()
+            if sigla in seen_siglas:
+                continue
+            seen_siglas.add(sigla)
+            name_raw = getattr(item, "name", None)
+            name = str(name_raw).strip() if name_raw else sigla
+            document_type_options.append({"sigla": sigla, "name": name or sigla})
+
+        normalized_existing = [item.strip().upper() for item in existing_document_types if item and item.strip()]
+        for sigla in normalized_existing:
+            if sigla in seen_siglas:
+                continue
+            seen_siglas.add(sigla)
+            document_type_options.append({"sigla": sigla, "name": sigla})
+
+        document_types = [item["sigla"] for item in document_type_options]
 
         return DocumentFormOptionsRead(
             companies=companies,
             sectors=sectors,
             document_types=document_types,
+            document_type_options=document_type_options,
             scopes=list(DocumentScope),
         )
 
@@ -188,11 +201,13 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to submit.")
 
-        if latest_version.status != DocumentStatus.RASCUNHO:
-            raise ConflictServiceError("Only draft versions can be submitted for review.")
+        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+            raise ConflictServiceError(
+                "Only draft versions (RASCUNHO or REVISAR_RASCUNHO) can be submitted for coordinator approval."
+            )
 
         try:
-            latest_version.status = DocumentStatus.EM_REVISAO
+            latest_version.status = DocumentStatus.PENDENTE_COORDENACAO
             self.version_repository.save(latest_version)
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.SUBMITTED_FOR_REVIEW,
@@ -205,7 +220,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not submit document for review.") from exc
 
-        return MessageResponse(message="Document submitted for review.")
+        return MessageResponse(message="Document moved to coordinator approval queue.")
 
     def approve_document(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
@@ -215,8 +230,10 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to approve.")
 
-        if latest_version.status != DocumentStatus.EM_REVISAO:
-            raise ConflictServiceError("Only versions in review can be approved.")
+        if latest_version.status not in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
+            raise ConflictServiceError(
+                "Only versions pending coordinator approval can be approved."
+            )
 
         active_version = self.version_repository.get_active_version_for_document(document_id)
 
@@ -263,17 +280,22 @@ class DocumentService:
         reason: str | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        self._ensure_can_approve(current_user, document_id=document_id)
 
         latest_version = self.version_repository.get_latest_version_for_document(document_id)
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to reject.")
 
-        if latest_version.status != DocumentStatus.EM_REVISAO:
-            raise ConflictServiceError("Only versions in review can be rejected.")
-
         try:
-            latest_version.status = DocumentStatus.RASCUNHO
+            if latest_version.status in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+                if not current_user.has_role(UserRole.REVISOR):
+                    raise ForbiddenServiceError("Only reviewer role can reject drafts.")
+                latest_version.status = DocumentStatus.REVISAR_RASCUNHO
+            elif latest_version.status in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
+                self._ensure_can_approve(current_user, document_id=document_id)
+                latest_version.status = DocumentStatus.REPROVADO
+            else:
+                raise ConflictServiceError("Only draft or pending coordinator versions can be rejected.")
+
             latest_version.approved_by = None
             latest_version.approved_at = None
             self.version_repository.save(latest_version)
@@ -291,10 +313,10 @@ class DocumentService:
 
         if reason and reason.strip():
             return MessageResponse(
-                message=f"Document review rejected and returned to draft. Reason: {reason.strip()}"
+                message=f"Document rejected successfully. Reason: {reason.strip()}"
             )
 
-        return MessageResponse(message="Document review rejected and returned to draft.")
+        return MessageResponse(message="Document rejected successfully.")
 
     @staticmethod
     def _ensure_authenticated_user_id(current_user: AuthenticatedUser) -> None:
@@ -303,31 +325,35 @@ class DocumentService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if current_user.role == UserRole.LEITOR:
-            raise ForbiddenServiceError("Reader role cannot modify documents.")
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
+            raise ForbiddenServiceError("Only author, reviewer, or coordinator can modify documents.")
 
     @staticmethod
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
-        if current_user.role != UserRole.AUTOR:
+        if not current_user.has_role(UserRole.REVISOR):
             raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
 
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
-        if current_user.role not in {UserRole.COORDENADOR, UserRole.ADMIN}:
-            raise ForbiddenServiceError("Only coordinator or admin can approve documents.")
+        if not current_user.has_role(UserRole.COORDENADOR):
+            raise ForbiddenServiceError("Only coordinator role can approve documents.")
 
         document = self.repository.get_document_by_id(document_id)
         if document is None:
             raise NotFoundServiceError("Document not found.")
 
-        if current_user.role == UserRole.ADMIN:
-            return
-
         user = self.auth_repository.get_user_by_id(current_user.user_id)
         if user is None:
             raise ForbiddenServiceError("Authenticated coordinator was not found in database.")
 
+        user_sector_ids: list[int] = []
+        for sector_id in (getattr(user, "sector_ids", None) or []):
+            if isinstance(sector_id, int) and sector_id not in user_sector_ids:
+                user_sector_ids.append(sector_id)
+        if user.sector_id is not None and user.sector_id not in user_sector_ids:
+            user_sector_ids.append(user.sector_id)
+
         # Only enforce sector matching when both sides are explicitly configured.
-        if user.sector_id is not None and document.sector_id != user.sector_id:
+        if user_sector_ids and document.sector_id not in user_sector_ids:
             raise ForbiddenServiceError("Coordinator can only approve documents from the same sector.")
 
     def _get_editable_draft(
@@ -346,17 +372,16 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions.")
 
-        if latest_version.status != DocumentStatus.RASCUNHO:
+        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
             raise ConflictServiceError("Only draft documents can be edited or deleted.")
 
         return document, latest_version
 
     @staticmethod
-    def _build_document_code(*, document_type: str, document_id: int, sector_name: str) -> str:
+    def _build_document_code(*, document_type: str, document_id: int, sector_sigla: str | None) -> str:
         normalized_type = DocumentService._slug_segment(document_type) or "DOC"
-        normalized_sector = DocumentService._slug_segment(sector_name) or "SET"
-        sector_part = normalized_sector[:3].ljust(3, "X")
-        return f"{normalized_type}-{sector_part}-{document_id}"
+        normalized_sector = DocumentService._slug_segment(sector_sigla or "") or "SET"
+        return f"{normalized_type}-{normalized_sector}-{document_id}"
 
     @staticmethod
     def _slug_segment(value: str) -> str:

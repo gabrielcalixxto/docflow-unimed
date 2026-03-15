@@ -22,9 +22,12 @@ def test_auth_login_returns_jwt_bearer_token(public_client) -> None:
 
     service = Mock()
     token = create_access_token(
-        subject="coord.nutricao@example.com",
+        subject="coordenacao.qualidade",
         role=UserRole.COORDENADOR,
+        roles=[UserRole.COORDENADOR],
+        email="coord.nutricao@example.com",
         user_id=7,
+        sector_ids=[10],
     )
     service.login.return_value = TokenResponse(access_token=token, token_type="bearer")
     app.dependency_overrides[auth_router.get_auth_service] = lambda: service
@@ -32,7 +35,7 @@ def test_auth_login_returns_jwt_bearer_token(public_client) -> None:
     try:
         response = public_client.post(
             "/auth/login",
-            json={"email": "coord.nutricao@example.com", "password": "secret"},
+            json={"username": "coordenacao.qualidade", "password": "secret"},
         )
 
         assert response.status_code == 200
@@ -43,8 +46,10 @@ def test_auth_login_returns_jwt_bearer_token(public_client) -> None:
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
-        assert decoded["sub"] == "coord.nutricao@example.com"
+        assert decoded["sub"] == "coordenacao.qualidade"
+        assert decoded["email"] == "coord.nutricao@example.com"
         assert decoded["role"] == "COORDENADOR"
+        assert decoded["roles"] == ["COORDENADOR"]
         assert decoded["user_id"] == 7
     finally:
         app.dependency_overrides.clear()
@@ -60,11 +65,11 @@ def test_auth_login_returns_401_on_invalid_credentials(public_client) -> None:
     try:
         response = public_client.post(
             "/auth/login",
-            json={"email": "coord.nutricao@example.com", "password": "wrong"},
+            json={"username": "coordenacao.qualidade", "password": "wrong"},
         )
 
         assert response.status_code == 401
-        assert response.json() == {"detail": "Invalid email or password."}
+        assert response.json() == {"detail": "Invalid username or password."}
     finally:
         app.dependency_overrides.clear()
 

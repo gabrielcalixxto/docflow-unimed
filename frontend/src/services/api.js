@@ -216,6 +216,14 @@ export async function deleteAdminCompany(companyId) {
   });
 }
 
+export async function updateAdminCompany(companyId, payload) {
+  return request({
+    method: "put",
+    url: `/admin/catalog/companies/${companyId}`,
+    data: payload,
+  });
+}
+
 export async function createAdminSector(payload) {
   return request({
     method: "post",
@@ -231,6 +239,14 @@ export async function deleteAdminSector(sectorId) {
   });
 }
 
+export async function updateAdminSector(sectorId, payload) {
+  return request({
+    method: "put",
+    url: `/admin/catalog/sectors/${sectorId}`,
+    data: payload,
+  });
+}
+
 export async function createAdminDocumentType(payload) {
   return request({
     method: "post",
@@ -243,5 +259,13 @@ export async function deleteAdminDocumentType(documentTypeId) {
   return request({
     method: "delete",
     url: `/admin/catalog/document-types/${documentTypeId}`,
+  });
+}
+
+export async function updateAdminDocumentType(documentTypeId, payload) {
+  return request({
+    method: "put",
+    url: `/admin/catalog/document-types/${documentTypeId}`,
+    data: payload,
   });
 }

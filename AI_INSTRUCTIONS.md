@@ -1,84 +1,93 @@
 # AI_INSTRUCTIONS
 
-Guia de implementacao para agentes de codigo neste repositorio.
+Guia de implementacao para agentes que alteram este repositorio.
 
-## 1. Contexto do projeto
+## 1. Escopo do produto
 
-Plataforma de gestao documental com:
+Sistema de gestao documental com:
 
 - versionamento
 - fluxo de aprovacao
-- segregacao por perfil/setor
-- busca protegida
+- controle de acesso por perfil, setor e empresa
+- busca de documentos vigentes
+- administracao de catalogos (empresa, setor, tipo documental)
 
 Nao tratar como CRUD generico.
 
-## 2. Stack atual (nao assumir diferente)
+## 2. Stack (estado atual)
 
 - Frontend: React + Vite + CSS
 - Backend: FastAPI + SQLAlchemy
 - Banco: PostgreSQL
-- Auth: JWT Bearer Token
-- Orquestracao local: Docker Compose
+- Auth: JWT Bearer
+- Docker Compose: `frontend`, `backend`, `postgres`
 
 ## 3. Regras de dominio obrigatorias
 
-### 3.1 Taxonomia minima
+### 3.1 Documento
 
-Criacao/atualizacao devem considerar:
+- criacao exige: titulo, empresa, setor, tipo documental, escopo, arquivo/url, vencimento
+- codigo automatico: `TIPO-SET-ID`
+- criacao ja gera versao `1` em `RASCUNHO`.
 
-- setor
-- tipo documental
-- data de vencimento
+### 3.2 Status e transicoes
 
-### 3.2 Status de versao
-
-Somente:
+Status validos:
 
 - `RASCUNHO`
+- `REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO`
 - `EM_REVISAO`
+- `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
-### 3.3 Transicoes validas
+Transicoes:
 
-- `RASCUNHO -> EM_REVISAO`
-- `EM_REVISAO -> RASCUNHO`
-- `EM_REVISAO -> VIGENTE`
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO -> VIGENTE`
+- `PENDENTE_COORDENACAO -> REPROVADO`
 - `VIGENTE -> OBSOLETO`
 
-Nao criar status novo sem alinhamento explicito do dono do produto.
+Compatibilidade:
 
-### 3.4 Codigo do documento
+- `EM_REVISAO` pode aparecer em dados legados.
 
-Padrao atual:
+### 3.3 Regras por perfil (backend)
 
-- `TIPO-SET-ID` (ex.: `POP-ENF-8`)
+- `REVISOR`: pode aprovar/desaprovar rascunho e enviar para coordenacao.
+- `COORDENADOR`: pode aprovar/reprovar documentos pendentes de coordenacao.
+- coordenador com setor definido aprova apenas documentos do mesmo setor.
+- `AUTOR` nao envia para revisao na regra atual do backend.
+- edicao/exclusao de rascunho: apenas solicitante da criacao (`RASCUNHO` ou `REVISAR_RASCUNHO`).
 
-### 3.5 Edicao/exclusao de rascunho
+### 3.4 Regras de cadastro
 
-Permitido somente quando:
+Empresas/setores/nomes de tipo documental:
 
-- usuario autenticado e o solicitante da criacao (`document.created_by`)
-- ultima versao esta em `RASCUNHO`
+- normalizar para formato titulo
+- manter `de`, `do`, `da` minusculos quando nao forem primeira palavra.
 
-## 4. Perfis e permissoes
+Tipo documental:
 
-Perfis:
+- `sigla` obrigatoria
+- `sigla` sempre maiuscula e alfanumerica.
 
-- `AUTOR` (rotulado como `REVISOR` no frontend)
-- `COORDENADOR`
-- `LEITOR`
-- `ADMIN`
+## 4. UX obrigatoria para filtros
 
-Regras essenciais:
+Sempre que um filtro for alterado no frontend, manter a posicao atual da pagina (viewport).
 
-- `AUTOR`: cria e envia para revisao
-- `COORDENADOR`: aprova/reprova em revisao (restricao por setor quando definida)
-- `LEITOR`: leitura/busca
-- `ADMIN`: administracao e operacao ampliada
+Como implementar:
 
-## 5. Arquitetura backend
+- usar `frontend/src/hooks/useViewportPreserver.js`
+- aplicar em todos os filtros existentes e em novos filtros.
+
+Regra adicional:
+
+- ao recarregar dados em fluxo ligado a filtro, preservar viewport quando aplicavel.
+
+## 5. Organizacao backend
 
 ```text
 backend/
@@ -92,32 +101,30 @@ backend/
   main.py
 ```
 
-Responsabilidades:
+Diretrizes:
 
-- `routers`: HTTP e mapping de erros
-- `services`: regra de negocio
-- `repositories`: persistencia
-- `models`: ORM
-- `schemas`: contratos de API
-- `core`: config, db, seed, seguranca, logging
+- regra de negocio deve ficar em `services`
+- `routers` so orquestram HTTP/dependencias/erros
+- validacao de autorizacao deve ser no backend
+- `repositories` nao devem conter regra funcional de negocio.
 
 ## 6. Endpoints (familias)
 
 - auth (`/auth`)
 - documents (`/documents`)
-- versions (subrotas de `/documents`)
+- versions (`/documents/{id}/versions`)
 - search (`/documents/search`)
 - admin users (`/admin/users`)
 - admin catalog (`/admin/catalog`)
 
-## 7. Boas praticas para agentes
+## 7. Padrao para alteracoes
 
-- Validar regra no backend; nao confiar apenas no frontend.
-- Evitar logica de negocio em router.
-- Cobrir alteracoes com testes de unidade e/ou API.
-- Atualizar documentacao quando mudar regra de dominio.
+- sempre atualizar testes de unidade/API se regra de negocio mudar
+- sempre atualizar `.md` quando mudar regra funcional
+- nunca documentar comportamento que nao esteja implementado
+- evitar texto de roadmap em documentacao principal
 
-## 8. Limitacoes atuais que devem ser respeitadas
+## 8. Limitacoes atuais
 
-- `AuditService` ainda e placeholder (sem persistencia real de eventos).
-- Sem Alembic no fluxo atual (`create_all` no startup).
+- `AuditService` permanece placeholder (sem persistencia de eventos)
+- sem Alembic no fluxo atual; schema usa `create_all` + ajustes runtime em startup.

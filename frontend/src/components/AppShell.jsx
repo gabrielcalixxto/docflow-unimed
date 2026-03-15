@@ -1,15 +1,21 @@
 import { useState } from "react";
 
 import {
+  canAccessAdminCatalog,
   canAccessAdminUsers,
+  canAccessAtualizarDocumento,
+  canAccessCentralAprovacao,
+  canAccessHistoricoSolicitacoes,
+  canAccessNovoDocumento,
   canAccessPainel,
-  canAccessSolicitacoes,
+  canAccessSearch,
   displayRole,
 } from "../utils/roles";
 
 const SEARCH_ITEM = {
   id: "search",
   label: "Busca",
+  isVisible: canAccessSearch,
   icon: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
@@ -20,13 +26,37 @@ const SEARCH_ITEM = {
   ),
 };
 
-const NAV_SECTIONS = [
+const APPROVAL_ITEM = {
+  id: "central-aprovacao",
+  label: "Central de Aprovacao",
+  isVisible: canAccessCentralAprovacao,
+  icon: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M7 3a4 4 0 0 1 3.9 5H13a4 4 0 1 1 0 2h-2.1A4 4 0 1 1 7 3Zm10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+};
+
+const NAV_GROUPS = [
   {
-    title: "Solicitações",
+    id: "solicitacoes",
+    label: "Solicitacoes",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M8 3h8a2 2 0 0 1 2 2v2h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V5a2 2 0 0 1 2-2Zm0 4h8V5H8v2Zm11 2H5v10h14V9Z"
+          fill="currentColor"
+        />
+      </svg>
+    ),
     items: [
       {
         id: "novo-documento",
         label: "Novo Documento",
+        isVisible: canAccessNovoDocumento,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -39,6 +69,7 @@ const NAV_SECTIONS = [
       {
         id: "atualizar-documento",
         label: "Atualizar Documento",
+        isVisible: canAccessAtualizarDocumento,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -49,21 +80,9 @@ const NAV_SECTIONS = [
         ),
       },
       {
-        id: "central-aprovacao",
-        label: "Central de Aprovação",
-        isVisible: canAccessSolicitacoes,
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M7 3a4 4 0 0 1 3.9 5H13a4 4 0 1 1 0 2h-2.1A4 4 0 1 1 7 3Zm10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
-              fill="currentColor"
-            />
-          </svg>
-        ),
-      },
-      {
         id: "historico-solicitacoes",
         label: "Historico de Solicitacoes",
+        isVisible: canAccessHistoricoSolicitacoes,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -76,7 +95,16 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Painel de Indicadores",
+    id: "painel-indicadores",
+    label: "Painel de Indicadores",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 5a1 1 0 0 1 1-1h6v7H4V5Zm9-1h6a1 1 0 0 1 1 1v4h-7V4ZM4 13h7v7H5a1 1 0 0 1-1-1v-6Zm9 0h7v6a1 1 0 0 1-1 1h-6v-7Z"
+          fill="currentColor"
+        />
+      </svg>
+    ),
     items: [
       {
         id: "painel-documentos",
@@ -107,11 +135,20 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Gestão de acessos",
+    id: "gestao-cadastros",
+    label: "Gestao de Cadastros",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M3 20h18v-2h-1V5a1 1 0 0 0-1-1h-5v14h-2V9a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9H3v2Zm3-2v-8h4v8H6Zm10 0V6h3v12h-3Z"
+          fill="currentColor"
+        />
+      </svg>
+    ),
     items: [
       {
         id: "painel-usuarios",
-        label: "Painel de Usuarios",
+        label: "Cadastro de Usuarios",
         isVisible: canAccessAdminUsers,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -125,7 +162,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-setores",
         label: "Cadastro de Setores",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -138,7 +175,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-empresas",
         label: "Cadastro de Empresas",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -151,7 +188,7 @@ const NAV_SECTIONS = [
       {
         id: "cadastro-tipo-documento",
         label: "Cadastro Tipo de Documento",
-        isVisible: canAccessAdminUsers,
+        isVisible: canAccessAdminCatalog,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -168,10 +205,31 @@ const NAV_SECTIONS = [
 export default function AppShell({ children, activePage, onPageChange, session, onLogout }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const visibleSections = NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => !item.isVisible || item.isVisible(session.role)),
-  })).filter((section) => section.items.length > 0);
+  const [openGroups, setOpenGroups] = useState({
+    solicitacoes: false,
+    "painel-indicadores": false,
+    "gestao-cadastros": false,
+  });
+  const sessionRoles = session.roles || session.role;
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.isVisible || item.isVisible(sessionRoles)),
+  })).filter((group) => group.items.length > 0);
+
+  const handleToggleGroup = (groupId) => {
+    if (collapsed) {
+      setCollapsed(false);
+      setOpenGroups((prev) => ({
+        ...prev,
+        [groupId]: true,
+      }));
+      return;
+    }
+    setOpenGroups((prev) => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
 
   return (
     <div className="layout-root">
@@ -190,40 +248,109 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         </div>
 
         <nav className="sidebar-nav">
-          <button
-            key={SEARCH_ITEM.id}
-            type="button"
-            className={`nav-item ${activePage === SEARCH_ITEM.id ? "active" : ""}`}
-            onClick={() => {
-              onPageChange(SEARCH_ITEM.id);
-              setMobileOpen(false);
-            }}
-            title={SEARCH_ITEM.label}
-          >
-            <span className="nav-icon">{SEARCH_ITEM.icon}</span>
-            {!collapsed && <span className="nav-label">{SEARCH_ITEM.label}</span>}
-          </button>
+          {(!SEARCH_ITEM.isVisible || SEARCH_ITEM.isVisible(sessionRoles)) && (
+            <button
+              key={SEARCH_ITEM.id}
+              type="button"
+              className={`nav-item ${activePage === SEARCH_ITEM.id ? "active" : ""}`}
+              onClick={() => {
+                onPageChange(SEARCH_ITEM.id);
+                setMobileOpen(false);
+              }}
+              title={SEARCH_ITEM.label}
+            >
+              <span className="nav-icon">{SEARCH_ITEM.icon}</span>
+              {!collapsed && <span className="nav-label">{SEARCH_ITEM.label}</span>}
+            </button>
+          )}
 
-          {visibleSections.map((section) => (
-            <div key={`section-${section.title}`}>
-              {!collapsed && <p className="nav-section-title">{section.title}</p>}
-              {section.items.map((item) => (
+          {(!APPROVAL_ITEM.isVisible || APPROVAL_ITEM.isVisible(sessionRoles)) && (
+            <button
+              key={APPROVAL_ITEM.id}
+              type="button"
+              className={`nav-item ${activePage === APPROVAL_ITEM.id ? "active" : ""}`}
+              onClick={() => {
+                onPageChange(APPROVAL_ITEM.id);
+                setMobileOpen(false);
+              }}
+              title={APPROVAL_ITEM.label}
+            >
+              <span className="nav-icon">{APPROVAL_ITEM.icon}</span>
+              {!collapsed && <span className="nav-label">{APPROVAL_ITEM.label}</span>}
+            </button>
+          )}
+
+          {visibleGroups.map((group) => {
+            const hasActiveItem = group.items.some((item) => item.id === activePage);
+            const isOpen = !!openGroups[group.id];
+
+            if (collapsed) {
+              return (
+                <div key={`group-collapsed-${group.id}`}>
+                  {group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`nav-item nav-subitem ${activePage === item.id ? "active" : ""}`}
+                      onClick={() => {
+                        onPageChange(item.id);
+                        setMobileOpen(false);
+                      }}
+                      title={item.label}
+                    >
+                      <span className="nav-icon">{item.icon}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+
+            return (
+              <div key={`group-${group.id}`} className="nav-group">
                 <button
-                  key={item.id}
                   type="button"
-                  className={`nav-item nav-subitem ${activePage === item.id ? "active" : ""}`}
-                  onClick={() => {
-                    onPageChange(item.id);
-                    setMobileOpen(false);
-                  }}
-                  title={item.label}
+                  className={`nav-item nav-group-button ${hasActiveItem ? "active" : ""}`}
+                  onClick={() => handleToggleGroup(group.id)}
+                  title={group.label}
                 >
-                  <span className="nav-icon">{item.icon}</span>
-                  {!collapsed && <span className="nav-label">{item.label}</span>}
+                  <span className="nav-icon">{group.icon}</span>
+                  <span className="nav-label">{group.label}</span>
+                  <span className={`nav-group-chevron ${isOpen ? "open" : ""}`} aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path
+                        d="M6 9l6 6 6-6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
                 </button>
-              ))}
-            </div>
-          ))}
+
+                {isOpen && (
+                  <div className="nav-group-items">
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`nav-item nav-subitem ${activePage === item.id ? "active" : ""}`}
+                        onClick={() => {
+                          onPageChange(item.id);
+                          setMobileOpen(false);
+                        }}
+                        title={item.label}
+                      >
+                        <span className="nav-icon">{item.icon}</span>
+                        <span className="nav-label">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-foot">
@@ -267,14 +394,14 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <div>
               <p className="topbar-title">Plataforma de documentos</p>
               <p className="topbar-subtitle">
-                Perfil: <strong>{displayRole(session.role)}</strong>
+                Perfil: <strong>{displayRole(session.roles || session.role)}</strong>
               </p>
             </div>
           </div>
 
           <div className="topbar-right">
             <div className="user-chip">
-              <p>{session.email}</p>
+              <p>{session.username || session.email}</p>
             </div>
             <button type="button" className="logout-btn" onClick={onLogout}>
               Sair
@@ -287,3 +414,4 @@ export default function AppShell({ children, activePage, onPageChange, session, 
     </div>
   );
 }
+

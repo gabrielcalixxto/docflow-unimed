@@ -1,22 +1,22 @@
 import { useState } from "react";
 
 export default function LoginPage({ onLogin, errorMessage }) {
-  const [email, setEmail] = useState("coord@teste.com");
+  const [username, setUsername] = useState("revisor.docflow");
   const [password, setPassword] = useState("123");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState("");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!email || !password) {
-      setLocalError("Preencha email e senha.");
+    if (!username || !password) {
+      setLocalError("Preencha login e senha.");
       return;
     }
     setLocalError("");
     setIsSubmitting(true);
     try {
       await onLogin({
-        email: email.trim().toLowerCase(),
+        username: username.trim().toLowerCase(),
         password,
       });
     } catch (_error) {
@@ -39,13 +39,13 @@ export default function LoginPage({ onLogin, errorMessage }) {
         </p>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <label htmlFor="login-email">Email</label>
+          <label htmlFor="login-username">Login</label>
           <input
-            id="login-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="coord@teste.com"
+            id="login-username"
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="gabriel.soares"
             autoComplete="username"
           />
 

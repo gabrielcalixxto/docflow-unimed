@@ -9,8 +9,6 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
-    seed_default_users: bool = True
-    seed_default_password: str = "123"
     debug_sql: bool = False
     log_level: str = "INFO"
     log_requests: bool = True

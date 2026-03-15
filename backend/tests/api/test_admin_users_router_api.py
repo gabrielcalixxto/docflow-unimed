@@ -38,8 +38,11 @@ def test_list_admin_users_returns_items(admin_authorized_client, monkeypatch) ->
         {
             "id": 1,
             "name": "Admin",
+            "username": "admin.docflow",
             "email": "admin@docflow.local",
+            "roles": ["ADMIN"],
             "role": "ADMIN",
+            "sector_ids": [],
             "sector_id": None,
         }
     ]
@@ -56,7 +59,8 @@ def test_get_admin_user_options_returns_data(admin_authorized_client, monkeypatc
 
     service = Mock()
     service.get_options.return_value = {
-        "roles": ["AUTOR", "COORDENADOR", "LEITOR", "ADMIN"],
+        "roles": ["AUTOR", "REVISOR", "COORDENADOR", "LEITOR", "ADMIN"],
+        "companies": [{"id": 1, "name": "Hospital"}],
         "sectors": [{"id": 10, "name": "Qualidade", "company_id": 1}],
     }
     monkeypatch.setattr(admin_users_router, "get_user_admin_service", lambda _: service)
@@ -64,6 +68,7 @@ def test_get_admin_user_options_returns_data(admin_authorized_client, monkeypatc
     response = admin_authorized_client.get("/admin/users/options")
 
     assert response.status_code == 200
+    assert response.json()["companies"][0]["id"] == 1
     assert response.json()["sectors"][0]["id"] == 10
 
 
@@ -80,8 +85,9 @@ def test_create_admin_user_returns_201(admin_authorized_client, monkeypatch) -> 
             "name": "Autor Teste",
             "email": "autor.novo@docflow.local",
             "password": "123456",
-            "role": "AUTOR",
-            "sector_id": 10,
+            "roles": ["AUTOR", "REVISOR"],
+            "company_ids": [1],
+            "sector_ids": [10],
         },
     )
 
@@ -102,8 +108,9 @@ def test_update_admin_user_returns_200(admin_authorized_client, monkeypatch) -> 
             "name": "Autor Teste",
             "email": "autor.novo@docflow.local",
             "password": None,
-            "role": "AUTOR",
-            "sector_id": 10,
+            "roles": ["AUTOR"],
+            "company_ids": [1],
+            "sector_ids": [10],
         },
     )
 
@@ -150,8 +157,9 @@ def test_create_admin_user_returns_409_on_conflict(admin_authorized_client, monk
             "name": "Autor Teste",
             "email": "autor.novo@docflow.local",
             "password": "123456",
-            "role": "AUTOR",
-            "sector_id": 10,
+            "roles": ["AUTOR"],
+            "company_ids": [1],
+            "sector_ids": [10],
         },
     )
 

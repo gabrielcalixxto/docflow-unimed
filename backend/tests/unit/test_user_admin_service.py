@@ -18,7 +18,7 @@ def build_service(*, repository: Mock | None = None) -> UserAdminService:
 
 
 def admin_user() -> AuthenticatedUser:
-    return AuthenticatedUser(email="admin@docflow.local", role=UserRole.ADMIN, user_id=1)
+    return AuthenticatedUser(email="admin@docflow.local", role=UserRole.ADMIN, roles=[UserRole.ADMIN], user_id=1)
 
 
 def test_list_users_returns_repository_items_for_admin() -> None:
@@ -35,7 +35,12 @@ def test_list_users_returns_repository_items_for_admin() -> None:
 def test_list_users_blocks_non_admin() -> None:
     repository = Mock()
     service = build_service(repository=repository)
-    current_user = AuthenticatedUser(email="autor@example.com", role=UserRole.AUTOR, user_id=10)
+    current_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=10,
+    )
 
     with pytest.raises(ForbiddenServiceError):
         service.list_users(current_user)
@@ -44,16 +49,19 @@ def test_list_users_blocks_non_admin() -> None:
 def test_create_user_persists_user_with_hashed_password() -> None:
     repository = Mock()
     repository.db = Mock()
-    repository.get_sector_by_id.return_value = SimpleNamespace(id=10)
+    repository.get_company_by_id.return_value = SimpleNamespace(id=1)
+    repository.get_sector_by_id.return_value = SimpleNamespace(id=10, company_id=1)
     repository.get_user_by_email.return_value = None
+    repository.get_user_by_username.return_value = None
     repository.create_user.return_value = SimpleNamespace(id=7)
     service = build_service(repository=repository)
     payload = UserAdminCreate(
         name="Novo Usuario",
         email="novo@docflow.local",
         password="123456",
-        role=UserRole.AUTOR,
-        sector_id=10,
+        roles=[UserRole.AUTOR],
+        company_ids=[1],
+        sector_ids=[10],
     )
 
     response = service.create_user(payload, admin_user())
@@ -61,6 +69,7 @@ def test_create_user_persists_user_with_hashed_password() -> None:
     assert isinstance(response, MessageResponse)
     assert "created" in response.message.lower()
     repository.create_user.assert_called_once()
+    assert repository.create_user.call_args.kwargs["username"] == "novo.usuario"
     hashed_password = repository.create_user.call_args.kwargs["password_hash"]
     assert hashed_password != payload.password
     assert verify_password(payload.password, hashed_password) is True
@@ -74,8 +83,8 @@ def test_update_user_raises_not_found_when_user_missing() -> None:
     payload = UserAdminUpdate(
         name="A",
         email="a@docflow.local",
-        role=UserRole.ADMIN,
-        sector_id=None,
+        roles=[UserRole.ADMIN],
+        sector_ids=[],
     )
 
     with pytest.raises(NotFoundServiceError):
@@ -90,8 +99,8 @@ def test_update_user_rejects_duplicated_email() -> None:
     payload = UserAdminUpdate(
         name="A",
         email="duplicado@docflow.local",
-        role=UserRole.ADMIN,
-        sector_id=None,
+        roles=[UserRole.ADMIN],
+        sector_ids=[],
     )
 
     with pytest.raises(ConflictServiceError):
@@ -108,10 +117,12 @@ def test_delete_user_blocks_self_deletion() -> None:
 
 def test_get_options_returns_roles_and_sectors() -> None:
     repository = Mock()
+    repository.list_companies.return_value = [SimpleNamespace(id=1, name="Hospital")]
     repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
     service = build_service(repository=repository)
 
     options = service.get_options(admin_user())
 
+    assert options.companies[0].id == 1
     assert options.sectors[0].id == 10
     assert UserRole.ADMIN in options.roles

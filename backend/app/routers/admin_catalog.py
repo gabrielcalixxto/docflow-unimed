@@ -7,8 +7,11 @@ from app.repositories.admin_catalog_repository import AdminCatalogRepository
 from app.schemas.admin_catalog import (
     AdminCatalogOptionsRead,
     AdminCompanyCreate,
+    AdminCompanyUpdate,
     AdminDocumentTypeCreate,
+    AdminDocumentTypeUpdate,
     AdminSectorCreate,
+    AdminSectorUpdate,
 )
 from app.schemas.common import MessageResponse
 from app.services.admin_catalog_service import AdminCatalogService
@@ -59,6 +62,20 @@ def delete_company(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.put("/companies/{company_id}", response_model=MessageResponse)
+def update_company(
+    company_id: int,
+    payload: AdminCompanyUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_admin_catalog_service(db)
+    try:
+        return service.update_company(company_id, payload, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.post("/sectors", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 def create_sector(
     payload: AdminSectorCreate,
@@ -85,6 +102,20 @@ def delete_sector(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.put("/sectors/{sector_id}", response_model=MessageResponse)
+def update_sector(
+    sector_id: int,
+    payload: AdminSectorUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_admin_catalog_service(db)
+    try:
+        return service.update_sector(sector_id, payload, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.post("/document-types", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 def create_document_type(
     payload: AdminDocumentTypeCreate,
@@ -107,5 +138,19 @@ def delete_document_type(
     service = get_admin_catalog_service(db)
     try:
         return service.delete_document_type(document_type_id, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.put("/document-types/{document_type_id}", response_model=MessageResponse)
+def update_document_type(
+    document_type_id: int,
+    payload: AdminDocumentTypeUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_admin_catalog_service(db)
+    try:
+        return service.update_document_type(document_type_id, payload, current_user)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

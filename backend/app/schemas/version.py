@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.enums import DocumentStatus
 
@@ -13,7 +13,12 @@ class DocumentVersionBase(BaseModel):
 
 
 class DocumentVersionCreate(DocumentVersionBase):
-    pass
+    @field_validator("expiration_date")
+    @classmethod
+    def validate_expiration_date(cls, value: date) -> date:
+        if value < date.today():
+            raise ValueError("Expiration date cannot be earlier than today.")
+        return value
 
 
 class DocumentVersionRead(DocumentVersionBase):

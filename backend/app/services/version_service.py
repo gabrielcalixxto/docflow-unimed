@@ -38,18 +38,29 @@ class VersionService:
         if payload.status != DocumentStatus.RASCUNHO:
             raise ConflictServiceError("New versions must start as draft (RASCUNHO).")
 
-        if self.repository.get_version_by_number(
-            document_id=document_id,
-            version_number=payload.version_number,
-        ) is not None:
+        latest_version = self.repository.get_latest_version_for_document(document_id)
+        if latest_version is not None and latest_version.status in {
+            DocumentStatus.RASCUNHO,
+            DocumentStatus.REVISAR_RASCUNHO,
+            DocumentStatus.PENDENTE_COORDENACAO,
+            DocumentStatus.EM_REVISAO,
+        }:
             raise ConflictServiceError(
-                f"Version number {payload.version_number} already exists for document {document_id}."
+                "There is already a version in progress for this document."
             )
+
+        next_version_number = 1 if latest_version is None else int(latest_version.version_number) + 1
+        create_payload = payload.model_copy(
+            update={
+                "version_number": next_version_number,
+                "status": DocumentStatus.RASCUNHO,
+            }
+        )
 
         try:
             version = self.repository.create_version(
                 document_id=document_id,
-                payload=payload,
+                payload=create_payload,
                 created_by=current_user.user_id,
             )
             self.audit_service.create_placeholder_event(
@@ -63,7 +74,7 @@ class VersionService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not create document version.") from exc
 
-        return MessageResponse(message=f"Version {payload.version_number} created successfully.")
+        return MessageResponse(message=f"Version {next_version_number} created successfully.")
 
     def list_versions(self, document_id: int) -> list[DocumentVersion]:
         return self.repository.list_versions_for_document(document_id)
@@ -75,5 +86,5 @@ class VersionService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if current_user.role == UserRole.LEITOR:
-            raise ForbiddenServiceError("Reader role cannot create versions.")
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
+            raise ForbiddenServiceError("Only author, reviewer, or coordinator can create versions.")

@@ -15,7 +15,15 @@ from main import app
 
 @pytest.fixture
 def current_user() -> AuthenticatedUser:
-    return AuthenticatedUser(email="autor@example.com", role=UserRole.AUTOR, user_id=99)
+    return AuthenticatedUser(
+        email="revisor@example.com",
+        username="revisor.docflow",
+        role=UserRole.REVISOR,
+        roles=[UserRole.REVISOR],
+        user_id=99,
+        sector_id=10,
+        sector_ids=[10],
+    )
 
 
 @pytest.fixture
@@ -80,6 +88,8 @@ def fake_search_response() -> DocumentSearchResponse:
                 document_id=1,
                 code="DOC-001",
                 title="Manual de Nutricao",
+                company_id=1,
+                sector_id=10,
                 document_type="POP",
                 scope=DocumentScope.LOCAL,
                 active_version_id=11,

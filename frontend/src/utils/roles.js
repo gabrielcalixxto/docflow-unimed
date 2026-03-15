@@ -1,30 +1,90 @@
-export function isAdmin(role) {
-  return role === "ADMIN";
-}
-
-export function isCoordinator(role) {
-  return role === "COORDENADOR";
-}
-
-export function isReviewer(role) {
-  return role === "AUTOR" || role === "REVISOR";
-}
-
-export function displayRole(role) {
-  if (role === "AUTOR") {
-    return "REVISOR";
+function toRoleList(roleOrRoles) {
+  if (Array.isArray(roleOrRoles)) {
+    return roleOrRoles.filter((value) => typeof value === "string");
   }
-  return role;
+  if (typeof roleOrRoles === "string") {
+    return [roleOrRoles];
+  }
+  return [];
 }
 
-export function canAccessPainel(role) {
-  return isReviewer(role) || isAdmin(role);
+function hasRole(roleOrRoles, roleToCheck) {
+  return toRoleList(roleOrRoles).includes(roleToCheck);
 }
 
-export function canAccessSolicitacoes(role) {
-  return isReviewer(role) || isCoordinator(role) || isAdmin(role);
+export function isAdmin(roleOrRoles) {
+  return hasRole(roleOrRoles, "ADMIN");
 }
 
-export function canAccessAdminUsers(role) {
-  return isAdmin(role);
+export function isCoordinator(roleOrRoles) {
+  return hasRole(roleOrRoles, "COORDENADOR");
+}
+
+export function isReader(roleOrRoles) {
+  return hasRole(roleOrRoles, "LEITOR");
+}
+
+export function isAuthor(roleOrRoles) {
+  return hasRole(roleOrRoles, "AUTOR");
+}
+
+export function isReviewer(roleOrRoles) {
+  return hasRole(roleOrRoles, "REVISOR");
+}
+
+export function displayRole(roleOrRoles) {
+  const mapped = toRoleList(roleOrRoles).map(
+    (role) =>
+      ({
+        ADMIN: "ADMIN",
+        COORDENADOR: "COORDENADOR",
+        REVISOR: "REVISOR",
+        AUTOR: "AUTOR",
+        LEITOR: "LEITOR",
+      }[role] || role),
+  );
+  if (mapped.length === 0) {
+    return "-";
+  }
+  return mapped.join(", ");
+}
+
+export function canAccessSearch(roleOrRoles) {
+  return true;
+}
+
+export function canAccessNovoDocumento(roleOrRoles) {
+  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+}
+
+export function canAccessAtualizarDocumento(roleOrRoles) {
+  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+}
+
+export function canAccessHistoricoSolicitacoes(roleOrRoles) {
+  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+}
+
+export function canAccessCentralAprovacao(roleOrRoles) {
+  return isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+}
+
+export function canAccessPainel(roleOrRoles) {
+  return isReviewer(roleOrRoles);
+}
+
+export function canAccessAdminUsers(roleOrRoles) {
+  return isAdmin(roleOrRoles);
+}
+
+export function canAccessAdminCatalog(roleOrRoles) {
+  return isReviewer(roleOrRoles) || isAdmin(roleOrRoles);
+}
+
+export function canAccessSolicitacoesSection(roleOrRoles) {
+  return (
+    canAccessNovoDocumento(roleOrRoles) ||
+    canAccessAtualizarDocumento(roleOrRoles) ||
+    canAccessHistoricoSolicitacoes(roleOrRoles)
+  );
 }

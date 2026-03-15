@@ -13,6 +13,8 @@ class SearchService:
                 document_id=document.id,
                 code=document.code,
                 title=document.title,
+                company_id=document.company_id,
+                sector_id=document.sector_id,
                 document_type=document.document_type,
                 scope=document.scope,
                 active_version_id=version.id,

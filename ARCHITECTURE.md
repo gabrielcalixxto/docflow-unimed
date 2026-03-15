@@ -1,8 +1,8 @@
 # ARCHITECTURE
 
-Este documento descreve a arquitetura vigente do projeto (estado atual do codigo).
+Descricao da arquitetura atual do projeto conforme codigo vigente.
 
-## 1. Visao geral
+## 1. Topologia
 
 ```text
 Frontend (React + Vite)
@@ -14,15 +14,13 @@ Backend API (FastAPI)
 PostgreSQL
 ```
 
-Servicos Docker:
+Containers Docker:
 
 - `frontend`
 - `backend`
 - `postgres`
 
 ## 2. Backend por camadas
-
-Estrutura:
 
 ```text
 backend/
@@ -38,16 +36,16 @@ backend/
 
 Responsabilidades:
 
-- `routers`: HTTP + dependencia + translate de erros para status code.
-- `services`: regras de negocio e orquestracao.
-- `repositories`: persistencia SQLAlchemy.
+- `routers`: contrato HTTP, dependencias, translate de excecao para status code.
+- `services`: regra de negocio e autorizacao funcional.
+- `repositories`: acesso ao banco via SQLAlchemy.
 - `models`: entidades ORM.
-- `schemas`: contratos Pydantic de entrada/saida.
-- `core`: config, banco, seguranca JWT, seed, logging.
+- `schemas`: contratos Pydantic.
+- `core`: config, db, seguranca, logging.
 
-## 3. Modelagem principal
+## 3. Modelagem e dados
 
-Entidades implementadas:
+Entidades:
 
 - `users`
 - `companies`
@@ -57,53 +55,84 @@ Entidades implementadas:
 - `document_versions`
 - `document_events`
 
-Observacoes:
+Pontos estruturais:
 
-- `document_type` e armazenado em `documents` como texto (`string`).
-- `document_types` existe como catalogo administrativo para dropdowns e cadastro.
-- `document_versions` possui:
-  - unicidade `(document_id, version_number)`
+- `documents.document_type` permanece string.
+- `document_types` e catalogo administrativo separado com:
+  - `sigla` (unique)
+  - `name` (unique).
+- `users` suporta multi-acesso:
+  - `roles`, `company_ids`, `sector_ids`
+  - com `role/company_id/sector_id` legados mantidos.
+- `document_versions`:
+  - unique `(document_id, version_number)`
   - indice parcial para uma unica versao `VIGENTE` por documento (PostgreSQL).
 
-## 4. Workflow atual
+## 4. Fluxo de versao
 
-Status em uso:
+Status:
 
 - `RASCUNHO`
+- `REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO`
 - `EM_REVISAO`
+- `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
-Transicoes aplicadas:
+Transicoes:
 
-- `RASCUNHO -> EM_REVISAO` (envio para coordenacao)
-- `EM_REVISAO -> VIGENTE` (aprovacao)
-- `EM_REVISAO -> RASCUNHO` (reprovacao)
-- `VIGENTE -> OBSOLETO` (ao promover nova vigente)
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor aprova e envia)
+- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor desaprova)
+- `PENDENTE_COORDENACAO -> VIGENTE` (aprovacao coordenacao)
+- `PENDENTE_COORDENACAO -> REPROVADO` (reprovacao coordenacao)
+- `VIGENTE -> OBSOLETO` (promocao de nova vigente)
 
-## 5. Regras de governanca
+Observacao:
 
-- Codigo automatico no formato `TIPO-SET-ID`.
-- Criacao de documento gera versao `1` em `RASCUNHO`.
-- Solicitante da criacao pode:
-  - editar rascunho
-  - excluir rascunho
-- Restricao de aprovacao para coordenador do mesmo setor (quando setor do coordenador esta definido).
+- `EM_REVISAO` e aceito apenas para compatibilidade com dados legados.
 
-## 6. Permissoes (resumo)
+## 5. Regras de dominio
 
-Perfis:
+- codigo do documento: `TIPO-SET-ID`.
+- criacao de documento gera versao `1` em `RASCUNHO`.
+- criacao de nova versao gera numero automaticamente (`ultima + 1`).
+- nova versao e bloqueada quando ja existe uma versao em andamento (`RASCUNHO`, `REVISAR_RASCUNHO`, `PENDENTE_COORDENACAO` ou `EM_REVISAO`).
+- submit para coordenacao: apenas `REVISOR`.
+- aprovacao/reprovacao final: apenas `COORDENADOR`.
+- coordenador com setor definido aprova apenas mesmo setor.
+- edicao/exclusao de rascunho: apenas solicitante da criacao.
 
-- `AUTOR` (rotulado como `REVISOR` no frontend)
-- `COORDENADOR`
-- `LEITOR`
-- `ADMIN`
+Normalizacao de cadastro:
 
-Pontos de controle:
+- empresas/setores/nomes de tipo documental:
+  - titulo por palavra
+  - `de`, `do`, `da` minusculos quando nao sao primeira palavra.
+- sigla de tipo documental:
+  - maiuscula
+  - apenas alfanumerico.
 
-- backend valida JWT e permissoes por regra de negocio
-- frontend aplica filtros de visibilidade de menu/telas por perfil
-- backend e a fonte de verdade para autorizacao
+## 6. Frontend
+
+Stack:
+
+- React 18
+- Vite 5
+- CSS em `frontend/src/index.css`
+- axios para API
+
+Navegacao:
+
+- itens diretos: `Busca`, `Central de Aprovacao`
+- grupos colapsaveis:
+  - `Solicitacoes`
+  - `Painel de Indicadores`
+  - `Gestao de Cadastros`
+
+Regra de UX importante:
+
+- filtros devem preservar viewport (posicao de rolagem) durante alteracoes.
+- implementado com `frontend/src/hooks/useViewportPreserver.js`.
 
 ## 7. Endpoints ativos
 
@@ -145,30 +174,15 @@ Admin catalog:
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
 - `DELETE /admin/catalog/companies/{company_id}`
+- `PUT /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
 - `DELETE /admin/catalog/sectors/{sector_id}`
+- `PUT /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
 - `DELETE /admin/catalog/document-types/{document_type_id}`
+- `PUT /admin/catalog/document-types/{document_type_id}`
 
-## 8. Frontend atual
+## 8. Limites conhecidos
 
-Stack:
-
-- React 18
-- Vite 5
-- CSS proprio (`src/index.css`)
-- axios para HTTP
-
-Modulos principais:
-
-- busca e visualizacao de vigentes
-- criacao/atualizacao de documentos
-- central de aprovacao
-- historico de solicitacoes com edicao/exclusao de rascunho
-- painel de documentos com filtros
-- administracao de usuarios e catalogos
-
-## 9. Gaps tecnicos conhecidos
-
-- `AuditService` ainda gera eventos placeholder e nao persiste em `document_events`.
-- Nao existe Alembic/migracao versionada; inicializacao usa `Base.metadata.create_all`.
+- `AuditService` ainda placeholder (sem persistencia real de eventos).
+- nao existe fluxo Alembic no projeto atual (schema via `create_all` + ajustes runtime em startup).

@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 
 import {
   createAdminDocumentType,
-  deleteAdminDocumentType,
   getAdminCatalogOptions,
+  updateAdminDocumentType,
 } from "../services/api";
 
 const INITIAL_FORM = {
+  sigla: "",
   name: "",
 };
 
@@ -16,6 +17,9 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [editingDocumentTypeId, setEditingDocumentTypeId] = useState(null);
+  const [editingSigla, setEditingSigla] = useState("");
+  const [editingName, setEditingName] = useState("");
 
   const showFeedback = (type, message) => setFeedback({ type, message });
 
@@ -50,6 +54,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       const response = await createAdminDocumentType({
+        sigla: form.sigla.trim(),
         name: form.name.trim(),
       });
       showFeedback("success", response.message || "Tipo documental criado.");
@@ -66,23 +71,45 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
     }
   };
 
-  const handleDelete = async (documentTypeId) => {
-    const confirmed = window.confirm("Confirma exclusao do tipo documental?");
-    if (!confirmed) {
+  const startEditingDocumentType = (documentType) => {
+    setEditingDocumentTypeId(Number(documentType.id));
+    setEditingSigla(documentType.sigla || "");
+    setEditingName(documentType.name || "");
+  };
+
+  const cancelEditingDocumentType = () => {
+    setEditingDocumentTypeId(null);
+    setEditingSigla("");
+    setEditingName("");
+  };
+
+  const handleUpdateDocumentType = async () => {
+    if (!editingDocumentTypeId) {
       return;
     }
+    const normalizedSigla = editingSigla.trim().toUpperCase();
+    const normalizedName = editingName.trim();
+    if (!normalizedSigla || !normalizedName) {
+      showFeedback("error", "Informe sigla e nome para alterar o tipo documental.");
+      return;
+    }
+
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response = await deleteAdminDocumentType(documentTypeId);
-      showFeedback("success", response.message || "Tipo documental removido.");
+      const response = await updateAdminDocumentType(editingDocumentTypeId, {
+        sigla: normalizedSigla,
+        name: normalizedName,
+      });
+      showFeedback("success", response.message || "Tipo documental alterado.");
+      cancelEditingDocumentType();
       await loadData();
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
         return;
       }
-      showFeedback("error", requestError.message || "Falha ao excluir tipo documental.");
+      showFeedback("error", requestError.message || "Falha ao alterar tipo documental.");
     } finally {
       setSubmitting(false);
     }
@@ -107,14 +134,35 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
         <form className="panel-float workflow-card" onSubmit={handleCreate}>
           <h3>Novo tipo documental</h3>
           <div className="form-grid">
+            <label>
+              Sigla
+              <input
+                required
+                minLength={2}
+                maxLength={40}
+                value={form.sigla}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    sigla: event.target.value.toUpperCase(),
+                  }))
+                }
+                placeholder="Ex: POP"
+              />
+            </label>
             <label className="span-2">
-              Nome do tipo
+              Nome do documento
               <input
                 required
                 minLength={2}
                 value={form.name}
-                onChange={(event) => setForm({ name: event.target.value })}
-                placeholder="Ex: POP"
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="Ex: Procedimento Operacional Padrao"
               />
             </label>
           </div>
@@ -132,7 +180,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Sigla</th>
                 <th>Tipo documental</th>
                 <th>Acoes</th>
               </tr>
@@ -140,17 +188,61 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
             <tbody>
               {documentTypes.map((documentType) => (
                 <tr key={documentType.id}>
-                  <td>{documentType.id}</td>
-                  <td>{documentType.name}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="table-btn"
-                      disabled={submitting}
-                      onClick={() => handleDelete(documentType.id)}
-                    >
-                      Excluir
-                    </button>
+                    {editingDocumentTypeId === Number(documentType.id) ? (
+                      <input
+                        value={editingSigla}
+                        disabled={submitting}
+                        minLength={2}
+                        maxLength={40}
+                        onChange={(event) => setEditingSigla(event.target.value.toUpperCase())}
+                      />
+                    ) : (
+                      documentType.sigla
+                    )}
+                  </td>
+                  <td>
+                    {editingDocumentTypeId === Number(documentType.id) ? (
+                      <input
+                        value={editingName}
+                        disabled={submitting}
+                        minLength={2}
+                        onChange={(event) => setEditingName(event.target.value)}
+                      />
+                    ) : (
+                      documentType.name
+                    )}
+                  </td>
+                  <td>
+                    {editingDocumentTypeId === Number(documentType.id) ? (
+                      <>
+                        <button
+                          type="button"
+                          className="table-btn"
+                          disabled={submitting}
+                          onClick={handleUpdateDocumentType}
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          type="button"
+                          className="table-btn"
+                          disabled={submitting}
+                          onClick={cancelEditingDocumentType}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="table-btn"
+                        disabled={submitting}
+                        onClick={() => startEditingDocumentType(documentType)}
+                      >
+                        Alterar
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

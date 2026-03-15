@@ -1,71 +1,92 @@
 # DocFlow Unimed
 
-Plataforma web para controle de documentos com versionamento, fluxo de aprovacao e segregacao por perfil/setor.
+Plataforma web para controle documental com versionamento, fluxo de aprovacao e controle de acesso por perfil.
 
-## O que ja funciona hoje
+## Estado atual
 
-- Login com JWT.
-- Busca de documentos vigentes.
-- Criacao de documento com:
-  - codigo automatico no formato `TIPO-SET-ID` (ex.: `POP-ENF-8`)
-  - versao `1` criada automaticamente em `RASCUNHO`.
-- Atualizacao de documento via criacao de nova versao.
-- Fluxo de aprovacao:
-  - `RASCUNHO -> EM_REVISAO -> VIGENTE`
-  - rejeicao volta para `RASCUNHO`.
-- Historico de solicitacoes do usuario logado (criacao e atualizacao).
-- Edicao/exclusao de solicitacao em rascunho pelo solicitante da criacao.
-- Painel de documentos com filtros.
-- Painel de usuarios (admin).
-- Cadastro de empresas, setores e tipos documentais (admin).
-- Painel de RNC como placeholder (tela em branco).
+- Login por `username` com JWT.
+- Cadastro de documento cria automaticamente:
+  - codigo `TIPO-SET-ID` (ex.: `POP-ENF-8`)
+  - versao `1` em `RASCUNHO`.
+- Atualizacao de documento por nova versao com numero automatico (`ultima + 1`).
+- Fluxo operacional:
+  - revisor aprova: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+  - revisor desaprova: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+  - coordenador aprova: `PENDENTE_COORDENACAO -> VIGENTE`
+  - coordenador reprova: `PENDENTE_COORDENACAO -> REPROVADO`
+  - quando nova versao vira vigente, a vigente anterior vai para `OBSOLETO`.
+- `EM_REVISAO` permanece apenas por compatibilidade com estados legados.
+- Historico de solicitacoes do solicitante (criacao + atualizacao).
+- Edicao e exclusao de rascunho apenas pelo solicitante da criacao.
+- Painel de documentos com filtros por status considerando todas as versoes.
+- Gestao de usuarios com multiplo papel, empresa e setor.
+- Cadastros administrativos:
+  - empresas
+  - setores
+  - tipos documentais com `sigla` + `nome`.
+- Painel de RNC placeholder (tela em branco).
 
-## Stack atual
+## Regra de UX para filtros
 
-- Frontend: React + Vite + CSS (sem dependencia de design system externo)
+Todos os filtros existentes no frontend devem preservar a posicao atual da pagina (viewport) durante a alteracao do filtro e durante recargas relacionadas ao filtro.
+
+Implementacao atual:
+
+- `SearchPage`
+- `PainelDocumentos`
+- `CadastroSetores`
+
+Hook utilizado:
+
+- `frontend/src/hooks/useViewportPreserver.js`
+
+## Stack
+
+- Frontend: React + Vite + CSS
 - Backend: FastAPI + SQLAlchemy
 - Banco: PostgreSQL
-- Auth: JWT Bearer Token
+- Auth: JWT Bearer
 - Containers: Docker Compose (`frontend`, `backend`, `postgres`)
 
-## Perfis e permissoes (resumo)
+## Perfis e acesso no frontend
 
-- `AUTOR` (exibido no front como `REVISOR`):
-  - cria documentos/versoes
-  - pode enviar para etapa de coordenacao
-- `COORDENADOR`:
-  - aprova/reprova documentos em revisao
-  - restricao por setor quando aplicavel
-- `LEITOR`:
-  - leitura e busca
-- `ADMIN`:
-  - acesso administrativo (usuarios + catalogos)
-  - visao operacional ampla
+Regras ativas em `frontend/src/utils/roles.js`:
 
-## Menu do frontend
+- `LEITOR`
+  - acesso: busca
+- `AUTOR`
+  - acesso: novo documento, atualizar documento, historico
+- `REVISOR`
+  - acesso: novo documento, atualizar documento, historico, central de aprovacao, painel de documentos/RNC, catalogos administrativos
+- `COORDENADOR`
+  - acesso: novo documento, atualizar documento, historico, central de aprovacao
+- `ADMIN`
+  - acesso: busca, cadastro de usuarios e catalogos administrativos
 
-- `Busca`
-- `Solicitacoes`
+## Menu lateral
+
+- `Busca` (item direto)
+- `Central de Aprovacao` (item direto)
+- Grupo `Solicitacoes`
   - `Novo Documento`
   - `Atualizar Documento`
-  - `Central de Aprovacao`
   - `Historico de Solicitacoes`
-- `Painel de Indicadores`
+- Grupo `Painel de Indicadores`
   - `Painel de Documentos`
-  - `Painel de RNC` (placeholder)
-- `Gestao de acessos` (admin)
-  - `Painel de Usuarios`
+  - `Painel de RNC`
+- Grupo `Gestao de Cadastros`
+  - `Cadastro de Usuarios`
   - `Cadastro de Setores`
   - `Cadastro de Empresas`
   - `Cadastro Tipo de Documento`
 
 ## Endpoints principais
 
-### Auth
+Auth:
 
 - `POST /auth/login`
 
-### Documents
+Documents:
 
 - `POST /documents`
 - `GET /documents`
@@ -77,16 +98,16 @@ Plataforma web para controle de documentos com versionamento, fluxo de aprovacao
 - `POST /documents/{document_id}/approve`
 - `POST /documents/{document_id}/reject`
 
-### Versions
+Versions:
 
 - `POST /documents/{document_id}/versions`
 - `GET /documents/{document_id}/versions`
 
-### Search
+Search:
 
 - `GET /documents/search`
 
-### Admin users
+Admin users:
 
 - `GET /admin/users`
 - `GET /admin/users/options`
@@ -94,23 +115,38 @@ Plataforma web para controle de documentos com versionamento, fluxo de aprovacao
 - `PUT /admin/users/{user_id}`
 - `DELETE /admin/users/{user_id}`
 
-### Admin catalog
+Admin catalog:
 
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
 - `DELETE /admin/catalog/companies/{company_id}`
+- `PUT /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
 - `DELETE /admin/catalog/sectors/{sector_id}`
+- `PUT /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
 - `DELETE /admin/catalog/document-types/{document_type_id}`
+- `PUT /admin/catalog/document-types/{document_type_id}`
+
+## Cadastros e normalizacao
+
+Empresas e setores:
+
+- normalizacao tipo titulo por palavra
+- excecao: `de`, `do`, `da` ficam minusculas quando nao sao a primeira palavra.
+
+Tipos documentais:
+
+- `sigla`: sempre maiuscula, apenas alfanumerico
+- `nome`: normalizacao tipo titulo com excecao `de/do/da`.
 
 ## Como rodar com Docker
 
-1. Copie `.env.example` para `.env` e ajuste os valores.
-2. Suba os servicos:
+1. Copie `.env.example` para `.env`.
+2. Execute:
 
 ```bash
-docker compose up --build
+docker compose up -d --build postgres backend frontend
 ```
 
 3. Acesse:
@@ -119,31 +155,21 @@ docker compose up --build
 - Backend: `http://localhost:8000`
 - Health: `http://localhost:8000/health`
 
-## Usuarios seed (quando `SEED_DEFAULT_USERS=true`)
-
-- `admin@teste.com` (`ADMIN`)
-- `coord@teste.com` (`COORDENADOR`)
-- `autor@teste.com` (`AUTOR` exibido como `REVISOR`)
-- `leitor@teste.com` (`LEITOR`)
-
-Senha default: valor de `SEED_DEFAULT_PASSWORD` (padrao `123`).
-
 ## Testes
 
 Backend:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
 python -m pytest -q backend/tests
 ```
 
-Frontend (build):
+Frontend:
 
 ```bash
 npm --prefix frontend run build
 ```
 
-## Limites conhecidos
+## Limites atuais
 
-- Eventos de auditoria ainda estao em modo placeholder (`AuditService`) e nao persistem em `document_events`.
-- Banco ainda usa `create_all` no startup; nao ha migracoes versionadas (Alembic) no fluxo atual.
+- `AuditService` ainda usa evento placeholder (sem persistencia real em `document_events`).
+- Schema ainda inicializa com `create_all`; nao ha migracao Alembic versionada no fluxo atual.
