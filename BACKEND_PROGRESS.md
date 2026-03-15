@@ -1,22 +1,18 @@
 # BACKEND_PROGRESS
 
-## Snapshot atual (2026-03-13)
+## Snapshot atual (2026-03-15)
 
 - Stack: FastAPI + SQLAlchemy + PostgreSQL + JWT.
 - Login por `username` (nao por email).
-- Controle de acesso multi-escopo em usuario:
+- Usuario com multi-acesso:
   - `roles` (lista)
   - `company_ids` (lista)
   - `sector_ids` (lista)
-  - com campos legados `role/company_id/sector_id` mantidos para compatibilidade.
-- Catalogo de tipo documental com:
-  - `sigla` (unica, maiuscula, alfanumerica)
-  - `name` (nome normalizado).
-- Inicializacao em `main.py` aplica ajustes de schema em runtime para:
-  - `users` multi-acesso
-  - `document_types.sigla`
-  - `sectors.sigla`
-  - valores novos do enum `document_status`.
+  - campos legados `role/company_id/sector_id` mantidos.
+- Catalogo de tipo documental com `sigla` + `name`.
+- Setor com `sigla` obrigatoria.
+- Upload de arquivos persistido em banco (`stored_files`) via `/file-storage/upload`.
+- Eventos de auditoria persistidos em `document_events`.
 
 ## Routers ativos
 
@@ -24,6 +20,7 @@
 - `documents`
 - `versions`
 - `search`
+- `files`
 - `admin_users`
 - `admin_catalog`
 
@@ -54,6 +51,12 @@ Search:
 
 - `GET /documents/search`
 
+Files:
+
+- `POST /file-storage/upload`
+- `GET /file-storage/{storage_key}`
+- `GET /file-storage/{storage_key}?download=1`
+
 Admin users:
 
 - `GET /admin/users`
@@ -66,51 +69,44 @@ Admin catalog:
 
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
-- `DELETE /admin/catalog/companies/{company_id}`
 - `PUT /admin/catalog/companies/{company_id}`
+- `DELETE /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
-- `DELETE /admin/catalog/sectors/{sector_id}`
 - `PUT /admin/catalog/sectors/{sector_id}`
+- `DELETE /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
-- `DELETE /admin/catalog/document-types/{document_type_id}`
 - `PUT /admin/catalog/document-types/{document_type_id}`
+- `DELETE /admin/catalog/document-types/{document_type_id}`
 
 ## Regras de negocio implementadas
 
 Documento:
 
 - cria codigo automatico `TIPO-SET-ID`
-- cria versao inicial `1` em `RASCUNHO`.
-- nova versao cria numero automaticamente (`ultima + 1`).
-- bloqueia nova criacao quando ja existe versao em andamento.
+- cria versao inicial `1` em `RASCUNHO`
+- cria nova versao com numero automatico (`ultima + 1`)
+- bloqueia nova versao se houver versao em andamento.
 
 Fluxo:
 
-- envio/aprovacao de revisor: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
-- desaprovacao de revisor: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
-- aprovacao coordenacao: `PENDENTE_COORDENACAO -> VIGENTE`
-- reprovacao coordenacao: `PENDENTE_COORDENACAO -> REPROVADO`
-- ao aprovar nova versao, vigente anterior vira `OBSOLETO`.
-- `EM_REVISAO` e aceito apenas para compatibilidade legada.
+- revisor envia: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+- revisor rejeita rascunho: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+- coordenador aprova: `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE`
+- coordenador reprova: `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO`
+- versao vigente anterior vira `OBSOLETO` ao aprovar nova vigente.
 
-Controle de dono do rascunho:
+Permissoes:
 
-- editar/excluir apenas se:
-  - usuario atual e `created_by`
-  - ultima versao esta em `RASCUNHO` ou `REVISAR_RASCUNHO`.
+- submit para coordenacao: apenas `REVISOR`
+- aprovacao final: apenas `COORDENADOR`
+- coordenador com setor definido aprova apenas no proprio setor.
+- edicao/exclusao de rascunho: apenas autor da criacao.
 
-Restricao de aprovacao por setor:
+Datas:
 
-- coordenador com setor configurado aprova apenas documento do mesmo setor.
-
-Normalizacao de cadastro administrativo:
-
-- empresas e setores:
-  - formato titulo por palavra
-  - `de`, `do`, `da` permanecem minusculos quando nao sao primeira palavra.
-- tipo documental:
-  - `sigla` -> maiuscula e alfanumerica
-  - `name` -> mesmo padrao de titulo das empresas/setores.
+- criacao de documento: vencimento `>= hoje` e `<= hoje + 2 anos`
+- criacao de versao: vencimento `>= hoje`
+- edicao de rascunho: vencimento `>= hoje`
 
 ## Persistencia e entidades
 
@@ -121,36 +117,39 @@ Normalizacao de cadastro administrativo:
 - `documents`
 - `document_versions`
 - `document_events`
+- `stored_files`
 
 Pontos tecnicos:
 
-- `document_versions` com unique `(document_id, version_number)`.
-- indice parcial para uma unica versao `VIGENTE` por documento (PostgreSQL).
+- `document_versions` com unique `(document_id, version_number)`
+- indice parcial para unica versao `VIGENTE` por documento
+- colunas de auditoria de invalidacao em `document_versions`:
+  - `invalidated_by`
+  - `invalidated_at`.
 
 ## Seguranca
 
-- JWT carrega:
+- JWT inclui:
   - `sub`, `email`, `user_id`
   - `role`, `roles`
   - `company_id`, `company_ids`
   - `sector_id`, `sector_ids`
   - `exp`.
-- autorizacao principal ocorre no service layer.
+- Autorizacao principal no service layer.
 
-## Testes
+## Schema / startup
 
-Comando:
+`main.py` aplica `create_all` e ajustes de schema em runtime para compatibilidade:
 
-```bash
-python -m pytest -q backend/tests
-```
+- enums de status/role
+- colunas multi-acesso de usuario
+- `document_types.sigla`
+- `sectors.sigla`
+- colunas de invalidacao em versoes
+- migracao de arquivos legados para `stored_files` quando aplicavel.
 
-Resultado validado mais recente:
+## Limites atuais
 
-- `110 passed`
-- 1 warning de cache do pytest, sem impacto funcional.
-
-## Limites conhecidos
-
-- `AuditService` segue como placeholder (sem persistencia real em `document_events`).
-- nao ha Alembic no fluxo atual; schema inicia via `create_all` + ajustes runtime.
+- Sem Alembic versionado no fluxo atual.
+- Catalogo no backend exige `ADMIN`; frontend ainda exibe essas telas para `REVISOR`.
+- Nao existe endpoint dedicado para consulta de trilha de auditoria por UI (embora eventos sejam persistidos).

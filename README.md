@@ -1,84 +1,86 @@
 # DocFlow Unimed
 
-Plataforma web para controle documental com versionamento, fluxo de aprovacao e controle de acesso por perfil.
+Plataforma web para gestao documental com versionamento, fluxo de aprovacao e controle de acesso por perfil.
 
-## Estado atual
+## Estado atual do sistema
 
-- Login por `username` com JWT.
-- Cadastro de documento cria automaticamente:
-  - codigo `TIPO-SET-ID` (ex.: `POP-ENF-8`)
+- Login por `username` + senha com JWT (`POST /auth/login`).
+- Busca retorna apenas documentos com versao `VIGENTE`.
+- Tela `Novo Documento` possui dois cards no mesmo lugar:
+  - `Criar documento`
+  - `Atualizar documento` (nova versao).
+- Criacao de documento gera automaticamente:
+  - codigo no formato `TIPO-SET-ID` (ex.: `POP-ENF-8`)
   - versao `1` em `RASCUNHO`.
-- Atualizacao de documento por nova versao com numero automatico (`ultima + 1`).
-- Fluxo operacional:
-  - revisor aprova: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
-  - revisor desaprova: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
-  - coordenador aprova: `PENDENTE_COORDENACAO -> VIGENTE`
-  - coordenador reprova: `PENDENTE_COORDENACAO -> REPROVADO`
-  - quando nova versao vira vigente, a vigente anterior vai para `OBSOLETO`.
-- `EM_REVISAO` permanece apenas por compatibilidade com estados legados.
-- Historico de solicitacoes do solicitante (criacao + atualizacao).
-- Edicao e exclusao de rascunho apenas pelo solicitante da criacao.
-- Painel de documentos com filtros por status considerando todas as versoes.
-- Gestao de usuarios com multiplo papel, empresa e setor.
-- Cadastros administrativos:
-  - empresas
-  - setores
-  - tipos documentais com `sigla` + `nome`.
-- Painel de RNC placeholder (tela em branco).
+- Nova versao gera numero automatico (`ultima + 1`) e inicia em `RASCUNHO`.
+- Arquivos enviados vao para banco (`stored_files`) via `/file-storage/upload`.
 
-## Regra de UX para filtros
+## Fluxo documental implementado
 
-Todos os filtros existentes no frontend devem preservar a posicao atual da pagina (viewport) durante a alteracao do filtro e durante recargas relacionadas ao filtro.
+Status usados:
 
-Implementacao atual:
+- `RASCUNHO`
+- `REVISAR_RASCUNHO`
+- `PENDENTE_COORDENACAO`
+- `EM_REVISAO` (compatibilidade legada)
+- `REPROVADO`
+- `VIGENTE`
+- `OBSOLETO`
 
-- `SearchPage`
-- `PainelDocumentos`
-- `CadastroSetores`
+Transicoes principais:
 
-Hook utilizado:
+- revisor envia para coordenacao: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
+- revisor desaprova rascunho: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
+- coordenador aprova: `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE`
+- coordenador reprova: `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO`
+- quando uma nova versao vira `VIGENTE`, a `VIGENTE` anterior vira `OBSOLETO`.
+
+## Menu lateral atual
+
+Itens diretos:
+
+- `Busca`
+- `Central de Aprovacao`
+
+Grupo `Solicitacoes`:
+
+- `Novo Documento`
+- `Historico de Solicitacoes`
+- `Nova RNC (Em breve)`
+
+Grupo `Painel de Indicadores`:
+
+- `Painel de Documentos`
+- `Painel de RNC (Em breve)`
+
+Grupo `Gestao de Cadastros`:
+
+- `Cadastro de Usuarios`
+- `Cadastro de Setores`
+- `Cadastro de Empresas`
+- `Cadastro Tipo de Documento`
+
+## Regras de acesso (frontend)
+
+Implementadas em `frontend/src/utils/roles.js`:
+
+- `LEITOR`: apenas `Busca`
+- `AUTOR`: `Busca`, `Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`
+- `REVISOR`: tudo de `AUTOR` + `Central de Aprovacao` + `Painel de Indicadores` + `Gestao de Cadastros`
+- `COORDENADOR`: `Busca`, `Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`, `Central de Aprovacao`
+- `ADMIN`: `Busca` + `Cadastro de Usuarios` + `Gestao de Cadastros`
+
+Observacao importante:
+
+- O frontend exibe catalogos para `REVISOR`, mas o backend (`/admin/catalog`) exige `ADMIN`.
+
+## UX de filtros
+
+Os filtros do frontend preservam viewport (nao pulam para o topo da pagina) com:
 
 - `frontend/src/hooks/useViewportPreserver.js`
 
-## Stack
-
-- Frontend: React + Vite + CSS
-- Backend: FastAPI + SQLAlchemy
-- Banco: PostgreSQL
-- Auth: JWT Bearer
-- Containers: Docker Compose (`frontend`, `backend`, `postgres`)
-
-## Perfis e acesso no frontend
-
-Regras ativas em `frontend/src/utils/roles.js`:
-
-- `LEITOR`
-  - acesso: busca
-- `AUTOR`
-  - acesso: novo documento, atualizar documento, historico
-- `REVISOR`
-  - acesso: novo documento, atualizar documento, historico, central de aprovacao, painel de documentos/RNC, catalogos administrativos
-- `COORDENADOR`
-  - acesso: novo documento, atualizar documento, historico, central de aprovacao
-- `ADMIN`
-  - acesso: busca, cadastro de usuarios e catalogos administrativos
-
-## Menu lateral
-
-- `Busca` (item direto)
-- `Central de Aprovacao` (item direto)
-- Grupo `Solicitacoes`
-  - `Novo Documento`
-  - `Atualizar Documento`
-  - `Historico de Solicitacoes`
-- Grupo `Painel de Indicadores`
-  - `Painel de Documentos`
-  - `Painel de RNC`
-- Grupo `Gestao de Cadastros`
-  - `Cadastro de Usuarios`
-  - `Cadastro de Setores`
-  - `Cadastro de Empresas`
-  - `Cadastro Tipo de Documento`
+Aplicado nas telas com filtros (busca, solicitacoes, historico, painel de documentos, novo documento e telas administrativas).
 
 ## Endpoints principais
 
@@ -107,6 +109,12 @@ Search:
 
 - `GET /documents/search`
 
+Files:
+
+- `POST /file-storage/upload`
+- `GET /file-storage/{storage_key}`
+- `GET /file-storage/{storage_key}?download=1`
+
 Admin users:
 
 - `GET /admin/users`
@@ -119,41 +127,50 @@ Admin catalog:
 
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
-- `DELETE /admin/catalog/companies/{company_id}`
 - `PUT /admin/catalog/companies/{company_id}`
+- `DELETE /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
-- `DELETE /admin/catalog/sectors/{sector_id}`
 - `PUT /admin/catalog/sectors/{sector_id}`
+- `DELETE /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
-- `DELETE /admin/catalog/document-types/{document_type_id}`
 - `PUT /admin/catalog/document-types/{document_type_id}`
+- `DELETE /admin/catalog/document-types/{document_type_id}`
 
-## Cadastros e normalizacao
+## Regras de cadastro e normalizacao
 
-Empresas e setores:
+Empresas, setores e nome de tipo documental:
 
-- normalizacao tipo titulo por palavra
-- excecao: `de`, `do`, `da` ficam minusculas quando nao sao a primeira palavra.
+- formato titulo por palavra
+- `de`, `do`, `da` ficam minusculas quando nao sao a primeira palavra
+- palavras explicitamente maiusculas (ex.: `TI`, `CEU`) sao preservadas.
 
-Tipos documentais:
+Siglas:
 
-- `sigla`: sempre maiuscula, apenas alfanumerico
-- `nome`: normalizacao tipo titulo com excecao `de/do/da`.
+- `document_types.sigla`: obrigatoria, maiuscula, alfanumerica
+- `sectors.sigla`: obrigatoria, maiuscula, alfanumerica
 
-## Como rodar com Docker
+## Auditoria e rastreabilidade
+
+- Eventos de fluxo sao persistidos em `document_events` (evento, documento, versao, usuario, data/hora).
+- `AuditService` usa `DocumentEventRepository` quando fornecido.
+- `document_versions` possui campos de auditoria de invalidacao:
+  - `invalidated_by`
+  - `invalidated_at`
+
+## Execucao com Docker
 
 1. Copie `.env.example` para `.env`.
-2. Execute:
+2. Suba os servicos:
 
 ```bash
 docker compose up -d --build postgres backend frontend
 ```
 
-3. Acesse:
+3. Enderecos:
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8000`
-- Health: `http://localhost:8000/health`
+- Healthcheck: `http://localhost:8000/health`
 
 ## Testes
 
@@ -171,5 +188,6 @@ npm --prefix frontend run build
 
 ## Limites atuais
 
-- `AuditService` ainda usa evento placeholder (sem persistencia real em `document_events`).
-- Schema ainda inicializa com `create_all`; nao ha migracao Alembic versionada no fluxo atual.
+- Telas de RNC estao como placeholder (`Em breve`).
+- Nao ha migracoes Alembic versionadas no fluxo atual (schema criado/ajustado no startup).
+- Auditoria persiste eventos tecnicos; ainda nao existe trilha funcional completa em UI para consulta desses eventos.

@@ -1,48 +1,52 @@
 # Resumo Funcionalidades
 
-Resumo direto do que esta implementado hoje no projeto.
+Resumo direto do que esta implementado hoje.
 
 ## Autenticacao
 
-- Login em `POST /auth/login`.
-- Campo de login: `username`.
+- Login em `POST /auth/login`
+- Campo de acesso: `username` (formato esperado: `nome.sobrenome`).
 - JWT inclui `roles`, `company_ids`, `sector_ids` e campos legados.
 
 ## Documentos
 
 - Criar documento:
-  - gera codigo `TIPO-SET-ID`
-  - cria versao `1` em `RASCUNHO`.
+  - codigo automatico `TIPO-SET-ID`
+  - versao `1` em `RASCUNHO`.
 - Atualizar documento:
-  - nova versao via `POST /documents/{document_id}/versions`
-  - numero da versao gerado automaticamente (`ultima + 1`).
+  - nova versao em `POST /documents/{document_id}/versions`
+  - numero de versao automatico (`ultima + 1`).
 - Fluxo:
-  - `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor aprova)
+  - `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor envia)
   - `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor desaprova)
-  - `PENDENTE_COORDENACAO -> VIGENTE` (coordenador aprova)
-  - `PENDENTE_COORDENACAO -> REPROVADO` (coordenador reprova)
-  - vigente anterior vai para `OBSOLETO` quando nova vigente e aprovada.
-  - `EM_REVISAO` permanece como compatibilidade de dados antigos.
+  - `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE` (coordenador aprova)
+  - `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO` (coordenador reprova)
+  - versao `VIGENTE` anterior vira `OBSOLETO` quando entra nova vigente.
 
 ## Regras por papel (backend)
 
-- `REVISOR`: aprova/desaprova rascunho e envia para coordenacao.
+- `REVISOR`: submete rascunho para coordenacao e pode rejeitar rascunho.
 - `COORDENADOR`: aprova/reprova etapa final.
-- `AUTOR`: cria e atualiza documento, mas nao envia para revisao na regra atual.
+- `AUTOR`: cria documento e cria nova versao.
 - `LEITOR`: consulta.
-- `ADMIN`: gestao administrativa e busca.
+- `ADMIN`: gestao de usuarios e catalogos.
+
+Regras complementares:
+
+- Edicao/exclusao de rascunho: apenas solicitante da criacao.
+- Coordenador com setores definidos aprova somente documentos desses setores.
 
 ## Frontend
 
 Telas ativas:
 
 - Busca
-- Novo Documento
-- Atualizar Documento
+- Novo Documento (com card de atualizar versao na mesma tela)
 - Central de Aprovacao
 - Historico de Solicitacoes
+- Nova RNC (Em breve)
 - Painel de Documentos
-- Painel de RNC (placeholder)
+- Painel de RNC (Em breve)
 - Cadastro de Usuarios
 - Cadastro de Setores
 - Cadastro de Empresas
@@ -56,36 +60,41 @@ Menu:
   - `Painel de Indicadores`
   - `Gestao de Cadastros`
 
+## Arquivos e pre-visualizacao
+
+- Upload: `POST /file-storage/upload`.
+- Arquivos ficam persistidos em `stored_files`.
+- Download inline/attachment:
+  - `GET /file-storage/{storage_key}`
+  - `GET /file-storage/{storage_key}?download=1`.
+- Busca exibe preview em drawer com botoes de download e impressao.
+
 ## Cadastros administrativos
 
 Empresas:
 
-- nome normalizado por titulo com excecao `de/do/da`.
+- nome normalizado em formato titulo
+- excecao `de/do/da`
+- mantem palavras explicitamente maiusculas (ex.: `TI`, `CEU`).
 
 Setores:
 
-- nome normalizado por titulo com excecao `de/do/da`.
-- filtro por empresa no painel de listagem.
+- mesmo padrao de normalizacao
+- possui `sigla` obrigatoria
+- atualizacao de setor pode sincronizar empresa de documentos e recodificar documentos.
 
 Tipos documentais:
 
-- cadastro com `sigla` + `nome`
+- campos `sigla` + `nome`
 - `sigla` obrigatoria, maiuscula e alfanumerica
-- `nome` normalizado no padrao de titulo.
+- atualizacao sincroniza `document_type` dos documentos e recodifica codigos.
 
-## Regra de UX de filtros
+## UX de filtros
 
-Todos os filtros existentes preservam viewport (nao voltam para o topo da pagina):
+Filtros preservam viewport via `useViewportPreserver` nas telas com filtros (busca, solicitacoes, historico, painel de documentos, novo documento e telas administrativas).
 
-- filtros de busca
-- filtros do painel de documentos
-- filtro de setores por empresa
+## Pontos de atencao
 
-Hook central:
-
-- `frontend/src/hooks/useViewportPreserver.js`
-
-## Limites atuais
-
-- `AuditService` ainda placeholder.
-- sem Alembic no fluxo atual.
+- `RNC` ainda placeholder (`Em breve`).
+- Sem Alembic no fluxo atual.
+- Eventos de auditoria ja sao persistidos em `document_events`, mas sem painel dedicado de auditoria na UI.

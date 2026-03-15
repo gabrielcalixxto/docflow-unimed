@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-Descricao da arquitetura atual do projeto conforme codigo vigente.
+Descricao da arquitetura atual conforme codigo vigente.
 
 ## 1. Topologia
 
@@ -36,16 +36,16 @@ backend/
 
 Responsabilidades:
 
-- `routers`: contrato HTTP, dependencias, translate de excecao para status code.
+- `routers`: contrato HTTP, dependencias e mapeamento de erro.
 - `services`: regra de negocio e autorizacao funcional.
-- `repositories`: acesso ao banco via SQLAlchemy.
+- `repositories`: consultas e persistencia SQLAlchemy.
 - `models`: entidades ORM.
 - `schemas`: contratos Pydantic.
-- `core`: config, db, seguranca, logging.
+- `core`: config, seguranca, db, logging.
 
-## 3. Modelagem e dados
+## 3. Entidades e armazenamento
 
-Entidades:
+Entidades principais:
 
 - `users`
 - `companies`
@@ -54,63 +54,60 @@ Entidades:
 - `documents`
 - `document_versions`
 - `document_events`
+- `stored_files`
 
 Pontos estruturais:
 
-- `documents.document_type` permanece string.
-- `document_types` e catalogo administrativo separado com:
-  - `sigla` (unique)
-  - `name` (unique).
-- `users` suporta multi-acesso:
-  - `roles`, `company_ids`, `sector_ids`
-  - com `role/company_id/sector_id` legados mantidos.
+- `documents.document_type` armazenado como string.
+- `document_types` possui `sigla` + `name`.
+- `sectors` possui `sigla`.
+- `users` suporta multi-acesso (`roles`, `company_ids`, `sector_ids`) com campos legados mantidos.
 - `document_versions`:
   - unique `(document_id, version_number)`
   - indice parcial para uma unica versao `VIGENTE` por documento (PostgreSQL).
+- `stored_files` guarda binario no banco e vinculo opcional a documento/versao.
 
-## 4. Fluxo de versao
+## 4. Fluxo de versao e aprovacao
 
 Status:
 
 - `RASCUNHO`
 - `REVISAR_RASCUNHO`
 - `PENDENTE_COORDENACAO`
-- `EM_REVISAO`
+- `EM_REVISAO` (compatibilidade legada)
 - `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
 Transicoes:
 
-- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor aprova e envia)
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor envia)
 - `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor desaprova)
-- `PENDENTE_COORDENACAO -> VIGENTE` (aprovacao coordenacao)
-- `PENDENTE_COORDENACAO -> REPROVADO` (reprovacao coordenacao)
-- `VIGENTE -> OBSOLETO` (promocao de nova vigente)
-
-Observacao:
-
-- `EM_REVISAO` e aceito apenas para compatibilidade com dados legados.
+- `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE` (coordenador aprova)
+- `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO` (coordenador reprova)
+- `VIGENTE -> OBSOLETO` (nova vigente aprovada)
 
 ## 5. Regras de dominio
 
-- codigo do documento: `TIPO-SET-ID`.
-- criacao de documento gera versao `1` em `RASCUNHO`.
-- criacao de nova versao gera numero automaticamente (`ultima + 1`).
-- nova versao e bloqueada quando ja existe uma versao em andamento (`RASCUNHO`, `REVISAR_RASCUNHO`, `PENDENTE_COORDENACAO` ou `EM_REVISAO`).
-- submit para coordenacao: apenas `REVISOR`.
-- aprovacao/reprovacao final: apenas `COORDENADOR`.
-- coordenador com setor definido aprova apenas mesmo setor.
-- edicao/exclusao de rascunho: apenas solicitante da criacao.
+- Codigo do documento: `TIPO-SET-ID` (tipo + sigla de setor + id).
+- Criacao gera versao `1` em `RASCUNHO`.
+- Nova versao sempre inicia em `RASCUNHO` com numero automatico.
+- Bloqueio de nova versao se ja houver versao em andamento (`RASCUNHO`, `REVISAR_RASCUNHO`, `PENDENTE_COORDENACAO`, `EM_REVISAO`).
+- Submit para coordenacao: apenas `REVISOR`.
+- Aprovacao/reprovacao final: apenas `COORDENADOR`.
+- Coordenador com setores definidos aprova apenas no proprio escopo.
+- Edicao/exclusao de rascunho: apenas solicitante da criacao.
 
-Normalizacao de cadastro:
+Regras de data:
 
-- empresas/setores/nomes de tipo documental:
-  - titulo por palavra
-  - `de`, `do`, `da` minusculos quando nao sao primeira palavra.
-- sigla de tipo documental:
-  - maiuscula
-  - apenas alfanumerico.
+- Criacao de documento: vencimento `>= hoje` e `<= hoje + 2 anos` (backend).
+- Criacao de versao: vencimento `>= hoje` (backend).
+
+Normalizacao de cadastros:
+
+- Empresas/setores/tipo(nome): formato titulo, com excecao `de/do/da`.
+- Siglas: maiusculas e alfanumericas.
+- Palavras explicitamente maiusculas (ex.: `TI`, `CEU`) sao preservadas.
 
 ## 6. Frontend
 
@@ -119,20 +116,18 @@ Stack:
 - React 18
 - Vite 5
 - CSS em `frontend/src/index.css`
-- axios para API
 
 Navegacao:
 
 - itens diretos: `Busca`, `Central de Aprovacao`
-- grupos colapsaveis:
-  - `Solicitacoes`
-  - `Painel de Indicadores`
+- grupos:
+  - `Solicitacoes` (`Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`)
+  - `Painel de Indicadores` (`Painel de Documentos`, `Painel de RNC (Em breve)`)
   - `Gestao de Cadastros`
 
-Regra de UX importante:
+Regra de UX:
 
-- filtros devem preservar viewport (posicao de rolagem) durante alteracoes.
-- implementado com `frontend/src/hooks/useViewportPreserver.js`.
+- Filtros preservam viewport via `frontend/src/hooks/useViewportPreserver.js`.
 
 ## 7. Endpoints ativos
 
@@ -161,6 +156,12 @@ Search:
 
 - `GET /documents/search`
 
+Files:
+
+- `POST /file-storage/upload`
+- `GET /file-storage/{storage_key}`
+- `GET /file-storage/{storage_key}?download=1`
+
 Admin users:
 
 - `GET /admin/users`
@@ -173,16 +174,22 @@ Admin catalog:
 
 - `GET /admin/catalog/options`
 - `POST /admin/catalog/companies`
-- `DELETE /admin/catalog/companies/{company_id}`
 - `PUT /admin/catalog/companies/{company_id}`
+- `DELETE /admin/catalog/companies/{company_id}`
 - `POST /admin/catalog/sectors`
-- `DELETE /admin/catalog/sectors/{sector_id}`
 - `PUT /admin/catalog/sectors/{sector_id}`
+- `DELETE /admin/catalog/sectors/{sector_id}`
 - `POST /admin/catalog/document-types`
-- `DELETE /admin/catalog/document-types/{document_type_id}`
 - `PUT /admin/catalog/document-types/{document_type_id}`
+- `DELETE /admin/catalog/document-types/{document_type_id}`
 
-## 8. Limites conhecidos
+## 8. Observacoes de acesso
 
-- `AuditService` ainda placeholder (sem persistencia real de eventos).
-- nao existe fluxo Alembic no projeto atual (schema via `create_all` + ajustes runtime em startup).
+- Frontend permite abrir catalogos para `REVISOR` e `ADMIN`.
+- Backend de catalogo exige `ADMIN` para operacoes (incluindo `/admin/catalog/options`).
+
+## 9. Limites conhecidos
+
+- RNC ainda em placeholder (`Em breve`).
+- Sem migracoes Alembic versionadas no fluxo atual (schema inicializado/ajustado no startup).
+- Nao ha tela dedicada para consulta de `document_events`.

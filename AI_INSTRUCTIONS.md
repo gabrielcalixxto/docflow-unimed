@@ -1,6 +1,6 @@
 # AI_INSTRUCTIONS
 
-Guia de implementacao para agentes que alteram este repositorio.
+Guia para agentes que alteram este repositorio.
 
 ## 1. Escopo do produto
 
@@ -10,11 +10,11 @@ Sistema de gestao documental com:
 - fluxo de aprovacao
 - controle de acesso por perfil, setor e empresa
 - busca de documentos vigentes
-- administracao de catalogos (empresa, setor, tipo documental)
+- administracao de cadastros (usuarios, empresas, setores, tipo documental)
 
 Nao tratar como CRUD generico.
 
-## 2. Stack (estado atual)
+## 2. Stack atual
 
 - Frontend: React + Vite + CSS
 - Backend: FastAPI + SQLAlchemy
@@ -26,9 +26,11 @@ Nao tratar como CRUD generico.
 
 ### 3.1 Documento
 
-- criacao exige: titulo, empresa, setor, tipo documental, escopo, arquivo/url, vencimento
+- criacao exige: titulo, empresa, setor, tipo documental, escopo, `file_path`, vencimento
 - codigo automatico: `TIPO-SET-ID`
-- criacao ja gera versao `1` em `RASCUNHO`.
+- criacao gera versao `1` em `RASCUNHO`
+- nova versao inicia em `RASCUNHO` e recebe numero automatico
+- bloquear nova versao se houver versao em andamento.
 
 ### 3.2 Status e transicoes
 
@@ -37,55 +39,55 @@ Status validos:
 - `RASCUNHO`
 - `REVISAR_RASCUNHO`
 - `PENDENTE_COORDENACAO`
-- `EM_REVISAO`
+- `EM_REVISAO` (compatibilidade legada)
 - `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
 Transicoes:
 
-- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
-- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
-- `PENDENTE_COORDENACAO -> VIGENTE`
-- `PENDENTE_COORDENACAO -> REPROVADO`
-- `VIGENTE -> OBSOLETO`
-
-Compatibilidade:
-
-- `EM_REVISAO` pode aparecer em dados legados.
+- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor envia)
+- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor rejeita rascunho)
+- `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE` (coordenador aprova)
+- `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO` (coordenador reprova)
+- `VIGENTE -> OBSOLETO` (quando nova versao vira vigente)
 
 ### 3.3 Regras por perfil (backend)
 
-- `REVISOR`: pode aprovar/desaprovar rascunho e enviar para coordenacao.
-- `COORDENADOR`: pode aprovar/reprovar documentos pendentes de coordenacao.
-- coordenador com setor definido aprova apenas documentos do mesmo setor.
-- `AUTOR` nao envia para revisao na regra atual do backend.
-- edicao/exclusao de rascunho: apenas solicitante da criacao (`RASCUNHO` ou `REVISAR_RASCUNHO`).
+- `AUTOR`, `REVISOR`, `COORDENADOR`: podem criar documento e criar nova versao
+- submit para coordenacao: apenas `REVISOR`
+- aprovacao/reprovacao final: apenas `COORDENADOR`
+- coordenador com setor definido aprova apenas documentos do mesmo setor
+- edicao/exclusao de rascunho: apenas solicitante da criacao
+- gestao de usuarios e catalogo backend: apenas `ADMIN`.
 
-### 3.4 Regras de cadastro
+### 3.4 Regras de data
 
-Empresas/setores/nomes de tipo documental:
+- `DocumentCreate.expiration_date`: `>= hoje` e `<= hoje + 2 anos`
+- `DocumentVersionCreate.expiration_date`: `>= hoje`
+- `DocumentDraftUpdate.expiration_date`: `>= hoje`
 
-- normalizar para formato titulo
-- manter `de`, `do`, `da` minusculos quando nao forem primeira palavra.
+### 3.5 Regras de cadastro
 
-Tipo documental:
+Empresas, setores e nome de tipo documental:
 
-- `sigla` obrigatoria
-- `sigla` sempre maiuscula e alfanumerica.
+- normalizar para titulo por palavra
+- manter `de`, `do`, `da` minusculos quando nao forem primeira palavra
+- preservar palavras explicitamente maiusculas (ex.: `TI`, `CEU`).
+
+Siglas:
+
+- `document_types.sigla`: obrigatoria, maiuscula, alfanumerica
+- `sectors.sigla`: obrigatoria, maiuscula, alfanumerica
 
 ## 4. UX obrigatoria para filtros
 
-Sempre que um filtro for alterado no frontend, manter a posicao atual da pagina (viewport).
+Sempre que filtro mudar no frontend, manter viewport.
 
 Como implementar:
 
 - usar `frontend/src/hooks/useViewportPreserver.js`
-- aplicar em todos os filtros existentes e em novos filtros.
-
-Regra adicional:
-
-- ao recarregar dados em fluxo ligado a filtro, preservar viewport quando aplicavel.
+- aplicar em filtros novos e existentes.
 
 ## 5. Organizacao backend
 
@@ -103,10 +105,10 @@ backend/
 
 Diretrizes:
 
-- regra de negocio deve ficar em `services`
-- `routers` so orquestram HTTP/dependencias/erros
-- validacao de autorizacao deve ser no backend
-- `repositories` nao devem conter regra funcional de negocio.
+- regra funcional em `services`
+- `routers` somente HTTP/dependencias/tratamento de erro
+- autorizacao sempre no backend
+- `repositories` sem regra de negocio.
 
 ## 6. Endpoints (familias)
 
@@ -114,17 +116,44 @@ Diretrizes:
 - documents (`/documents`)
 - versions (`/documents/{id}/versions`)
 - search (`/documents/search`)
+- files (`/file-storage`)
 - admin users (`/admin/users`)
 - admin catalog (`/admin/catalog`)
 
-## 7. Padrao para alteracoes
+## 7. Menu e paginas atuais
 
-- sempre atualizar testes de unidade/API se regra de negocio mudar
-- sempre atualizar `.md` quando mudar regra funcional
-- nunca documentar comportamento que nao esteja implementado
-- evitar texto de roadmap em documentacao principal
+Itens diretos:
 
-## 8. Limitacoes atuais
+- `Busca`
+- `Central de Aprovacao`
 
-- `AuditService` permanece placeholder (sem persistencia de eventos)
-- sem Alembic no fluxo atual; schema usa `create_all` + ajustes runtime em startup.
+Grupo `Solicitacoes`:
+
+- `Novo Documento` (inclui card de atualizacao de versao)
+- `Historico de Solicitacoes`
+- `Nova RNC (Em breve)`
+
+Grupo `Painel de Indicadores`:
+
+- `Painel de Documentos`
+- `Painel de RNC (Em breve)`
+
+Grupo `Gestao de Cadastros`:
+
+- `Cadastro de Usuarios`
+- `Cadastro de Setores`
+- `Cadastro de Empresas`
+- `Cadastro Tipo de Documento`
+
+## 8. Padrao de alteracoes
+
+- atualizar testes se regra de negocio mudar
+- atualizar `.md` quando comportamento funcional mudar
+- nao documentar funcionalidades nao implementadas
+- evitar roadmap em arquivos tecnicos principais
+
+## 9. Limitacoes atuais
+
+- RNC ainda placeholder (`Em breve`)
+- sem Alembic versionado no fluxo atual (schema ajustado em startup)
+- eventos de auditoria sao persistidos em `document_events`, mas sem tela dedicada para consulta.
