@@ -2,8 +2,9 @@ import re
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.enums import DocumentEventType, DocumentStatus, UserRole
+from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
+from app.models.document import Document
 from app.models.document_version import DocumentVersion
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.stored_file_repository import StoredFileRepository
@@ -39,6 +40,7 @@ class VersionService:
         document = self.document_repository.get_document_by_id(document_id)
         if document is None:
             raise NotFoundServiceError("Document not found.")
+        self._ensure_can_access_document(current_user, document)
 
         if payload.status != DocumentStatus.RASCUNHO:
             raise ConflictServiceError("New versions must start as draft (RASCUNHO).")
@@ -86,7 +88,12 @@ class VersionService:
 
         return MessageResponse(message=f"Version {next_version_number} created successfully.")
 
-    def list_versions(self, document_id: int) -> list[DocumentVersion]:
+    def list_versions(self, document_id: int, current_user: AuthenticatedUser) -> list[DocumentVersion]:
+        self._ensure_can_access_document_registry(current_user)
+        document = self.document_repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
+        self._ensure_can_access_document(current_user, document)
         return self.repository.list_versions_for_document(document_id)
 
     @staticmethod
@@ -98,6 +105,19 @@ class VersionService:
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
         if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only author, reviewer, or coordinator can create versions.")
+
+    @staticmethod
+    def _ensure_can_access_document_registry(current_user: AuthenticatedUser) -> None:
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+            raise ForbiddenServiceError("Only non-reader roles can access document versions.")
+
+    @staticmethod
+    def _ensure_can_access_document(current_user: AuthenticatedUser, document: Document) -> None:
+        if document.scope == DocumentScope.CORPORATIVO:
+            return
+        if document.scope == DocumentScope.LOCAL and document.sector_id in current_user.normalized_sector_ids():
+            return
+        raise ForbiddenServiceError("You do not have permission to access this document.")
 
     def _attach_uploaded_file_to_version(self, *, file_path: str, document_id: int, version_id: int) -> None:
         storage_key = self._extract_storage_key(file_path)

@@ -1,3 +1,4 @@
+from app.core.security import AuthenticatedUser
 from app.repositories.search_repository import SearchRepository
 from app.schemas.search import DocumentSearchResponse, DocumentSearchResult
 
@@ -6,8 +7,8 @@ class SearchService:
     def __init__(self, repository: SearchRepository):
         self.repository = repository
 
-    def search_documents(self) -> DocumentSearchResponse:
-        rows = self.repository.search_active_documents()
+    def search_documents(self, current_user: AuthenticatedUser) -> DocumentSearchResponse:
+        rows = self.repository.search_active_documents(current_user)
         items = [
             DocumentSearchResult(
                 document_id=document.id,

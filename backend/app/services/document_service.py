@@ -133,11 +133,19 @@ class DocumentService:
             scopes=list(DocumentScope),
         )
 
-    def list_documents(self) -> list[Document]:
-        return self.repository.list_documents()
+    def list_documents(self, current_user: AuthenticatedUser) -> list[Document]:
+        self._ensure_can_access_document_registry(current_user)
+        documents = self.repository.list_documents()
+        return [document for document in documents if self._can_access_document(current_user, document)]
 
-    def get_document(self, document_id: int) -> Document | None:
-        return self.repository.get_document_by_id(document_id)
+    def get_document(self, document_id: int, current_user: AuthenticatedUser) -> Document | None:
+        self._ensure_can_access_document_registry(current_user)
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            return None
+        if not self._can_access_document(current_user, document):
+            raise ForbiddenServiceError("You do not have permission to access this document.")
+        return document
 
     def update_draft_document(
         self,
@@ -351,6 +359,19 @@ class DocumentService:
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
         if not current_user.has_role(UserRole.REVISOR):
             raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
+
+    @staticmethod
+    def _ensure_can_access_document_registry(current_user: AuthenticatedUser) -> None:
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+            raise ForbiddenServiceError("Only non-reader roles can access document registry endpoints.")
+
+    @staticmethod
+    def _can_access_document(current_user: AuthenticatedUser, document: Document) -> bool:
+        if document.scope == DocumentScope.CORPORATIVO:
+            return True
+        if document.scope == DocumentScope.LOCAL:
+            return document.sector_id in current_user.normalized_sector_ids()
+        return False
 
     def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
         if not current_user.has_role(UserRole.COORDENADOR):

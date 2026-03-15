@@ -365,23 +365,23 @@ def test_reject_document_raises_conflict_when_latest_not_rejectable(current_user
         service.reject_document(55, current_user)
 
 
-def test_list_documents_delegates_to_repository(fake_document) -> None:
+def test_list_documents_delegates_to_repository(fake_document, current_user) -> None:
     repository = Mock()
     repository.list_documents.return_value = [fake_document]
     service = build_service(repository=repository)
 
-    result = service.list_documents()
+    result = service.list_documents(current_user)
 
     assert result == [fake_document]
     repository.list_documents.assert_called_once_with()
 
 
-def test_get_document_delegates_to_repository(fake_document) -> None:
+def test_get_document_delegates_to_repository(fake_document, current_user) -> None:
     repository = Mock()
     repository.get_document_by_id.return_value = fake_document
     service = build_service(repository=repository)
 
-    result = service.get_document(1)
+    result = service.get_document(1, current_user)
 
     assert result == fake_document
     repository.get_document_by_id.assert_called_once_with(1)

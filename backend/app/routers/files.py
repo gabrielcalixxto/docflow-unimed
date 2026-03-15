@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.stored_file_repository import StoredFileRepository
 
@@ -25,6 +26,12 @@ async def upload_document_file(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
+    if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only non-reader roles can upload files.",
+        )
+
     repository = StoredFileRepository(db)
     storage_key = uuid4().hex
 

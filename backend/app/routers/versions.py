@@ -42,8 +42,11 @@ def create_version(
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionRead])
 def list_versions(
     document_id: int,
-    _: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentVersionRead]:
     service = get_version_service(db)
-    return service.list_versions(document_id)
+    try:
+        return service.list_versions(document_id, current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

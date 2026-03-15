@@ -57,24 +57,30 @@ def get_document_form_options(
 
 @router.get("", response_model=list[DocumentRead])
 def list_documents(
-    _: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentRead]:
     service = get_document_service(db)
-    return service.list_documents()
+    try:
+        return service.list_documents(current_user)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/{document_id}", response_model=DocumentRead)
 def get_document(
     document_id: int,
-    _: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentRead:
     service = get_document_service(db)
-    document = service.get_document(document_id)
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
-    return document
+    try:
+        document = service.get_document(document_id, current_user)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+        return document
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.patch("/{document_id}/draft", response_model=MessageResponse)

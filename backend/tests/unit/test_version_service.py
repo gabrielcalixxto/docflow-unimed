@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.core.enums import DocumentEventType, DocumentStatus, UserRole
+from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.schemas.common import MessageResponse
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
@@ -27,6 +27,14 @@ def build_service(
     )
 
 
+def build_document(document_id: int = 7) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=document_id,
+        scope=DocumentScope.LOCAL,
+        sector_id=10,
+    )
+
+
 def test_create_version_persists_draft_and_emits_event(version_payload, current_user) -> None:
     repository = Mock()
     repository.db = Mock()
@@ -38,7 +46,7 @@ def test_create_version_persists_draft_and_emits_event(version_payload, current_
     )
     repository.create_version.return_value = created_version
     document_repository = Mock()
-    document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
+    document_repository.get_document_by_id.return_value = build_document(7)
     audit_service = Mock()
     service = build_service(
         repository=repository,
@@ -84,7 +92,7 @@ def test_create_version_rejects_non_draft_status(version_payload, current_user) 
     repository = Mock()
     repository.db = Mock()
     document_repository = Mock()
-    document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
+    document_repository.get_document_by_id.return_value = build_document(7)
     service = build_service(repository=repository, document_repository=document_repository)
 
     with pytest.raises(ConflictServiceError):
@@ -100,7 +108,7 @@ def test_create_version_raises_conflict_when_latest_version_is_in_progress(versi
         status=DocumentStatus.PENDENTE_COORDENACAO,
     )
     document_repository = Mock()
-    document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
+    document_repository.get_document_by_id.return_value = build_document(7)
     service = build_service(repository=repository, document_repository=document_repository)
 
     with pytest.raises(ConflictServiceError):
@@ -111,7 +119,7 @@ def test_create_version_blocks_reader_role(version_payload) -> None:
     repository = Mock()
     repository.db = Mock()
     document_repository = Mock()
-    document_repository.get_document_by_id.return_value = SimpleNamespace(id=7)
+    document_repository.get_document_by_id.return_value = build_document(7)
     service = build_service(repository=repository, document_repository=document_repository)
     reader = AuthenticatedUser(email="reader@example.com", role=UserRole.LEITOR, user_id=9)
 
@@ -119,12 +127,14 @@ def test_create_version_blocks_reader_role(version_payload) -> None:
         service.create_version(7, version_payload, reader)
 
 
-def test_list_versions_delegates_to_repository(fake_version) -> None:
+def test_list_versions_delegates_to_repository(fake_version, current_user) -> None:
     repository = Mock()
+    document_repository = Mock()
+    document_repository.get_document_by_id.return_value = build_document(7)
     repository.list_versions_for_document.return_value = [fake_version]
-    service = build_service(repository=repository)
+    service = build_service(repository=repository, document_repository=document_repository)
 
-    result = service.list_versions(7)
+    result = service.list_versions(7, current_user)
 
     assert result == [fake_version]
     repository.list_versions_for_document.assert_called_once_with(7)

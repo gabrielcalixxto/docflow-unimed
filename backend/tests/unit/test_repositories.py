@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
-from app.core.enums import DocumentStatus
+from app.core.enums import DocumentScope, DocumentStatus, UserRole
+from app.core.security import AuthenticatedUser
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.search_repository import SearchRepository
 from app.repositories.version_repository import VersionRepository
@@ -47,12 +48,19 @@ def test_search_repository_filters_only_vigente_versions() -> None:
     db = Mock()
     db.execute.return_value.all.return_value = []
     repository = SearchRepository(db)
+    current_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        sector_ids=[10],
+    )
 
-    repository.search_active_documents()
+    repository.search_active_documents(current_user)
 
     statement = db.execute.call_args.args[0]
     compiled = statement.compile()
     assert DocumentStatus.VIGENTE in compiled.params.values()
+    assert DocumentScope.CORPORATIVO in compiled.params.values()
+    assert DocumentScope.LOCAL in compiled.params.values()
 
 
 def test_search_repository_maps_rows_as_document_version_tuples() -> None:
@@ -61,7 +69,12 @@ def test_search_repository_maps_rows_as_document_version_tuples() -> None:
     db = Mock()
     db.execute.return_value.all.return_value = [(document, version)]
     repository = SearchRepository(db)
+    current_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        sector_ids=[10],
+    )
 
-    rows = repository.search_active_documents()
+    rows = repository.search_active_documents(current_user)
 
     assert rows == [(document, version)]

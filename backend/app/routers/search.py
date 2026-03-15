@@ -17,8 +17,8 @@ def get_search_service(db: Session) -> SearchService:
 
 @router.get("/search", response_model=DocumentSearchResponse)
 def search_documents(
-    _: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentSearchResponse:
     service = get_search_service(db)
-    return service.search_documents()
+    return service.search_documents(current_user)
