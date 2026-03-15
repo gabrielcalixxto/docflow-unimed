@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -17,6 +17,9 @@ class DocumentSearchResult(BaseModel):
     active_version_number: int
     file_path: str
     expiration_date: date
+    approved_by: int | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
 
 
 class DocumentSearchResponse(BaseModel):

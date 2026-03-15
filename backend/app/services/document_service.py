@@ -216,6 +216,8 @@ class DocumentService:
 
         try:
             latest_version.status = DocumentStatus.PENDENTE_COORDENACAO
+            latest_version.invalidated_at = None
+            latest_version.invalidated_by = None
             self.version_repository.save(latest_version)
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.SUBMITTED_FOR_REVIEW,
@@ -246,8 +248,11 @@ class DocumentService:
         active_version = self.version_repository.get_active_version_for_document(document_id)
 
         try:
+            approval_time = datetime.now(UTC)
             if active_version is not None and active_version.id != latest_version.id:
                 active_version.status = DocumentStatus.OBSOLETO
+                active_version.invalidated_at = approval_time
+                active_version.invalidated_by = current_user.user_id
                 self.version_repository.save(active_version)
                 self.audit_service.create_placeholder_event(
                     event_type=DocumentEventType.MARKED_OBSOLETE,
@@ -258,7 +263,9 @@ class DocumentService:
 
             latest_version.status = DocumentStatus.VIGENTE
             latest_version.approved_by = current_user.user_id
-            latest_version.approved_at = datetime.now(UTC)
+            latest_version.approved_at = approval_time
+            latest_version.invalidated_at = None
+            latest_version.invalidated_by = None
             self.version_repository.save(latest_version)
 
             self.audit_service.create_placeholder_event(
@@ -298,9 +305,13 @@ class DocumentService:
                 if not current_user.has_role(UserRole.REVISOR):
                     raise ForbiddenServiceError("Only reviewer role can reject drafts.")
                 latest_version.status = DocumentStatus.REVISAR_RASCUNHO
+                latest_version.invalidated_at = None
+                latest_version.invalidated_by = None
             elif latest_version.status in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
                 self._ensure_can_approve(current_user, document_id=document_id)
                 latest_version.status = DocumentStatus.REPROVADO
+                latest_version.invalidated_at = datetime.now(UTC)
+                latest_version.invalidated_by = current_user.user_id
             else:
                 raise ConflictServiceError("Only draft or pending coordinator versions can be rejected.")
 

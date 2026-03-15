@@ -35,5 +35,10 @@ class User(Base):
         back_populates="approver",
         foreign_keys="DocumentVersion.approved_by",
     )
+    invalidated_versions = relationship(
+        "DocumentVersion",
+        back_populates="invalidator",
+        foreign_keys="DocumentVersion.invalidated_by",
+    )
     uploaded_files = relationship("StoredFile", back_populates="uploader", foreign_keys="StoredFile.uploaded_by")
     events = relationship("DocumentEvent", back_populates="user")

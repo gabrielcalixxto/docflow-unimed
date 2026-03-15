@@ -21,6 +21,9 @@ class SearchService:
                 active_version_number=version.version_number,
                 file_path=version.file_path,
                 expiration_date=version.expiration_date,
+                approved_by=version.approved_by,
+                approved_by_name=version.approved_by_name,
+                approved_at=version.approved_at,
             )
             for document, version in rows
         ]

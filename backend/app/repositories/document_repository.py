@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.company import Company
 from app.models.document import Document
@@ -27,11 +27,11 @@ class DocumentRepository:
         return document
 
     def list_documents(self) -> list[Document]:
-        statement = select(Document).order_by(Document.created_at.desc())
+        statement = select(Document).options(joinedload(Document.creator)).order_by(Document.created_at.desc())
         return list(self.db.scalars(statement).all())
 
     def get_document_by_id(self, document_id: int) -> Document | None:
-        statement = select(Document).where(Document.id == document_id)
+        statement = select(Document).options(joinedload(Document.creator)).where(Document.id == document_id)
         return self.db.scalar(statement)
 
     def save(self, document: Document) -> None:

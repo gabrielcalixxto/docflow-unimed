@@ -39,6 +39,15 @@ const APPROVAL_ITEM = {
   ),
 };
 
+const MAINTENANCE_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M21.3 6.3a4.8 4.8 0 0 1-6.4 6.1l-7.2 7.2a1.5 1.5 0 0 1-2.1-2.1l7.2-7.2a4.8 4.8 0 0 1 6.1-6.4l-2.8 2.8 1.4 1.4 2.8-2.8ZM8.9 6.8 7.2 8.5 5.8 7.1 7.5 5.4 6.8 4.7a1 1 0 0 1 1.4-1.4l3.5 3.5a1 1 0 0 1-1.4 1.4l-.7-.7Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 const NAV_GROUPS = [
   {
     id: "solicitacoes",
@@ -78,6 +87,12 @@ const NAV_GROUPS = [
           </svg>
         ),
       },
+      {
+        id: "nova-rnc",
+        label: "Nova RNC (Em breve)",
+        isVisible: canAccessNovoDocumento,
+        icon: MAINTENANCE_ICON,
+      },
     ],
   },
   {
@@ -107,16 +122,9 @@ const NAV_GROUPS = [
       },
       {
         id: "painel-rnc",
-        label: "Painel de RNC",
+        label: "Painel de RNC (Em breve)",
         isVisible: canAccessPainel,
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 2 2 20h20L12 2Zm0 6.5a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0V9.5a1 1 0 0 1 1-1Zm0 9a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"
-              fill="currentColor"
-            />
-          </svg>
-        ),
+        icon: MAINTENANCE_ICON,
       },
     ],
   },

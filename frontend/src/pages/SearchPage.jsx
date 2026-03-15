@@ -39,6 +39,17 @@ function buildViewerSrc(path) {
   return `${src}#${PDF_VIEWER_PARAMS}`;
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString("pt-BR");
+}
+
 export default function SearchPage({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const [filters, setFilters] = useState({
@@ -415,6 +426,12 @@ export default function SearchPage({ onUnauthorized }) {
                 </li>
                 <li>
                   <strong>Versao ativa:</strong> {selectedResult.active_version_number}
+                </li>
+                <li>
+                  <strong>Aprovado por:</strong> {selectedResult.approved_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado em:</strong> {formatDateTime(selectedResult.approved_at)}
                 </li>
                 <li>
                   <strong>Empresa:</strong>{" "}

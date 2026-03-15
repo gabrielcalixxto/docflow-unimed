@@ -42,6 +42,42 @@ def ensure_document_status_enum_values() -> None:
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REPROVADO'"))
 
 
+def ensure_document_versions_audit_columns() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS invalidated_by INTEGER"))
+        connection.execute(text("ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMPTZ"))
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE document_versions "
+                "ADD CONSTRAINT fk_document_versions_invalidated_by "
+                "FOREIGN KEY (invalidated_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET invalidated_at = COALESCE(approved_at, created_at) "
+                "WHERE status IN ('OBSOLETO', 'REPROVADO') AND invalidated_at IS NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET invalidated_by = approved_by "
+                "WHERE status = 'REPROVADO' AND invalidated_by IS NULL AND approved_by IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_document_versions_invalidated_at ON document_versions (invalidated_at)")
+        )
+
+
 def ensure_users_table_supports_multi_access() -> None:
     if engine.dialect.name != "postgresql":
         return
@@ -247,6 +283,7 @@ async def lifespan(_: FastAPI):
         Base.metadata.create_all(bind=engine)
         ensure_user_role_enum_values()
         ensure_document_status_enum_values()
+        ensure_document_versions_audit_columns()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()

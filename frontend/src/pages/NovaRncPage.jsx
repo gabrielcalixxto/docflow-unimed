@@ -1,11 +1,11 @@
-export default function PainelRncPage() {
+export default function NovaRncPage() {
   return (
     <div className="page-animation">
       <section className="hero-block">
         <div>
-          <p className="kicker">Painel de Indicadores</p>
-          <h2>Painel de RNC (Em breve)</h2>
-          <p>Em breve vamos implementar o fluxo de reclamacoes e nao conformidades.</p>
+          <p className="kicker">Solicitacoes</p>
+          <h2>Nova RNC (Em breve)</h2>
+          <p>Em breve vamos implementar o fluxo de abertura de RNC.</p>
         </div>
       </section>
 

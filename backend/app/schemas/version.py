@@ -25,8 +25,13 @@ class DocumentVersionRead(DocumentVersionBase):
     id: int
     document_id: int
     created_by: int | None = None
+    created_by_name: str | None = None
     approved_by: int | None = None
+    approved_by_name: str | None = None
+    invalidated_by: int | None = None
+    invalidated_by_name: str | None = None
     created_at: datetime
     approved_at: datetime | None = None
+    invalidated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

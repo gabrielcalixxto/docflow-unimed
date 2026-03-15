@@ -8,6 +8,7 @@ import CadastroTipoDocumentoPage from "./pages/CadastroTipoDocumentoPage";
 import HistoricoSolicitacoesPage from "./pages/HistoricoSolicitacoesPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
+import NovaRncPage from "./pages/NovaRncPage";
 import PainelDocumentos from "./pages/PainelDocumentos";
 import PainelRncPage from "./pages/PainelRncPage";
 import SearchPage from "./pages/SearchPage";
@@ -27,6 +28,7 @@ import {
 const PAGE_ACCESS_RULES = {
   search: canAccessSearch,
   "novo-documento": canAccessNovoDocumento,
+  "nova-rnc": canAccessNovoDocumento,
   "historico-solicitacoes": canAccessHistoricoSolicitacoes,
   "central-aprovacao": canAccessCentralAprovacao,
   "painel-documentos": canAccessPainel,
@@ -40,6 +42,7 @@ const PAGE_ACCESS_RULES = {
 const PAGE_FALLBACK_ORDER = [
   "search",
   "novo-documento",
+  "nova-rnc",
   "historico-solicitacoes",
   "central-aprovacao",
   "painel-documentos",
@@ -147,6 +150,7 @@ export default function App() {
         <PainelDocumentos onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
       {resolvedPage === "painel-rnc" && <PainelRncPage />}
+      {resolvedPage === "nova-rnc" && <NovaRncPage />}
       {resolvedPage === "novo-documento" && (
         <NovoDocumentoPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}

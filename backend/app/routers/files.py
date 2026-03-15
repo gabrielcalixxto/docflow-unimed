@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Response, UploadFile, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -13,9 +13,10 @@ router = APIRouter(prefix="/file-storage", tags=["files"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-def _build_content_disposition(filename: str) -> str:
+def _build_content_disposition(filename: str, *, as_attachment: bool) -> str:
     safe = (filename or "arquivo").replace('"', "").replace("\r", "").replace("\n", "")
-    return f'inline; filename="{safe}"'
+    disposition = "attachment" if as_attachment else "inline"
+    return f'{disposition}; filename="{safe}"'
 
 
 @router.post("/upload")
@@ -62,6 +63,7 @@ async def upload_document_file(
 @router.get("/{storage_key}")
 def get_stored_file(
     storage_key: str = Path(pattern=r"^[A-Fa-f0-9]{32}$"),
+    download: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> Response:
     repository = StoredFileRepository(db)
@@ -70,5 +72,5 @@ def get_stored_file(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Arquivo nao encontrado.")
 
     media_type = stored_file.content_type or "application/octet-stream"
-    headers = {"Content-Disposition": _build_content_disposition(stored_file.original_name)}
+    headers = {"Content-Disposition": _build_content_disposition(stored_file.original_name, as_attachment=download)}
     return Response(content=stored_file.content, media_type=media_type, headers=headers)

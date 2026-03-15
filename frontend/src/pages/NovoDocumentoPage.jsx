@@ -396,7 +396,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
       return;
     }
     if (!versionFile) {
-      showFeedback("error", "Selecione ou arraste um arquivo no card de Atualizar documento.");
+      showFeedback("error", "Selecione ou arraste um arquivo no card de Criar nova versao.");
       return;
     }
     setSubmittingVersion(true);
@@ -420,7 +420,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      showFeedback("error", requestError.message || "Falha ao atualizar documento.");
+      showFeedback("error", requestError.message || "Falha ao criar nova versao.");
     } finally {
       setSubmittingVersion(false);
     }
@@ -431,7 +431,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
       <section className="hero-block">
         <div>
           <p className="kicker">Cadastro manual</p>
-          <h2>Novo documento e Atualizar documento</h2>
+          <h2>Novo documento e Criar nova versao</h2>
           <p>
             Use os dois cards abaixo para criar um novo documento ou atualizar um documento ja
             existente com nova versao em rascunho.
@@ -617,7 +617,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
           onDragLeave={() => setIsUpdateDropActive(false)}
           onDrop={handleUpdateDrop}
         >
-          <h3>Atualizar documento</h3>
+          <h3>Criar nova versao</h3>
           <p className="workflow-hint">
             Selecione um documento vigente abaixo. O ID e preenchido internamente.
           </p>
@@ -631,7 +631,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               </div>
             </label>
             <label>
-              Arquivo da atualizacao
+              Arquivo da nova versao
               <div className="file-upload-row">
                 <button
                   type="button"
@@ -659,7 +659,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 onDragLeave={() => setIsUpdateDropActive(false)}
                 onDrop={handleUpdateDrop}
               >
-                Solte o arquivo dentro do card de Atualizar documento
+                Solte o arquivo dentro do card de Criar nova versao
               </div>
             </label>
             <label>
@@ -688,7 +688,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
             </label>
           </div>
           <button type="submit" className="compact-submit" disabled={submittingVersion}>
-            Atualizar documento
+            Criar nova versao
           </button>
         </form>
       </section>

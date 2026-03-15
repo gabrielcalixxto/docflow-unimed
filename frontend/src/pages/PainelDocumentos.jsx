@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
 import { formatStatusLabel } from "../utils/status";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+const FLOATING_BAR_TOP_OFFSET = 16;
+const FLOATING_BAR_HEIGHT = 15;
 
 const STATUS_ORDER = [
   "VIGENTE",
@@ -37,18 +41,65 @@ function formatDateTime(value) {
   return parsed.toLocaleString("pt-BR");
 }
 
+function extractFileName(path) {
+  if (!path) {
+    return "arquivo";
+  }
+  const parts = String(path).split(/[\\/]/);
+  return parts[parts.length - 1] || String(path);
+}
+
+function resolveFileUrl(path) {
+  if (!path) {
+    return "";
+  }
+  const value = String(path).trim();
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (value.startsWith("/")) {
+    return `${API_BASE_URL}${value}`;
+  }
+  return "";
+}
+
+function resolveFileDownloadUrl(path) {
+  const base = resolveFileUrl(path);
+  if (!base) {
+    return "";
+  }
+  return `${base}${base.includes("?") ? "&" : "?"}download=1`;
+}
+
 export default function PainelDocumentos({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
+  const tableWrapRef = useRef(null);
+  const tableAreaRef = useRef(null);
+  const floatingScrollbarRef = useRef(null);
+  const floatingScrollbarTrackRef = useRef(null);
+  const syncingScrollRef = useRef(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [floatingBarLayout, setFloatingBarLayout] = useState({
+    visible: false,
+    mode: "hidden",
+    left: 0,
+    width: 0,
+  });
   const [filters, setFilters] = useState({
     term: "",
     company: "ALL",
     sector: "ALL",
+    documentType: "ALL",
+    scope: "ALL",
     status: "ALL",
     version: "ALL",
     expiration: "ALL",
+    requestedBy: "ALL",
+    approvedBy: "ALL",
+    invalidatedBy: "ALL",
+    invalidatedDate: "ALL",
   });
 
   const loadItems = async () => {
@@ -112,6 +163,22 @@ export default function PainelDocumentos({ onUnauthorized }) {
     [versionRows],
   );
 
+  const documentTypes = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.document_type).filter(Boolean))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [versionRows],
+  );
+
+  const scopes = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.scope).filter(Boolean))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [versionRows],
+  );
+
   const statuses = useMemo(() => {
     const availableStatuses = new Set(versionRows.map((item) => item.latestStatus).filter(Boolean));
     const extraStatuses = [...availableStatuses]
@@ -158,6 +225,55 @@ export default function PainelDocumentos({ onUnauthorized }) {
     [versionRows],
   );
 
+  const approvers = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.latestVersion?.approved_by_name || "SEM_APROVADOR"))].sort(
+        (a, b) => String(a).localeCompare(String(b)),
+      ),
+    [versionRows],
+  );
+
+  const requesters = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.created_by_name || "SEM_SOLICITANTE"))].sort((a, b) =>
+        String(a).localeCompare(String(b)),
+      ),
+    [versionRows],
+  );
+
+  const invalidators = useMemo(
+    () =>
+      [...new Set(versionRows.map((item) => item.latestVersion?.invalidated_by_name || "SEM_INVALIDADOR"))].sort(
+        (a, b) => String(a).localeCompare(String(b)),
+      ),
+    [versionRows],
+  );
+
+  const invalidatedDates = useMemo(
+    () =>
+      [...new Set(
+        versionRows.map((item) => {
+          if (!item.latestVersion?.invalidated_at) {
+            return "SEM_INVALIDACAO";
+          }
+          const parsed = new Date(item.latestVersion.invalidated_at);
+          if (Number.isNaN(parsed.getTime())) {
+            return String(item.latestVersion.invalidated_at);
+          }
+          return parsed.toISOString().slice(0, 10);
+        }),
+      )].sort((a, b) => {
+        if (a === "SEM_INVALIDACAO") {
+          return 1;
+        }
+        if (b === "SEM_INVALIDACAO") {
+          return -1;
+        }
+        return String(a).localeCompare(String(b));
+      }),
+    [versionRows],
+  );
+
   const filteredItems = useMemo(() => {
     const normalizedTerm = filters.term.trim().toLowerCase();
     return versionRows.filter((item) => {
@@ -166,11 +282,29 @@ export default function PainelDocumentos({ onUnauthorized }) {
           ? String(item.latestVersion.version_number)
           : "SEM_VERSAO";
       const expirationValue = item.latestVersion?.expiration_date || "SEM_VENCIMENTO";
+      const approvedByValue = item.latestVersion?.approved_by_name || "SEM_APROVADOR";
+      const requestedByValue = item.created_by_name || "SEM_SOLICITANTE";
+      const invalidatedByValue = item.latestVersion?.invalidated_by_name || "SEM_INVALIDADOR";
+      const invalidatedDateValue = item.latestVersion?.invalidated_at
+        ? (() => {
+            const parsed = new Date(item.latestVersion.invalidated_at);
+            if (Number.isNaN(parsed.getTime())) {
+              return String(item.latestVersion.invalidated_at);
+            }
+            return parsed.toISOString().slice(0, 10);
+          })()
+        : "SEM_INVALIDACAO";
 
       if (filters.company !== "ALL" && item.companyName !== filters.company) {
         return false;
       }
       if (filters.sector !== "ALL" && item.sectorName !== filters.sector) {
+        return false;
+      }
+      if (filters.documentType !== "ALL" && item.document_type !== filters.documentType) {
+        return false;
+      }
+      if (filters.scope !== "ALL" && item.scope !== filters.scope) {
         return false;
       }
       if (filters.status !== "ALL" && item.latestStatus !== filters.status) {
@@ -180,6 +314,18 @@ export default function PainelDocumentos({ onUnauthorized }) {
         return false;
       }
       if (filters.expiration !== "ALL" && expirationValue !== filters.expiration) {
+        return false;
+      }
+      if (filters.requestedBy !== "ALL" && requestedByValue !== filters.requestedBy) {
+        return false;
+      }
+      if (filters.approvedBy !== "ALL" && approvedByValue !== filters.approvedBy) {
+        return false;
+      }
+      if (filters.invalidatedBy !== "ALL" && invalidatedByValue !== filters.invalidatedBy) {
+        return false;
+      }
+      if (filters.invalidatedDate !== "ALL" && invalidatedDateValue !== filters.invalidatedDate) {
         return false;
       }
       if (!normalizedTerm) {
@@ -193,13 +339,20 @@ export default function PainelDocumentos({ onUnauthorized }) {
         item.sectorName,
         item.document_type,
         item.scope,
+        item.created_by_name || "",
         formatStatusLabel(item.latestStatus),
         versionValue === "SEM_VERSAO" ? "sem versao" : `v${versionValue}`,
         expirationValue === "SEM_VENCIMENTO" ? "sem vencimento" : expirationValue,
+        requestedByValue === "SEM_SOLICITANTE" ? "sem solicitante" : requestedByValue,
+        approvedByValue === "SEM_APROVADOR" ? "sem aprovador" : approvedByValue,
+        invalidatedByValue === "SEM_INVALIDADOR" ? "sem invalidador" : invalidatedByValue,
+        invalidatedDateValue === "SEM_INVALIDACAO" ? "sem invalidacao" : invalidatedDateValue,
         item.latestVersion?.file_path || "",
         formatDateTime(item.created_at),
         formatDateTime(item.latestVersion?.created_at),
         formatDateTime(item.latestVersion?.approved_at),
+        formatDateTime(item.latestVersion?.invalidated_at),
+        item.latestVersion?.invalidated_by_name || "",
       ]
         .join(" ")
         .toLowerCase();
@@ -209,6 +362,137 @@ export default function PainelDocumentos({ onUnauthorized }) {
   }, [versionRows, filters]);
 
   const stats = useMemo(() => summarizeWorkflow(filteredItems), [filteredItems]);
+
+  const updateFloatingBarLayout = useCallback(() => {
+    const tableWrap = tableWrapRef.current;
+    const tableArea = tableAreaRef.current;
+    const floatingTrack = floatingScrollbarTrackRef.current;
+    const floatingScrollbar = floatingScrollbarRef.current;
+    if (!tableWrap || !tableArea || !floatingTrack) {
+      return;
+    }
+
+    const scrollWidth = Math.max(tableWrap.scrollWidth, tableWrap.clientWidth + 1);
+    const hasHorizontalOverflow = tableWrap.scrollWidth > tableWrap.clientWidth + 1;
+    floatingTrack.style.width = `${scrollWidth}px`;
+    if (floatingScrollbar) {
+      floatingScrollbar.scrollLeft = tableWrap.scrollLeft;
+    }
+
+    const areaRect = tableArea.getBoundingClientRect();
+    const isVisibleInViewport = areaRect.bottom > 0 && areaRect.top < window.innerHeight;
+    if (!hasHorizontalOverflow || !isVisibleInViewport) {
+      setFloatingBarLayout((previous) =>
+        previous.visible
+          ? {
+              ...previous,
+              visible: false,
+              mode: "hidden",
+            }
+          : previous,
+      );
+      return;
+    }
+
+    let mode = "fixed";
+    if (areaRect.top >= FLOATING_BAR_TOP_OFFSET) {
+      mode = "top";
+    } else if (areaRect.bottom <= FLOATING_BAR_TOP_OFFSET + FLOATING_BAR_HEIGHT) {
+      mode = "bottom";
+    }
+
+    const nextLayout = {
+      visible: true,
+      mode,
+      left: areaRect.left,
+      width: areaRect.width,
+    };
+    setFloatingBarLayout((previous) => {
+      const sameVisibility = previous.visible === nextLayout.visible;
+      const sameMode = previous.mode === nextLayout.mode;
+      const sameLeft = Math.abs(previous.left - nextLayout.left) < 0.5;
+      const sameWidth = Math.abs(previous.width - nextLayout.width) < 0.5;
+      return sameVisibility && sameMode && sameLeft && sameWidth ? previous : nextLayout;
+    });
+  }, []);
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(updateFloatingBarLayout);
+    const tableWrap = tableWrapRef.current;
+    const tableArea = tableAreaRef.current;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => updateFloatingBarLayout())
+        : null;
+    if (tableWrap && resizeObserver) {
+      resizeObserver.observe(tableWrap);
+    }
+    if (tableArea && resizeObserver) {
+      resizeObserver.observe(tableArea);
+    }
+    window.addEventListener("resize", updateFloatingBarLayout);
+    window.addEventListener("scroll", updateFloatingBarLayout, { passive: true });
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", updateFloatingBarLayout);
+      window.removeEventListener("scroll", updateFloatingBarLayout);
+      resizeObserver?.disconnect();
+    };
+  }, [filteredItems.length, loading, updateFloatingBarLayout]);
+
+  const handleTableScroll = () => {
+    const tableWrap = tableWrapRef.current;
+    const floatingScrollbar = floatingScrollbarRef.current;
+    if (!tableWrap || !floatingScrollbar) {
+      return;
+    }
+    if (syncingScrollRef.current) {
+      return;
+    }
+    syncingScrollRef.current = true;
+    floatingScrollbar.scrollLeft = tableWrap.scrollLeft;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+    updateFloatingBarLayout();
+  };
+
+  const handleFloatingScrollbarScroll = () => {
+    const tableWrap = tableWrapRef.current;
+    const floatingScrollbar = floatingScrollbarRef.current;
+    if (!tableWrap || !floatingScrollbar) {
+      return;
+    }
+    if (syncingScrollRef.current) {
+      return;
+    }
+    syncingScrollRef.current = true;
+    tableWrap.scrollLeft = floatingScrollbar.scrollLeft;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  };
+
+  const openPreviewInNewTab = (filePath) => {
+    const url = resolveFileUrl(filePath);
+    if (!url) {
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const downloadFile = (filePath) => {
+    const url = resolveFileDownloadUrl(filePath);
+    if (!url) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = extractFileName(filePath);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="page-animation">
@@ -323,6 +607,50 @@ export default function PainelDocumentos({ onUnauthorized }) {
         </label>
 
         <label>
+          Tipo documental
+          <select
+            value={filters.documentType}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  documentType: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {documentTypes.map((documentType) => (
+              <option key={documentType} value={documentType}>
+                {documentType}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Escopo
+          <select
+            value={filters.scope}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  scope: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {scopes.map((scope) => (
+              <option key={scope} value={scope}>
+                {scope}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
           Status
           <select
             value={filters.status}
@@ -387,64 +715,202 @@ export default function PainelDocumentos({ onUnauthorized }) {
             ))}
           </select>
         </label>
+
+        <label>
+          Solicitado por
+          <select
+            value={filters.requestedBy}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  requestedBy: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {requesters.map((requester) => (
+              <option key={requester} value={requester}>
+                {requester === "SEM_SOLICITANTE" ? "Sem solicitante" : requester}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Aprovador
+          <select
+            value={filters.approvedBy}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  approvedBy: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {approvers.map((approver) => (
+              <option key={approver} value={approver}>
+                {approver === "SEM_APROVADOR" ? "Sem aprovador" : approver}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Invalidado por
+          <select
+            value={filters.invalidatedBy}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  invalidatedBy: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {invalidators.map((invalidator) => (
+              <option key={invalidator} value={invalidator}>
+                {invalidator === "SEM_INVALIDADOR" ? "Sem invalidador" : invalidator}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Data invalidado
+          <select
+            value={filters.invalidatedDate}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  invalidatedDate: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {invalidatedDates.map((dateValue) => (
+              <option key={dateValue} value={dateValue}>
+                {dateValue === "SEM_INVALIDACAO" ? "Sem invalidacao" : formatDate(dateValue)}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="panel-float workflow-list">
         <div className="workflow-list-head">
           <h3>Resumo geral dos documentos e versoes</h3>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Codigo</th>
-                <th>Titulo</th>
-                <th>Empresas</th>
-                <th>Setor</th>
-                <th>Tipo</th>
-                <th>Escopo</th>
-                <th>Status da versao</th>
-                <th>Versao</th>
-                <th>Vencimento</th>
-                <th>Caminho/URL</th>
-                <th>Criado em</th>
-                <th>Criada em</th>
-                <th>Aprovada em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((item) => (
-                <tr key={item.rowKey}>
-                  <td>{item.code}</td>
-                  <td>{item.title}</td>
-                  <td>{item.companyName}</td>
-                  <td>{item.sectorName}</td>
-                  <td>{item.document_type}</td>
-                  <td>{item.scope}</td>
-                  <td>
-                    <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
-                      {formatStatusLabel(item.latestStatus)}
-                    </span>
-                  </td>
-                  <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
-                  <td>
-                    {item.latestVersion?.expiration_date
-                      ? formatDate(item.latestVersion.expiration_date)
-                      : "-"}
-                  </td>
-                  <td>{item.latestVersion?.file_path || "-"}</td>
-                  <td>{formatDateTime(item.created_at)}</td>
-                  <td>{formatDateTime(item.latestVersion?.created_at)}</td>
-                  <td>{formatDateTime(item.latestVersion?.approved_at)}</td>
-                </tr>
-              ))}
-              {!loading && filteredItems.length === 0 && (
+        <div className="panel-docs-table-area" ref={tableAreaRef}>
+          {floatingBarLayout.visible && (
+            <div
+              className={`table-scrollbar-card table-scrollbar-card--floating table-scrollbar-card--${floatingBarLayout.mode}`}
+              ref={floatingScrollbarRef}
+              onScroll={handleFloatingScrollbarScroll}
+              aria-label="Barra horizontal flutuante da tabela"
+              style={
+                floatingBarLayout.mode === "fixed"
+                  ? {
+                      left: `${floatingBarLayout.left}px`,
+                      width: `${floatingBarLayout.width}px`,
+                      top: `${FLOATING_BAR_TOP_OFFSET}px`,
+                    }
+                  : undefined
+              }
+            >
+              <div className="table-scrollbar-track" ref={floatingScrollbarTrackRef} />
+            </div>
+          )}
+          <div className="table-wrap panel-docs-table-wrap" ref={tableWrapRef} onScroll={handleTableScroll}>
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={13}>Nenhum documento encontrado com os filtros atuais.</td>
+                  <th>Codigo</th>
+                  <th>Titulo</th>
+                  <th>Empresas</th>
+                  <th>Setor</th>
+                  <th>Tipo</th>
+                  <th>Escopo</th>
+                  <th>Status da versao</th>
+                  <th>Versao</th>
+                  <th>Vencimento</th>
+                  <th>Acoes</th>
+                  <th>Documento criado em</th>
+                  <th>Versao criada em</th>
+                  <th>Solicitado por</th>
+                  <th>Solicitante da versao</th>
+                  <th>Aprovada em</th>
+                  <th>Aprovador por</th>
+                  <th>Invalidado por</th>
+                  <th>Data invalidado</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredItems.map((item) => (
+                  <tr key={item.rowKey}>
+                    <td>{item.code}</td>
+                    <td>{item.title}</td>
+                    <td>{item.companyName}</td>
+                    <td>{item.sectorName}</td>
+                    <td>{item.document_type}</td>
+                    <td>{item.scope}</td>
+                    <td>
+                      <span className={`status-pill status-${item.latestStatus.toLowerCase()}`}>
+                        {formatStatusLabel(item.latestStatus)}
+                      </span>
+                    </td>
+                    <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
+                    <td>
+                      {item.latestVersion?.expiration_date
+                        ? formatDate(item.latestVersion.expiration_date)
+                        : "-"}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="table-btn"
+                        onClick={() => openPreviewInNewTab(item.latestVersion?.file_path)}
+                        disabled={!resolveFileUrl(item.latestVersion?.file_path)}
+                        title="Pre-visualizar"
+                      >
+                        {"\u{1F441}"} Ver
+                      </button>
+                      <button
+                        type="button"
+                        className="table-btn"
+                        onClick={() => downloadFile(item.latestVersion?.file_path)}
+                        disabled={!resolveFileUrl(item.latestVersion?.file_path)}
+                        title="Download"
+                      >
+                        Download
+                      </button>
+                    </td>
+                    <td>{formatDateTime(item.created_at)}</td>
+                    <td>{formatDateTime(item.latestVersion?.created_at)}</td>
+                    <td>{item.created_by_name || "-"}</td>
+                    <td>{item.latestVersion?.created_by_name || "-"}</td>
+                    <td>{formatDateTime(item.latestVersion?.approved_at)}</td>
+                    <td>{item.latestVersion?.approved_by_name || "-"}</td>
+                    <td>{item.latestVersion?.invalidated_by_name || "-"}</td>
+                    <td>{formatDateTime(item.latestVersion?.invalidated_at)}</td>
+                  </tr>
+                ))}
+                {!loading && filteredItems.length === 0 && (
+                  <tr>
+                    <td colSpan={18}>Nenhum documento encontrado com os filtros atuais.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </div>

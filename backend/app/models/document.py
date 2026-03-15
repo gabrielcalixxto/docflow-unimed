@@ -30,3 +30,9 @@ class Document(Base):
     versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
     stored_files = relationship("StoredFile", back_populates="document")
     events = relationship("DocumentEvent", back_populates="document", cascade="all, delete-orphan")
+
+    @property
+    def created_by_name(self) -> str | None:
+        if self.creator is None:
+            return None
+        return self.creator.name

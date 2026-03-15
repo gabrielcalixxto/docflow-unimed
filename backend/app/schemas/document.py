@@ -93,6 +93,7 @@ class DocumentRead(BaseModel):
     document_type: str
     scope: DocumentScope
     created_by: int | None = None
+    created_by_name: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

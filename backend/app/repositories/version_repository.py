@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.enums import DocumentStatus
 from app.models.document_version import DocumentVersion
@@ -37,6 +37,11 @@ class VersionRepository:
         statement = (
             select(DocumentVersion)
             .where(DocumentVersion.document_id == document_id)
+            .options(
+                joinedload(DocumentVersion.creator),
+                joinedload(DocumentVersion.approver),
+                joinedload(DocumentVersion.invalidator),
+            )
             .order_by(DocumentVersion.version_number.desc())
         )
         return list(self.db.scalars(statement).all())
