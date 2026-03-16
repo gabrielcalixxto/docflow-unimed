@@ -1,9 +1,12 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.enums import DocumentScope, DocumentStatus
+from app.core.realtime import build_realtime_event, realtime_broker
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.auth_repository import AuthRepository
@@ -32,6 +35,26 @@ DOCUMENT_CREATE_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422,
 DOCUMENT_QUERY_ERRORS = build_standard_error_responses(401, 403, 404, 422, 500)
 DOCUMENT_LIST_ERRORS = build_standard_error_responses(401, 403, 422, 500)
 DOCUMENT_FLOW_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
+
+
+def _extract_document_id_from_message(message: str) -> int | None:
+    match = re.search(r"id=(\d+)", message or "")
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _publish_workflow_event(*, action: str, current_user: AuthenticatedUser, document_id: int | None = None) -> None:
+    realtime_broker.publish(
+        build_realtime_event(
+            channel="workflow",
+            action=action,
+            user_id=current_user.user_id,
+            document_id=document_id,
+            entity_type="document",
+            entity_id=document_id,
+        )
+    )
 
 
 def get_document_service(db: Session) -> DocumentService:
@@ -65,7 +88,13 @@ def create_document(
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.create_document(payload, current_user, audit_context=audit_context)
+        response = service.create_document(payload, current_user, audit_context=audit_context)
+        _publish_workflow_event(
+            action="document_created",
+            current_user=current_user,
+            document_id=_extract_document_id_from_message(response.message),
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -211,7 +240,9 @@ def update_draft_document(
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.update_draft_document(document_id, payload, current_user, audit_context=audit_context)
+        response = service.update_draft_document(document_id, payload, current_user, audit_context=audit_context)
+        _publish_workflow_event(action="document_draft_updated", current_user=current_user, document_id=document_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -231,7 +262,9 @@ def delete_draft_document(
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.delete_draft_document(document_id, current_user, audit_context=audit_context)
+        response = service.delete_draft_document(document_id, current_user, audit_context=audit_context)
+        _publish_workflow_event(action="document_draft_deleted", current_user=current_user, document_id=document_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -251,7 +284,9 @@ def submit_review(
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.submit_for_review(document_id, current_user, audit_context=audit_context)
+        response = service.submit_for_review(document_id, current_user, audit_context=audit_context)
+        _publish_workflow_event(action="document_submitted", current_user=current_user, document_id=document_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -271,7 +306,9 @@ def approve_document(
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.approve_document(document_id, current_user, audit_context=audit_context)
+        response = service.approve_document(document_id, current_user, audit_context=audit_context)
+        _publish_workflow_event(action="document_approved", current_user=current_user, document_id=document_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -293,6 +330,8 @@ def reject_document(
     service = get_document_service(db)
     try:
         reason = payload.reason if payload is not None else None
-        return service.reject_document(document_id, current_user, reason=reason, audit_context=audit_context)
+        response = service.reject_document(document_id, current_user, reason=reason, audit_context=audit_context)
+        _publish_workflow_event(action="document_rejected", current_user=current_user, document_id=document_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

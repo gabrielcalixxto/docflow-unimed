@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
+from app.core.realtime import build_realtime_event, realtime_broker
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.document_repository import DocumentRepository
@@ -51,7 +52,18 @@ def create_version(
 ) -> MessageResponse:
     service = get_version_service(db)
     try:
-        return service.create_version(document_id, payload, current_user, audit_context=audit_context)
+        response = service.create_version(document_id, payload, current_user, audit_context=audit_context)
+        realtime_broker.publish(
+            build_realtime_event(
+                channel="workflow",
+                action="document_version_created",
+                user_id=current_user.user_id,
+                document_id=document_id,
+                entity_type="document",
+                entity_id=document_id,
+            )
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

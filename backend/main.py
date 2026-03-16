@@ -15,10 +15,11 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
 from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
+from app.core.realtime import realtime_broker
 from app.models.document_version import DocumentVersion
 from app.models.stored_file import StoredFile
 from app.models import audit_log, audit_log_change, company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
-from app.routers import admin_catalog, admin_users, audit, auth, documents, files, search, versions
+from app.routers import admin_catalog, admin_users, audit, auth, documents, files, realtime, search, versions
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -330,7 +331,9 @@ async def lifespan(_: FastAPI):
         migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
+    realtime_broker.start()
     yield
+    realtime_broker.stop()
 
 
 APP_DESCRIPTION = """
@@ -393,6 +396,7 @@ app.include_router(search.router)
 app.include_router(documents.router)
 app.include_router(versions.router)
 app.include_router(files.router)
+app.include_router(realtime.router)
 app.include_router(admin_users.router)
 app.include_router(admin_catalog.router)
 app.include_router(audit.router)

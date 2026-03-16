@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
+from app.core.realtime import build_realtime_event, realtime_broker
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.admin_catalog_repository import AdminCatalogRepository
 from app.repositories.audit_log_repository import AuditLogRepository
@@ -24,6 +25,20 @@ from app.services.errors import ServiceError
 router = APIRouter(prefix="/admin/catalog", tags=["Catalog"])
 
 ADMIN_CATALOG_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
+
+
+def _publish_catalog_event(
+    *, action: str, current_user: AuthenticatedUser, entity_type: str, entity_id: int | None = None
+) -> None:
+    realtime_broker.publish(
+        build_realtime_event(
+            channel="catalog",
+            action=action,
+            user_id=current_user.user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
+    )
 
 
 def get_admin_catalog_service(db: Session = Depends(get_db)) -> AdminCatalogService:
@@ -67,7 +82,9 @@ def create_company(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_company(payload, current_user, audit_context=audit_context)
+        response = service.create_company(payload, current_user, audit_context=audit_context)
+        _publish_catalog_event(action="company_created", current_user=current_user, entity_type="company")
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -87,7 +104,14 @@ def delete_company(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_company(company_id, current_user, audit_context=audit_context)
+        response = service.delete_company(company_id, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="company_deleted",
+            current_user=current_user,
+            entity_type="company",
+            entity_id=company_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -108,7 +132,14 @@ def update_company(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_company(company_id, payload, current_user, audit_context=audit_context)
+        response = service.update_company(company_id, payload, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="company_updated",
+            current_user=current_user,
+            entity_type="company",
+            entity_id=company_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -129,7 +160,9 @@ def create_sector(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_sector(payload, current_user, audit_context=audit_context)
+        response = service.create_sector(payload, current_user, audit_context=audit_context)
+        _publish_catalog_event(action="sector_created", current_user=current_user, entity_type="sector")
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -149,7 +182,14 @@ def delete_sector(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_sector(sector_id, current_user, audit_context=audit_context)
+        response = service.delete_sector(sector_id, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="sector_deleted",
+            current_user=current_user,
+            entity_type="sector",
+            entity_id=sector_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -170,7 +210,14 @@ def update_sector(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_sector(sector_id, payload, current_user, audit_context=audit_context)
+        response = service.update_sector(sector_id, payload, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="sector_updated",
+            current_user=current_user,
+            entity_type="sector",
+            entity_id=sector_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -191,7 +238,14 @@ def create_document_type(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_document_type(payload, current_user, audit_context=audit_context)
+        response = service.create_document_type(payload, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="document_type_created",
+            current_user=current_user,
+            entity_type="document_type",
+            entity_id=None,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -211,7 +265,14 @@ def delete_document_type(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_document_type(document_type_id, current_user, audit_context=audit_context)
+        response = service.delete_document_type(document_type_id, current_user, audit_context=audit_context)
+        _publish_catalog_event(
+            action="document_type_deleted",
+            current_user=current_user,
+            entity_type="document_type",
+            entity_id=document_type_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -232,11 +293,18 @@ def update_document_type(
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_document_type(
+        response = service.update_document_type(
             document_type_id,
             payload,
             current_user,
             audit_context=audit_context,
         )
+        _publish_catalog_event(
+            action="document_type_updated",
+            current_user=current_user,
+            entity_type="document_type",
+            entity_id=document_type_id,
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
