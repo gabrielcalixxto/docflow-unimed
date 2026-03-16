@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { getDocumentEvents, getDocumentFormOptions, searchDocuments } from "../services/api";
 
@@ -125,6 +126,7 @@ export default function SearchPage({ onUnauthorized }) {
   useEffect(() => {
     loadResults();
   }, []);
+  useRealtimeEvents(loadResults, { channels: ["workflow", "catalog"] });
 
   const availableSectors = useMemo(() => {
     if (filters.companyId === "ALL") {
@@ -273,9 +275,6 @@ export default function SearchPage({ onUnauthorized }) {
           <h2>Documentos vigentes</h2>
           <p>Use filtros combinados por empresa, setor, tipo documental, escopo e termo livre.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadResults} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar lista"}
-        </button>
       </section>
 
       <section className="panel-float painel-filters-grid">

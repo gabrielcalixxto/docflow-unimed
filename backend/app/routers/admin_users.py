@@ -1,8 +1,11 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
+from app.core.realtime import build_realtime_event, realtime_broker
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.user_repository import UserRepository
@@ -16,6 +19,27 @@ from app.services.user_admin_service import UserAdminService
 router = APIRouter(prefix="/admin/users", tags=["Users"])
 
 ADMIN_USER_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
+
+
+def _extract_user_id_from_message(message: str) -> int | None:
+    match = re.search(r"id=(\d+)", message or "")
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _publish_user_event(
+    *, action: str, current_user: AuthenticatedUser, entity_id: int | None = None
+) -> None:
+    realtime_broker.publish(
+        build_realtime_event(
+            channel="users",
+            action=action,
+            user_id=current_user.user_id,
+            entity_type="user",
+            entity_id=entity_id,
+        )
+    )
 
 
 def get_user_admin_service(db: Session = Depends(get_db)) -> UserAdminService:
@@ -77,7 +101,13 @@ def create_user(
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.create_user(payload, current_user, audit_context=audit_context)
+        response = service.create_user(payload, current_user, audit_context=audit_context)
+        _publish_user_event(
+            action="user_created",
+            current_user=current_user,
+            entity_id=_extract_user_id_from_message(response.message),
+        )
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -98,7 +128,9 @@ def update_user(
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.update_user(user_id, payload, current_user, audit_context=audit_context)
+        response = service.update_user(user_id, payload, current_user, audit_context=audit_context)
+        _publish_user_event(action="user_updated", current_user=current_user, entity_id=user_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -118,6 +150,8 @@ def delete_user(
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.delete_user(user_id, current_user, audit_context=audit_context)
+        response = service.delete_user(user_id, current_user, audit_context=audit_context)
+        _publish_user_event(action="user_deleted", current_user=current_user, entity_id=user_id)
+        return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { getAuditEvents } from "../services/api";
 
@@ -238,6 +239,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
   useEffect(() => {
     loadEvents();
   }, []);
+  useRealtimeEvents(loadEvents, { channels: ["audit"] });
 
   const entityTypes = useMemo(
     () =>
@@ -398,9 +400,6 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
           <h2>Historico de Acoes</h2>
           <p>Cada linha representa um evento real. Clique para expandir os campos alterados.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadEvents} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {error && <p className="error-text margin-top">{error}</p>}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
 import { formatStatusLabel } from "../utils/status";
@@ -133,6 +134,7 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
   useEffect(() => {
     loadItems();
   }, []);
+  useRealtimeEvents(loadItems, { channels: ["workflow", "catalog"] });
 
   const versionRows = useMemo(
     () =>
@@ -528,9 +530,6 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
           <h2>Painel de documentos</h2>
           <p>Resumo do acervo considerando todas as versoes de cada documento.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {error && <p className="error-text margin-top">{error}</p>}

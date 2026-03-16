@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminUser,
@@ -207,6 +208,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["users"] });
 
   useEffect(() => {
     setCreateSectorToAddByCompany((prev) => normalizeSectorPickerByCompany(prev, createSectorGroups));
@@ -532,9 +534,6 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
           <h2>Cadastro de usuarios</h2>
           <p>Crie, edite e remova usuarios com multiplos papeis, empresas e setores.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}

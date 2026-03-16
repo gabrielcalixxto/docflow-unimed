@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { approveDocument, rejectDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
@@ -56,6 +57,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
   useEffect(() => {
     loadItems();
   }, []);
+  useRealtimeEvents(loadItems, { channels: ["workflow", "catalog"] });
 
   const sessionRoles = session?.roles || session?.role;
   const qualityRole = isReviewer(sessionRoles);
@@ -223,9 +225,6 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
             aprovacao final para vigencia.
           </p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}

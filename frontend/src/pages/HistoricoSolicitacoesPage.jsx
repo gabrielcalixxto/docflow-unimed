@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { deleteDraftDocument, updateDraftDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
@@ -72,6 +73,7 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
   useEffect(() => {
     loadItems();
   }, []);
+  useRealtimeEvents(loadItems, { channels: ["workflow", "catalog"] });
 
   const historyItems = useMemo(() => {
     if (!session?.userId) {
@@ -330,9 +332,6 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
           <h2>Historico de Solicitacoes</h2>
           <p>Veja apenas as solicitacoes feitas por voce para criacao e atualizacao de documentos.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}

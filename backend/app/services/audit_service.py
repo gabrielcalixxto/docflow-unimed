@@ -3,6 +3,7 @@ from collections.abc import Iterable
 
 from app.core.audit import AuditContext
 from app.core.enums import DocumentEventType
+from app.core.realtime import build_realtime_event, realtime_broker
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.document_event_repository import DocumentEventRepository
 from app.schemas.audit import AuditLogChangeRead, AuditLogListResponse, AuditLogRead
@@ -232,6 +233,16 @@ class AuditService:
         )
         if changes:
             self.log_repository.add_event_changes(audit_log_id=event.id, changes=changes)
+        realtime_broker.publish(
+            build_realtime_event(
+                channel="audit",
+                action="audit_event_created",
+                user_id=user_id,
+                document_id=document_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+            )
+        )
         return event
 
     def list_document_logs(

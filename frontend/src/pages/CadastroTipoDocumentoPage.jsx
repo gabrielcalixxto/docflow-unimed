@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import {
   createAdminDocumentType,
   getAdminCatalogOptions,
@@ -47,6 +48,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["catalog"] });
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -123,9 +125,6 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
           <h2>Cadastro Tipo de Documento</h2>
           <p>Gerencie os tipos documentais exibidos no cadastro de novos documentos.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}

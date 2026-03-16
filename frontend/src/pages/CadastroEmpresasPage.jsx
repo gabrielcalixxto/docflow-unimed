@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminCompany,
@@ -71,6 +72,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["catalog"] });
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -142,9 +144,6 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
           <h2>Cadastro de Empresas</h2>
           <p>Cadastre empresas e gerencie a lista ativa do sistema.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
       {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
