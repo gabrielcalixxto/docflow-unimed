@@ -1,0 +1,13 @@
+t=2026-03-16T04:36:53-0300 lvl=info msg="open config file" path=C:\\Users\\Calixto\\AppData\\Local\\ngrok\\ngrok.yml err=nil
+t=2026-03-16T04:36:53-0300 lvl=info msg="open config file" path=C:\\Users\\Calixto\\dev\\docflow-unimed\\.tools\\ngrok\\ngrok.local.yml err=nil
+t=2026-03-16T04:36:53-0300 lvl=info msg="FIPS 140 mode" enabled=false
+t=2026-03-16T04:36:53-0300 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-03-16T04:36:53-0300 lvl=info msg="client session established" obj=tunnels.session
+t=2026-03-16T04:36:53-0300 lvl=info msg="tunnel session started" obj=tunnels.session
+t=2026-03-16T04:36:53-0300 lvl=eror msg="session closing" obj=tunnels.session err="failed to start tunnel: Your account is requesting a dev domain that does not exist. Visit https://dashboard.ngrok.com/domains to request a dev domain.\r\n\r\nERR_NGROK_15013\r\n"
+t=2026-03-16T04:36:53-0300 lvl=info msg="accept failed" obj=tunnels.session obj=csess id=10b891a97ca9 err="reconnecting session closed"
+t=2026-03-16T04:36:53-0300 lvl=info msg="no more state changes" obj=tunnels.session
+t=2026-03-16T04:36:53-0300 lvl=info msg="received stop request" obj=app stopReq="{err:{Inner:{Inner:0xc0005d0150}} restart:false}"
+t=2026-03-16T04:36:53-0300 lvl=eror msg="terminating with error" obj=app err="failed to start tunnel: Your account is requesting a dev domain that does not exist. Visit https://dashboard.ngrok.com/domains to request a dev domain.\r\n\r\nERR_NGROK_15013\r\n"
+t=2026-03-16T04:36:53-0300 lvl=crit msg="command failed" err="failed to start tunnel: Your account is requesting a dev domain that does not exist. Visit https://dashboard.ngrok.com/domains to request a dev domain.\r\n\r\nERR_NGROK_15013\r\n"
+t=2026-03-16T04:36:53-0300 lvl=warn msg="failed to check for update" obj=updater err="Post \"https://update.ngrok-agent.com/check\": context canceled"

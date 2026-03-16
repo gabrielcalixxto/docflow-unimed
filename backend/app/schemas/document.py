@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import DocumentScope
 
@@ -18,11 +18,17 @@ def _add_years(base_date: date, years: int) -> date:
 class DocumentCreate(BaseModel):
     title: str
     company_id: int
-    sector_id: int
+    sector_id: int | None = None
     document_type: str
     scope: DocumentScope
     file_path: str
     expiration_date: date
+
+    @model_validator(mode="after")
+    def validate_scope_requirements(self) -> "DocumentCreate":
+        if self.scope == DocumentScope.LOCAL and self.sector_id is None:
+            raise ValueError("Sector is required for local documents.")
+        return self
 
     @field_validator("expiration_date")
     @classmethod
@@ -73,6 +79,11 @@ class DocumentRejectRequest(BaseModel):
 
 class DocumentDraftUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
+    company_id: int | None = None
+    sector_id: int | None = None
+    document_type: str | None = Field(default=None, min_length=1, max_length=120)
+    scope: DocumentScope | None = None
+    adjustment_reply_comment: str | None = Field(default=None, max_length=500)
     file_path: str | None = Field(default=None, min_length=1, max_length=255)
     expiration_date: date | None = None
 
@@ -91,6 +102,8 @@ class DocumentRead(BaseModel):
     company_id: int
     sector_id: int
     document_type: str
+    adjustment_comment: str | None = None
+    adjustment_reply_comment: str | None = None
     scope: DocumentScope
     created_by: int | None = None
     created_by_name: str | None = None

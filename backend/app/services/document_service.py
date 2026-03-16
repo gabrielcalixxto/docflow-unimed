@@ -43,27 +43,42 @@ class DocumentService:
         audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        self._ensure_can_write(current_user)
+        self._ensure_can_create_document(current_user, payload.scope)
 
         company = self.repository.get_company_by_id(payload.company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
 
-        sector = self.repository.get_sector_by_id(payload.sector_id)
+        selected_sector_id = payload.sector_id
+        if payload.scope == DocumentScope.CORPORATIVO and selected_sector_id is None:
+            selected_sector_id = self._resolve_company_sector_fallback(payload.company_id)
+
+        if selected_sector_id is None:
+            if payload.scope == DocumentScope.CORPORATIVO:
+                raise ConflictServiceError("Selected company must have at least one sector configured.")
+            raise ConflictServiceError("Sector is required for local documents.")
+
+        sector = self.repository.get_sector_by_id(selected_sector_id)
         if sector is None:
             raise NotFoundServiceError("Sector not found.")
 
         if sector.company_id != company.id:
             raise ConflictServiceError("Selected sector does not belong to selected company.")
 
-        if not self._can_access_company_and_sector(current_user, company.id, sector.id):
+        if payload.scope == DocumentScope.LOCAL and not self._can_access_company_and_sector(
+            current_user, company.id, sector.id
+        ):
             raise ForbiddenServiceError(
                 "You do not have permission for the selected company and sector."
             )
 
+        normalized_payload = payload
+        if selected_sector_id != payload.sector_id:
+            normalized_payload = payload.model_copy(update={"sector_id": selected_sector_id})
+
         try:
             document = self.repository.create_document(
-                payload=payload,
+                payload=normalized_payload,
                 code="PENDING",
                 created_by=current_user.user_id,
             )
@@ -130,17 +145,19 @@ class DocumentService:
                         "field_name": "company_id",
                         "field_label": "Empresa",
                         "old_value": None,
-                        "new_value": payload.company_id,
+                        "new_value": normalized_payload.company_id,
                         "old_display_value": None,
-                        "new_display_value": getattr(company, "name", None) or f"Empresa #{payload.company_id}",
+                        "new_display_value": getattr(company, "name", None)
+                        or f"Empresa #{normalized_payload.company_id}",
                     },
                     {
                         "field_name": "sector_id",
                         "field_label": "Setor",
                         "old_value": None,
-                        "new_value": payload.sector_id,
+                        "new_value": normalized_payload.sector_id,
                         "old_display_value": None,
-                        "new_display_value": getattr(sector, "name", None) or f"Setor #{payload.sector_id}",
+                        "new_display_value": getattr(sector, "name", None)
+                        or f"Setor #{normalized_payload.sector_id}",
                     },
                     {
                         "field_name": "document_type",
@@ -212,9 +229,25 @@ class DocumentService:
 
         return MessageResponse(message="Novo documento criado com sucesso!")
 
-    def get_form_options(self) -> DocumentFormOptionsRead:
+    def get_form_options(self, current_user: AuthenticatedUser) -> DocumentFormOptionsRead:
         companies = self.repository.list_companies()
         sectors = self.repository.list_sectors()
+        if not current_user.has_role(UserRole.ADMIN):
+            allowed_sector_ids = set(current_user.normalized_sector_ids())
+            sectors = [
+                sector for sector in sectors if isinstance(getattr(sector, "id", None), int) and sector.id in allowed_sector_ids
+            ]
+            visible_company_ids = {int(getattr(sector, "company_id")) for sector in sectors}
+            user_company_ids = set(current_user.normalized_company_ids())
+            if user_company_ids:
+                visible_company_ids.update(user_company_ids)
+            if visible_company_ids:
+                companies = [
+                    company
+                    for company in companies
+                    if isinstance(getattr(company, "id", None), int) and company.id in visible_company_ids
+                ]
+
         configured_document_types = self.repository.list_document_types()
         existing_document_types = self.repository.list_distinct_document_types()
         document_type_options: list[dict[str, str]] = []
@@ -346,6 +379,14 @@ class DocumentService:
                     sector_id=document.sector_id,
                     sector_name=getattr(document.sector, "name", None),
                     document_type=document.document_type,
+                    adjustment_comment=getattr(document, "adjustment_comment", None),
+                    adjustment_comment_by_name=self._resolve_user_name(
+                        getattr(document, "adjustment_comment_by", None)
+                    ),
+                    adjustment_reply_comment=getattr(document, "adjustment_reply_comment", None),
+                    adjustment_reply_comment_by_name=self._resolve_user_name(
+                        getattr(document, "adjustment_reply_comment_by", None)
+                    ),
                     scope=document.scope,
                     created_by=document.created_by,
                     created_by_name=document.created_by_name,
@@ -398,28 +439,102 @@ class DocumentService:
         self._ensure_authenticated_user_id(current_user)
         document, latest_version = self._get_editable_draft(document_id, current_user)
         original_title = document.title
+        original_code = document.code
+        original_company_id = document.company_id
+        original_sector_id = document.sector_id
+        original_document_type = document.document_type
+        original_scope = document.scope
+        original_adjustment_reply_comment = getattr(document, "adjustment_reply_comment", None)
         original_file_path = latest_version.file_path
         original_expiration_date = latest_version.expiration_date
         original_status = latest_version.status
 
         document_changed = False
         version_changed = False
+        selected_company = None
+        selected_sector = None
 
         if payload.title is not None:
             title = payload.title.strip()
             if not title:
                 raise ConflictServiceError("Title cannot be empty.")
-            document.title = title
+            if document.title != title:
+                document.title = title
+                document_changed = True
+
+        if payload.company_id is not None:
+            selected_company = self.repository.get_company_by_id(payload.company_id)
+            if selected_company is None:
+                raise NotFoundServiceError("Company not found.")
+            if document.company_id != payload.company_id:
+                document.company_id = payload.company_id
+                document_changed = True
+
+        if payload.sector_id is not None:
+            selected_sector = self.repository.get_sector_by_id(payload.sector_id)
+            if selected_sector is None:
+                raise NotFoundServiceError("Sector not found.")
+            if document.sector_id != payload.sector_id:
+                document.sector_id = payload.sector_id
+                document_changed = True
+
+        if payload.document_type is not None:
+            document_type = payload.document_type.strip().upper()
+            if not document_type:
+                raise ConflictServiceError("Document type cannot be empty.")
+            if document.document_type != document_type:
+                document.document_type = document_type
+                document_changed = True
+
+        if payload.scope is not None and document.scope != payload.scope:
+            document.scope = payload.scope
             document_changed = True
+
+        if payload.adjustment_reply_comment is not None:
+            normalized_adjustment_reply_comment = (
+                payload.adjustment_reply_comment.strip() if payload.adjustment_reply_comment.strip() else None
+            )
+            if getattr(document, "adjustment_reply_comment", None) != normalized_adjustment_reply_comment:
+                document.adjustment_reply_comment = normalized_adjustment_reply_comment
+                document.adjustment_reply_comment_by = current_user.user_id if normalized_adjustment_reply_comment else None
+                document_changed = True
+
+        if selected_company is None and (payload.company_id is not None or payload.sector_id is not None):
+            selected_company = self.repository.get_company_by_id(document.company_id)
+        if selected_sector is None and (payload.company_id is not None or payload.sector_id is not None):
+            selected_sector = self.repository.get_sector_by_id(document.sector_id)
+
+        if selected_company is not None and selected_sector is not None:
+            if selected_sector.company_id != selected_company.id:
+                raise ConflictServiceError("Selected sector does not belong to selected company.")
+            if not self._can_access_company_and_sector(current_user, selected_company.id, selected_sector.id):
+                raise ForbiddenServiceError(
+                    "You do not have permission for the selected company and sector."
+                )
+
+        if document.document_type != original_document_type or document.sector_id != original_sector_id:
+            if selected_sector is None:
+                selected_sector = self.repository.get_sector_by_id(document.sector_id)
+            if selected_sector is None:
+                raise NotFoundServiceError("Sector not found.")
+            next_code = self._build_document_code(
+                document_type=document.document_type,
+                document_id=document.id,
+                sector_sigla=getattr(selected_sector, "sigla", None),
+            )
+            if document.code != next_code:
+                document.code = next_code
+                document_changed = True
 
         if payload.file_path is not None:
             file_path = payload.file_path.strip()
             if not file_path:
                 raise ConflictServiceError("File path cannot be empty.")
-            latest_version.file_path = file_path
-            version_changed = True
+            if latest_version.file_path != file_path:
+                latest_version.file_path = file_path
+                version_changed = True
 
-        if payload.expiration_date is not None:
+        if payload.expiration_date is not None and latest_version.expiration_date != payload.expiration_date:
             latest_version.expiration_date = payload.expiration_date
             version_changed = True
 
@@ -435,16 +550,10 @@ class DocumentService:
                 self.repository.save(document)
             if version_changed:
                 self.version_repository.save(latest_version)
-            self.audit_service.create_field_change_logs(
-                user_id=current_user.user_id,
-                entity_type="document",
-                entity_id=document.id,
-                action="UPDATE",
-                document_id=document.id,
-                context=audit_context,
-                entity_label=self._document_entity_label(document),
-                actor_name=self._actor_snapshot(current_user),
-                changes=[
+
+            document_changes = []
+            if original_title != document.title:
+                document_changes.append(
                     {
                         "field_name": "title",
                         "field_label": "Titulo",
@@ -453,23 +562,94 @@ class DocumentService:
                         "old_display_value": original_title,
                         "new_display_value": document.title,
                     }
-                ],
-            )
-            self.audit_service.create_field_change_logs(
-                user_id=current_user.user_id,
-                entity_type="document_version",
-                entity_id=latest_version.id,
-                action="UPDATE",
-                document_id=document.id,
-                version_id=latest_version.id,
-                context=audit_context,
-                entity_label=self._version_entity_label(
-                    document,
-                    latest_version.id,
-                    getattr(latest_version, "version_number", None),
-                ),
-                actor_name=self._actor_snapshot(current_user),
-                changes=[
+                )
+            if original_company_id != document.company_id:
+                old_company = self.repository.get_company_by_id(original_company_id) if original_company_id else None
+                new_company = selected_company or self.repository.get_company_by_id(document.company_id)
+                document_changes.append(
+                    {
+                        "field_name": "company_id",
+                        "field_label": "Empresa",
+                        "old_value": original_company_id,
+                        "new_value": document.company_id,
+                        "old_display_value": getattr(old_company, "name", None) or f"Empresa #{original_company_id}",
+                        "new_display_value": getattr(new_company, "name", None) or f"Empresa #{document.company_id}",
+                    }
+                )
+            if original_sector_id != document.sector_id:
+                old_sector = self.repository.get_sector_by_id(original_sector_id) if original_sector_id else None
+                new_sector = selected_sector or self.repository.get_sector_by_id(document.sector_id)
+                document_changes.append(
+                    {
+                        "field_name": "sector_id",
+                        "field_label": "Setor",
+                        "old_value": original_sector_id,
+                        "new_value": document.sector_id,
+                        "old_display_value": getattr(old_sector, "name", None) or f"Setor #{original_sector_id}",
+                        "new_display_value": getattr(new_sector, "name", None) or f"Setor #{document.sector_id}",
+                    }
+                )
+            if original_document_type != document.document_type:
+                document_changes.append(
+                    {
+                        "field_name": "document_type",
+                        "field_label": "Tipo documental",
+                        "old_value": original_document_type,
+                        "new_value": document.document_type,
+                        "old_display_value": self._resolve_document_type_display(original_document_type),
+                        "new_display_value": self._resolve_document_type_display(document.document_type),
+                    }
+                )
+            if original_scope != document.scope:
+                document_changes.append(
+                    {
+                        "field_name": "scope",
+                        "field_label": "Escopo",
+                        "old_value": original_scope.value if original_scope else None,
+                        "new_value": document.scope.value if document.scope else None,
+                        "old_display_value": original_scope.value if original_scope else None,
+                        "new_display_value": document.scope.value if document.scope else None,
+                    }
+                )
+            if original_adjustment_reply_comment != document.adjustment_reply_comment:
+                document_changes.append(
+                    {
+                        "field_name": "adjustment_reply_comment",
+                        "field_label": "Comentario de reajuste",
+                        "old_value": original_adjustment_reply_comment,
+                        "new_value": document.adjustment_reply_comment,
+                        "old_display_value": original_adjustment_reply_comment,
+                        "new_display_value": document.adjustment_reply_comment,
+                    }
+                )
+            if original_code != document.code:
+                document_changes.append(
+                    {
+                        "field_name": "code",
+                        "field_label": "Codigo",
+                        "old_value": original_code,
+                        "new_value": document.code,
+                        "old_display_value": original_code,
+                        "new_display_value": document.code,
+                    }
+                )
+
+            if document_changes:
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document",
+                    entity_id=document.id,
+                    action="UPDATE",
+                    document_id=document.id,
+                    context=audit_context,
+                    entity_label=self._document_entity_label(document),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=document_changes,
+                )
+
+            version_changes = []
+            if original_file_path != latest_version.file_path:
+                version_changes.append(
                     {
                         "field_name": "file_path",
                         "field_label": "Arquivo",
@@ -477,7 +657,10 @@ class DocumentService:
                         "new_value": latest_version.file_path,
                         "old_display_value": original_file_path,
                         "new_display_value": latest_version.file_path,
-                    },
+                    }
+                )
+            if original_expiration_date != latest_version.expiration_date:
+                version_changes.append(
                     {
                         "field_name": "expiration_date",
                         "field_label": "Data de vencimento",
@@ -485,7 +668,10 @@ class DocumentService:
                         "new_value": latest_version.expiration_date,
                         "old_display_value": original_expiration_date,
                         "new_display_value": latest_version.expiration_date,
-                    },
+                    }
+                )
+            if original_status != latest_version.status:
+                version_changes.append(
                     {
                         "field_name": "status",
                         "field_label": "Status",
@@ -493,9 +679,26 @@ class DocumentService:
                         "new_value": latest_version.status.value if latest_version.status else None,
                         "old_display_value": self._status_label(original_status.value if original_status else None),
                         "new_display_value": self._status_label(latest_version.status.value if latest_version.status else None),
-                    },
-                ],
-            )
+                    }
+                )
+
+            if version_changes:
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document_version",
+                    entity_id=latest_version.id,
+                    action="UPDATE",
+                    document_id=document.id,
+                    version_id=latest_version.id,
+                    context=audit_context,
+                    entity_label=self._version_entity_label(
+                        document,
+                        latest_version.id,
+                        getattr(latest_version, "version_number", None),
+                    ),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=version_changes,
+                )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -569,12 +772,12 @@ class DocumentService:
             DocumentStatus.RASCUNHO_REVISADO,
         }:
             raise ConflictServiceError(
-                "Only draft versions can be sent to quality validation."
+                "Only draft versions can be sent to pending adjustment."
             )
 
         try:
             previous_status = latest_version.status
-            latest_version.status = DocumentStatus.PENDENTE_QUALIDADE
+            latest_version.status = DocumentStatus.REVISAR_RASCUNHO
             latest_version.invalidated_at = None
             latest_version.invalidated_by = None
             self.version_repository.save(latest_version)
@@ -603,18 +806,18 @@ class DocumentService:
                         "field_name": "status",
                         "field_label": "Status",
                         "old_value": previous_status.value if previous_status else None,
-                        "new_value": DocumentStatus.PENDENTE_QUALIDADE.value,
+                        "new_value": DocumentStatus.REVISAR_RASCUNHO.value,
                         "old_display_value": self._status_label(previous_status.value if previous_status else None),
-                        "new_display_value": self._status_label(DocumentStatus.PENDENTE_QUALIDADE.value),
+                        "new_display_value": self._status_label(DocumentStatus.REVISAR_RASCUNHO.value),
                     }
                 ],
             )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
-            raise ConflictServiceError("Could not submit document for review.") from exc
+            raise ConflictServiceError("Could not move document to pending adjustment.") from exc
 
-        return MessageResponse(message="Document moved to quality validation queue.")
+        return MessageResponse(message="Document moved to pending adjustment queue.")
 
     def approve_document(
         self,
@@ -632,65 +835,16 @@ class DocumentService:
 
         self._ensure_can_approve(current_user, document_id=document_id, latest_status=latest_version.status)
 
-        coordinator_pending_statuses = {
+        approvable_statuses = {
             DocumentStatus.RASCUNHO,
-            DocumentStatus.REVISAR_RASCUNHO,
             DocumentStatus.RASCUNHO_REVISADO,
-        }
-        quality_pending_statuses = {
-            DocumentStatus.PENDENTE_QUALIDADE,
+            DocumentStatus.REVISAR_RASCUNHO,
             DocumentStatus.PENDENTE_COORDENACAO,
             DocumentStatus.EM_REVISAO,
         }
 
-        if latest_version.status in coordinator_pending_statuses:
-            try:
-                previous_status = latest_version.status
-                latest_version.status = DocumentStatus.PENDENTE_QUALIDADE
-                latest_version.invalidated_at = None
-                latest_version.invalidated_by = None
-                self.version_repository.save(latest_version)
-
-                self.audit_service.create_placeholder_event(
-                    event_type=DocumentEventType.APPROVED,
-                    document_id=document_id,
-                    version_id=latest_version.id,
-                    user_id=current_user.user_id,
-                )
-                self.audit_service.create_field_change_logs(
-                    user_id=current_user.user_id,
-                    entity_type="document_version",
-                    entity_id=latest_version.id,
-                    action="STATUS_CHANGE",
-                    document_id=document_id,
-                    version_id=latest_version.id,
-                    context=audit_context,
-                    entity_label=self._version_entity_label(
-                        document,
-                        latest_version.id,
-                        getattr(latest_version, "version_number", None),
-                    ),
-                    actor_name=self._actor_snapshot(current_user),
-                    changes=[
-                        {
-                            "field_name": "status",
-                            "field_label": "Status",
-                            "old_value": previous_status.value if previous_status else None,
-                            "new_value": DocumentStatus.PENDENTE_QUALIDADE.value,
-                            "old_display_value": self._status_label(previous_status.value if previous_status else None),
-                            "new_display_value": self._status_label(DocumentStatus.PENDENTE_QUALIDADE.value),
-                        }
-                    ],
-                )
-                self.repository.db.commit()
-            except SQLAlchemyError as exc:
-                self.repository.db.rollback()
-                raise ConflictServiceError("Could not move document to quality queue.") from exc
-
-            return MessageResponse(message="Document approved by coordinator and sent to quality.")
-
-        if latest_version.status not in quality_pending_statuses:
-            raise ConflictServiceError("Only versions pending quality approval can be approved.")
+        if latest_version.status not in approvable_statuses:
+            raise ConflictServiceError("Only draft and reviewed versions can be approved.")
 
         active_version = self.version_repository.get_active_version_for_document(document_id)
 
@@ -816,7 +970,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not approve document version.") from exc
 
-        return MessageResponse(message="Document approved by quality and set as active version.")
+        return MessageResponse(message="Document approved and set as active version.")
 
     def reject_document(
         self,
@@ -835,32 +989,36 @@ class DocumentService:
         if document is None:
             raise NotFoundServiceError("Document not found.")
 
+        normalized_reason = reason.strip() if reason and reason.strip() else None
+
         try:
             previous_status = latest_version.status
+            previous_adjustment_comment = getattr(document, "adjustment_comment", None)
+            previous_adjustment_reply_comment = getattr(document, "adjustment_reply_comment", None)
+            previous_adjustment_comment_by = getattr(document, "adjustment_comment_by", None)
+            previous_adjustment_reply_comment_by = getattr(document, "adjustment_reply_comment_by", None)
             if latest_version.status in {
                 DocumentStatus.RASCUNHO,
                 DocumentStatus.RASCUNHO_REVISADO,
                 DocumentStatus.REVISAR_RASCUNHO,
+                DocumentStatus.PENDENTE_COORDENACAO,
+                DocumentStatus.EM_REVISAO,
             }:
                 self._ensure_can_coordinator_review(current_user, document_id=document_id)
                 latest_version.status = DocumentStatus.REVISAR_RASCUNHO
                 latest_version.invalidated_at = None
                 latest_version.invalidated_by = None
-            elif latest_version.status in {
-                DocumentStatus.PENDENTE_QUALIDADE,
-                DocumentStatus.PENDENTE_COORDENACAO,
-                DocumentStatus.EM_REVISAO,
-            }:
-                self._ensure_can_quality_approve(current_user)
-                latest_version.status = DocumentStatus.REPROVADO
-                latest_version.invalidated_at = datetime.now(UTC)
-                latest_version.invalidated_by = current_user.user_id
             else:
-                raise ConflictServiceError("Only draft or pending quality versions can be rejected.")
+                raise ConflictServiceError("Only versions under review can be sent back for adjustment.")
 
             latest_version.approved_by = None
             latest_version.approved_at = None
             self.version_repository.save(latest_version)
+            document.adjustment_comment = normalized_reason
+            document.adjustment_reply_comment = None
+            document.adjustment_comment_by = current_user.user_id
+            document.adjustment_reply_comment_by = None
+            self.repository.save(document)
 
             self.audit_service.create_placeholder_event(
                 event_type=DocumentEventType.REJECTED,
@@ -893,7 +1051,64 @@ class DocumentService:
                     }
                 ],
             )
-            if reason and reason.strip():
+            comment_changes: list[dict[str, str | None]] = []
+            if previous_adjustment_comment != document.adjustment_comment:
+                comment_changes.append(
+                    {
+                        "field_name": "adjustment_comment",
+                        "field_label": "Comentario de ajuste",
+                        "old_value": previous_adjustment_comment,
+                        "new_value": document.adjustment_comment,
+                        "old_display_value": previous_adjustment_comment,
+                        "new_display_value": document.adjustment_comment,
+                    }
+                )
+            if previous_adjustment_comment_by != document.adjustment_comment_by:
+                comment_changes.append(
+                    {
+                        "field_name": "adjustment_comment_by",
+                        "field_label": "Autor do comentario de ajuste",
+                        "old_value": previous_adjustment_comment_by,
+                        "new_value": document.adjustment_comment_by,
+                        "old_display_value": self._resolve_user_name(previous_adjustment_comment_by),
+                        "new_display_value": self._resolve_user_name(document.adjustment_comment_by),
+                    }
+                )
+            if previous_adjustment_reply_comment != document.adjustment_reply_comment:
+                comment_changes.append(
+                    {
+                        "field_name": "adjustment_reply_comment",
+                        "field_label": "Comentario de reajuste",
+                        "old_value": previous_adjustment_reply_comment,
+                        "new_value": document.adjustment_reply_comment,
+                        "old_display_value": previous_adjustment_reply_comment,
+                        "new_display_value": document.adjustment_reply_comment,
+                    }
+                )
+            if previous_adjustment_reply_comment_by != document.adjustment_reply_comment_by:
+                comment_changes.append(
+                    {
+                        "field_name": "adjustment_reply_comment_by",
+                        "field_label": "Autor do comentario de reajuste",
+                        "old_value": previous_adjustment_reply_comment_by,
+                        "new_value": document.adjustment_reply_comment_by,
+                        "old_display_value": self._resolve_user_name(previous_adjustment_reply_comment_by),
+                        "new_display_value": self._resolve_user_name(document.adjustment_reply_comment_by),
+                    }
+                )
+            if comment_changes:
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document",
+                    entity_id=document.id,
+                    action="UPDATE",
+                    document_id=document_id,
+                    context=audit_context,
+                    entity_label=self._document_entity_label(document),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=comment_changes,
+                )
+            if normalized_reason:
                 self.audit_service.create_action_log(
                     user_id=current_user.user_id,
                     entity_type="document_version",
@@ -902,9 +1117,9 @@ class DocumentService:
                     field_name="reason",
                     field_label="Motivo",
                     old_value=None,
-                    new_value=reason.strip(),
+                    new_value=normalized_reason,
                     old_display_value=None,
-                    new_display_value=reason.strip(),
+                    new_display_value=normalized_reason,
                     document_id=document_id,
                     version_id=latest_version.id,
                     context=audit_context,
@@ -920,12 +1135,163 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not reject document version.") from exc
 
-        if reason and reason.strip():
+        if normalized_reason:
             return MessageResponse(
-                message=f"Document rejected successfully. Reason: {reason.strip()}"
+                message=f"Document returned for adjustment successfully. Reason: {normalized_reason}"
             )
 
-        return MessageResponse(message="Document rejected successfully.")
+        return MessageResponse(message="Document returned for adjustment successfully.")
+
+    def reject_document_definitive(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+        *,
+        reason: str | None = None,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_authenticated_user_id(current_user)
+
+        latest_version = self.version_repository.get_latest_version_for_document(document_id)
+        if latest_version is None:
+            raise NotFoundServiceError("Document has no versions to reject.")
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
+
+        normalized_reason = reason.strip() if reason and reason.strip() else None
+
+        try:
+            previous_status = latest_version.status
+            previous_adjustment_comment = getattr(document, "adjustment_comment", None)
+            previous_adjustment_comment_by = getattr(document, "adjustment_comment_by", None)
+            if latest_version.status in {
+                DocumentStatus.RASCUNHO,
+                DocumentStatus.RASCUNHO_REVISADO,
+                DocumentStatus.REVISAR_RASCUNHO,
+                DocumentStatus.PENDENTE_COORDENACAO,
+                DocumentStatus.EM_REVISAO,
+            }:
+                self._ensure_can_coordinator_review(current_user, document_id=document_id)
+                latest_version.status = DocumentStatus.REPROVADO
+                latest_version.invalidated_at = None
+                latest_version.invalidated_by = None
+            else:
+                raise ConflictServiceError("Only versions under review can be rejected definitively.")
+
+            latest_version.approved_by = None
+            latest_version.approved_at = None
+            self.version_repository.save(latest_version)
+            document.adjustment_comment = normalized_reason
+            document.adjustment_comment_by = current_user.user_id
+            self.repository.save(document)
+
+            self.audit_service.create_placeholder_event(
+                event_type=DocumentEventType.REJECTED,
+                document_id=document_id,
+                version_id=latest_version.id,
+                user_id=current_user.user_id,
+            )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=latest_version.id,
+                action="STATUS_CHANGE",
+                document_id=document_id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document,
+                    latest_version.id,
+                    getattr(latest_version, "version_number", None),
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": previous_status.value if previous_status else None,
+                        "new_value": latest_version.status.value,
+                        "old_display_value": self._status_label(previous_status.value if previous_status else None),
+                        "new_display_value": self._status_label(latest_version.status.value),
+                    }
+                ],
+            )
+            if previous_adjustment_comment != document.adjustment_comment:
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document",
+                    entity_id=document.id,
+                    action="UPDATE",
+                    document_id=document_id,
+                    context=audit_context,
+                    entity_label=self._document_entity_label(document),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=[
+                        {
+                            "field_name": "adjustment_comment",
+                            "field_label": "Motivo da reprovacao definitiva",
+                            "old_value": previous_adjustment_comment,
+                            "new_value": document.adjustment_comment,
+                            "old_display_value": previous_adjustment_comment,
+                            "new_display_value": document.adjustment_comment,
+                        }
+                    ],
+                )
+            if previous_adjustment_comment_by != document.adjustment_comment_by:
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document",
+                    entity_id=document.id,
+                    action="UPDATE",
+                    document_id=document_id,
+                    context=audit_context,
+                    entity_label=self._document_entity_label(document),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=[
+                        {
+                            "field_name": "adjustment_comment_by",
+                            "field_label": "Autor do motivo da reprovacao definitiva",
+                            "old_value": previous_adjustment_comment_by,
+                            "new_value": document.adjustment_comment_by,
+                            "old_display_value": self._resolve_user_name(previous_adjustment_comment_by),
+                            "new_display_value": self._resolve_user_name(document.adjustment_comment_by),
+                        }
+                    ],
+                )
+            if normalized_reason:
+                self.audit_service.create_action_log(
+                    user_id=current_user.user_id,
+                    entity_type="document_version",
+                    entity_id=latest_version.id,
+                    action="REJECT_FINAL_REASON",
+                    field_name="reason",
+                    field_label="Motivo",
+                    old_value=None,
+                    new_value=normalized_reason,
+                    old_display_value=None,
+                    new_display_value=normalized_reason,
+                    document_id=document_id,
+                    version_id=latest_version.id,
+                    context=audit_context,
+                    entity_label=self._version_entity_label(
+                        document,
+                        latest_version.id,
+                        getattr(latest_version, "version_number", None),
+                    ),
+                    actor_name=self._actor_snapshot(current_user),
+                )
+            self.repository.db.commit()
+        except SQLAlchemyError as exc:
+            self.repository.db.rollback()
+            raise ConflictServiceError("Could not reject document version definitively.") from exc
+
+        if normalized_reason:
+            return MessageResponse(
+                message=f"Document rejected definitively. Reason: {normalized_reason}"
+            )
+
+        return MessageResponse(message="Document rejected definitively.")
 
     @staticmethod
     def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:
@@ -938,9 +1304,8 @@ class DocumentService:
         labels = {
             DocumentStatus.RASCUNHO.value: "Rascunho",
             DocumentStatus.RASCUNHO_REVISADO.value: "Rascunho revisado",
-            DocumentStatus.REVISAR_RASCUNHO.value: "Revisar rascunho",
+            DocumentStatus.REVISAR_RASCUNHO.value: "Pendente Ajuste",
             DocumentStatus.PENDENTE_COORDENACAO.value: "Pendente coordenacao",
-            DocumentStatus.PENDENTE_QUALIDADE.value: "Pendente qualidade",
             DocumentStatus.EM_REVISAO.value: "Em revisao",
             DocumentStatus.REPROVADO.value: "Reprovado",
             DocumentStatus.VIGENTE.value: "Vigente",
@@ -1007,30 +1372,29 @@ class DocumentService:
             raise ForbiddenServiceError("Only author role can modify documents.")
 
     @staticmethod
+    def _ensure_can_create_document(current_user: AuthenticatedUser, scope: DocumentScope) -> None:
+        if not current_user.has_role(UserRole.AUTOR):
+            if scope == DocumentScope.CORPORATIVO:
+                raise ForbiddenServiceError("Only author role can create corporate documents.")
+            raise ForbiddenServiceError("Only author role can create local documents.")
+
+    @staticmethod
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
         if not current_user.has_role(UserRole.COORDENADOR):
-            raise ForbiddenServiceError("Only coordinator role can send documents to quality.")
+            raise ForbiddenServiceError("Only coordinator role can request adjustments.")
 
     @staticmethod
     def _ensure_can_access_document_registry(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only non-reader roles can access document registry endpoints.")
 
     @staticmethod
     def _can_access_document(current_user: AuthenticatedUser, document: Document) -> bool:
         if document.scope == DocumentScope.LOCAL:
-            return True
-        if document.scope == DocumentScope.CORPORATIVO:
-            if current_user.has_role(UserRole.ADMIN):
-                return True
-            user_company_ids = current_user.normalized_company_ids()
             user_sector_ids = current_user.normalized_sector_ids()
-            if not user_company_ids and not user_sector_ids:
-                return False
-            return (
-                getattr(document, "company_id", None) in user_company_ids
-                or getattr(document, "sector_id", None) in user_sector_ids
-            )
+            return bool(user_sector_ids) and getattr(document, "sector_id", None) in user_sector_ids
+        if document.scope == DocumentScope.CORPORATIVO:
+            return True
         return False
 
     @staticmethod
@@ -1039,11 +1403,22 @@ class DocumentService:
         company_id: int | None,
         sector_id: int | None,
     ) -> bool:
+        if current_user.has_role(UserRole.ADMIN):
+            return True
         user_company_ids = current_user.normalized_company_ids()
         user_sector_ids = current_user.normalized_sector_ids()
         company_allowed = not user_company_ids or (company_id in user_company_ids)
         sector_allowed = not user_sector_ids or (sector_id in user_sector_ids)
         return company_allowed and sector_allowed
+
+    def _resolve_company_sector_fallback(self, company_id: int) -> int | None:
+        sectors = self.repository.list_sectors()
+        for sector in sectors:
+            sector_company_id = getattr(sector, "company_id", None)
+            sector_id = getattr(sector, "id", None)
+            if sector_company_id == company_id and isinstance(sector_id, int):
+                return sector_id
+        return None
 
     @staticmethod
     def _ordered_versions(document: Document):
@@ -1061,16 +1436,10 @@ class DocumentService:
             DocumentStatus.RASCUNHO,
             DocumentStatus.RASCUNHO_REVISADO,
             DocumentStatus.REVISAR_RASCUNHO,
-        }:
-            self._ensure_can_coordinator_review(current_user, document_id=document_id)
-            return
-
-        if latest_status in {
-            DocumentStatus.PENDENTE_QUALIDADE,
             DocumentStatus.PENDENTE_COORDENACAO,
             DocumentStatus.EM_REVISAO,
         }:
-            self._ensure_can_quality_approve(current_user)
+            self._ensure_can_coordinator_review(current_user, document_id=document_id)
             return
 
         raise ConflictServiceError("Current version status does not allow approval action.")
@@ -1078,6 +1447,8 @@ class DocumentService:
     def _ensure_can_coordinator_review(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
         if not current_user.has_role(UserRole.COORDENADOR):
             raise ForbiddenServiceError("Only coordinator role can review drafts.")
+        if current_user.has_role(UserRole.ADMIN):
+            return
 
         document = self.repository.get_document_by_id(document_id)
         if document is None:
@@ -1097,11 +1468,6 @@ class DocumentService:
         # Only enforce sector matching when both sides are explicitly configured.
         if user_sector_ids and document.sector_id not in user_sector_ids:
             raise ForbiddenServiceError("Coordinator can only approve documents from the same sector.")
-
-    @staticmethod
-    def _ensure_can_quality_approve(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_role(UserRole.REVISOR):
-            raise ForbiddenServiceError("Only quality role can approve pending quality documents.")
 
     def _get_editable_draft(
         self,

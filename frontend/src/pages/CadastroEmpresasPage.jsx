@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminCompany,
@@ -54,6 +56,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
       return searchable.includes(normalizedTerm);
     });
   }, [companies, filterTerm, sectorsByCompany]);
+  const companiesPagination = usePagination(filteredCompanies);
 
   const loadData = async () => {
     setLoading(true);
@@ -206,7 +209,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {filteredCompanies.map((company) => (
+              {companiesPagination.pagedItems.map((company) => (
                 <tr key={company.id}>
                   <td>
                     {editingCompanyId === Number(company.id) ? (
@@ -261,6 +264,15 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={companiesPagination.page}
+          pageSize={companiesPagination.pageSize}
+          totalItems={companiesPagination.totalItems}
+          totalPages={companiesPagination.totalPages}
+          pageSizeOptions={companiesPagination.pageSizeOptions}
+          onPageChange={companiesPagination.setPage}
+          onPageSizeChange={companiesPagination.setPageSize}
+        />
       </section>
     </div>
   );

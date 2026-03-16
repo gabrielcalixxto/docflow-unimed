@@ -1,8 +1,11 @@
-﻿# ARCHITECTURE
+# ARCHITECTURE
 
 Fonte principal de arquitetura e estado tecnico do backend/frontend.
 
-Este arquivo substitui o antigo `BACKEND_PROGRESS.md` para evitar duplicacao.
+Status de validacao em 16/03/2026:
+
+- Backend: `149 passed` em `pytest`.
+- Frontend: build de producao (`vite build`) concluido com sucesso.
 
 ## 1. Topologia
 
@@ -49,12 +52,15 @@ Responsabilidades:
 
 - Stack backend: FastAPI + SQLAlchemy + PostgreSQL + JWT.
 - Login por `username` (nao por email).
-- Sessao pode ser atualizada via `POST /auth/refresh` para refletir permissoes sem relogin manual.
+- Sessao pode ser atualizada via `POST /auth/refresh`.
 - Usuario com multi-acesso:
   - `roles` (lista)
   - `company_ids` (lista)
   - `sector_ids` (lista)
   - campos legados `role/company_id/sector_id` mantidos.
+- Usuario com controle de conta:
+  - `is_active` (inativacao logica)
+  - `must_change_password` (troca obrigatoria no primeiro acesso).
 - Catalogos com sigla:
   - `document_types.sigla` obrigatoria
   - `sectors.sigla` obrigatoria.
@@ -62,6 +68,9 @@ Responsabilidades:
 - Auditoria:
   - eventos de fluxo em `document_events`
   - trilha geral em `audit_logs` + `audit_log_changes`.
+- Visibilidade documental:
+  - `LOCAL`: apenas usuarios com setor liberado.
+  - `CORPORATIVO`: visivel para todos os usuarios autenticados.
 
 ## 4. Entidades e armazenamento
 
@@ -81,15 +90,12 @@ Entidades principais:
 Pontos estruturais:
 
 - `documents.document_type` armazenado como string.
-- `document_types` possui `sigla` + `name`.
-- `sectors` possui `sigla`.
 - `users` suporta multi-acesso (`roles`, `company_ids`, `sector_ids`).
+- `users` suporta flags de conta (`is_active`, `must_change_password`).
 - `document_versions`:
   - unique `(document_id, version_number)`
   - indice parcial para unica versao `VIGENTE` por documento (PostgreSQL).
-- `document_versions` tambem possui:
-  - `invalidated_by`
-  - `invalidated_at`.
+- `document_versions` tambem possui `invalidated_by` e `invalidated_at`.
 - `stored_files` guarda binario no banco com vinculo opcional a documento/versao.
 
 ## 5. Fluxo de versao e aprovacao
@@ -99,7 +105,6 @@ Status:
 - `RASCUNHO`
 - `RASCUNHO_REVISADO`
 - `REVISAR_RASCUNHO`
-- `PENDENTE_QUALIDADE`
 - `PENDENTE_COORDENACAO` (legado)
 - `EM_REVISAO` (compatibilidade legada)
 - `REPROVADO`
@@ -109,22 +114,21 @@ Status:
 Transicoes:
 
 - `AUTOR` cria documento/versao em `RASCUNHO`.
-- `COORDENADOR/APROVADOR` aprova rascunho e move para `PENDENTE_QUALIDADE`.
-- `COORDENADOR/APROVADOR` reprova rascunho e move para `REVISAR_RASCUNHO`.
+- `COORDENADOR` envia para revisao e move para `REVISAR_RASCUNHO`.
+- `COORDENADOR` aprova e move para `VIGENTE`.
+- `COORDENADOR` reprova para ajuste e move para `REVISAR_RASCUNHO`.
+- `COORDENADOR` reprova definitiva e move para `REPROVADO`.
 - Ao editar um `REVISAR_RASCUNHO`, o sistema move para `RASCUNHO_REVISADO`.
-- `QUALIDADE` (role tecnico `REVISOR`) aprova `PENDENTE_QUALIDADE` e move para `VIGENTE`.
-- `QUALIDADE` (role tecnico `REVISOR`) reprova `PENDENTE_QUALIDADE` e move para `REPROVADO`.
-- `VIGENTE -> OBSOLETO` (nova versao vigente aprovada)
+- `VIGENTE -> OBSOLETO` quando nova versao vigente e aprovada.
 
 ## 6. Regras de dominio
 
-- Codigo do documento: `TIPO-SET-ID` (tipo + sigla de setor + id).
+- Codigo do documento: `TIPO-SET-ID`.
 - Criacao gera versao `1` em `RASCUNHO`.
 - Nova versao sempre inicia em `RASCUNHO` com numero automatico.
-- Bloqueio de nova versao se ja houver versao em andamento (`RASCUNHO`, `RASCUNHO_REVISADO`, `REVISAR_RASCUNHO`, `PENDENTE_QUALIDADE`, `PENDENTE_COORDENACAO`, `EM_REVISAO`).
-- Criacao/edicao de rascunho e criacao de versao: apenas `AUTOR`.
-- Aprovacao/reprovacao de rascunho: apenas `COORDENADOR`.
-- Aprovacao/reprovacao da etapa de qualidade: apenas `REVISOR` (nome funcional `QUALIDADE`).
+- Bloqueio de nova versao se ja houver versao em andamento (`RASCUNHO`, `RASCUNHO_REVISADO`, `REVISAR_RASCUNHO`, `PENDENTE_COORDENACAO`, `EM_REVISAO`).
+- Criacao/edicao de rascunho e criacao de versao: `AUTOR` (admin por heranca de papel).
+- Aprovacao/reprovacao no fluxo atual: `COORDENADOR` (admin por heranca de papel).
 - Coordenador com setores definidos aprova/reprova somente no proprio escopo.
 - Edicao/exclusao de rascunho: apenas solicitante da criacao.
 
@@ -134,12 +138,6 @@ Regras de data:
 - Criacao de versao: vencimento `>= hoje`.
 - Edicao de rascunho: vencimento `>= hoje`.
 
-Normalizacao de cadastros:
-
-- Empresas/setores/tipo(nome): formato titulo, com excecao `de/do/da`.
-- Siglas: maiusculas e alfanumericas.
-- Palavras explicitamente maiusculas (ex.: `TI`, `CEU`) sao preservadas.
-
 ## 7. Seguranca
 
 - JWT inclui:
@@ -147,8 +145,13 @@ Normalizacao de cadastros:
   - `role`, `roles`
   - `company_id`, `company_ids`
   - `sector_id`, `sector_ids`
+  - `must_change_password`
   - `exp`.
 - Autorizacao principal no service layer.
+- Blindagem de primeiro login (`must_change_password`):
+  - bloqueio server-side para rotas protegidas;
+  - excecao apenas para `POST /auth/change-password` e `POST /auth/refresh`;
+  - mesma regra aplicada tambem nos acessos por token em arquivo e websocket.
 
 ## 8. Schema e inicializacao
 
@@ -168,20 +171,17 @@ Stack:
 
 - React 18
 - Vite 5
-- CSS em `frontend/src/index.css`
+- CSS em `frontend/src/styles/tailwind.css` e `frontend/src/styles/specific.css`
+- tabelas com paginacao + seletor de linhas por pagina
+- avatar no topo abre modal com dados do usuario e troca de senha.
 
 Navegacao:
 
-- itens diretos: `Busca`, `Central de Aprovacao`
+- itens diretos: `Busca`, `Central de Aprovacao`, `Historico de Acoes`
 - grupos:
   - `Solicitacoes` (`Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`)
   - `Painel de Indicadores` (`Painel de Documentos`, `Painel de RNC (Em breve)`)
-  - `Gestao de Cadastros`
-  - `Historico de Acoes` (`ADMIN` global e `COORDENADOR` por setor)
-
-Regra de UX:
-
-- filtros preservam viewport via `frontend/src/hooks/useViewportPreserver.js`.
+  - `Gestao de Cadastros`.
 
 ## 10. Endpoints ativos
 
@@ -189,6 +189,7 @@ Auth:
 
 - `POST /auth/login`
 - `POST /auth/refresh`
+- `POST /auth/change-password`
 
 Documents:
 
@@ -203,6 +204,7 @@ Documents:
 - `POST /documents/{document_id}/submit-review`
 - `POST /documents/{document_id}/approve`
 - `POST /documents/{document_id}/reject`
+- `POST /documents/{document_id}/reject-definitive`
 
 Versions:
 
@@ -226,6 +228,8 @@ Admin users:
 - `POST /admin/users`
 - `PUT /admin/users/{user_id}`
 - `DELETE /admin/users/{user_id}`
+- `PATCH /admin/users/{user_id}/inactivate`
+- `PATCH /admin/users/{user_id}/reactivate`
 
 Admin catalog:
 
@@ -244,9 +248,14 @@ Audit:
 
 - `GET /audit/events`
 
+Realtime:
+
+- `GET ws://<host>/ws/events`
+
 ## 11. Observacoes de acesso
 
-- Catalogo (`/admin/catalog`) permite `ADMIN` e `REVISOR` (nome funcional `QUALIDADE`).
+- `REVISOR` permanece no enum por compatibilidade historica, mas esta inativo para autorizacao.
+- Catalogo (`/admin/catalog`) exige `ADMIN`.
 - Gestao de usuarios exige `ADMIN`.
 - Historico de acoes:
   - `ADMIN` ve todos os setores.
@@ -256,3 +265,27 @@ Audit:
 
 - RNC ainda em placeholder (`Em breve`).
 - Sem migracoes Alembic versionadas no fluxo atual (schema inicializado/ajustado no startup).
+- CORS no backend configurado por padrao para origens locais.
+
+## 13. Publicacao externa
+
+Melhor estrategia para liberar acesso externo agora sem travar arquitetura definitiva:
+
+1. Curto prazo (demo para gestor/avaliador):
+   - usar tunnel HTTPS (Cloudflare Tunnel ou ngrok) para frontend e backend;
+   - configurar `VITE_API_BASE_URL` se frontend/backend estiverem em dominios diferentes;
+   - liberar CORS para a origem publica do frontend.
+2. Medio prazo (definitivo):
+   - publicar em VPS/Cloud com Docker Compose;
+   - adicionar reverse proxy (Caddy/Nginx) com TLS e dominio;
+   - separar segredos por ambiente e habilitar backup/monitoracao.
+
+## 14. Scripts operacionais
+
+- `backend/scripts/validate_and_fill_demo_data.py`
+  - valida campos essenciais de logins e arquivos
+  - completa faltantes com dados ficticios para demonstracao.
+- `backend/scripts/replace_all_pdfs_with_reference.py`
+  - substitui o conteudo de todos os PDFs pelo PDF de referencia `MAN-FAR-20`.
+- `backend/scripts/backfill_comment_authors_from_audit.py`
+  - preenche autores de comentarios de ajuste/resposta a partir da auditoria historica.

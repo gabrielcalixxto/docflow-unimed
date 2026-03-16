@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.enums import DocumentScope, DocumentStatus, UserRole
-from app.core.security import AuthenticatedUser, get_authenticated_user_from_token, get_current_user
+from app.core.security import (
+    AuthenticatedUser,
+    enforce_must_change_password,
+    get_authenticated_user_from_token,
+    get_current_user,
+)
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.stored_file_repository import StoredFileRepository
 from app.schemas.errors import build_standard_error_responses
@@ -46,9 +51,15 @@ def get_current_file_user(request: Request) -> AuthenticatedUser:
     if not token:
         raise credentials_error
     try:
-        return get_authenticated_user_from_token(token)
+        current_user = get_authenticated_user_from_token(token)
     except ValueError as exc:
         raise credentials_error from exc
+    enforce_must_change_password(
+        current_user,
+        request_method=request.method,
+        request_path=request.url.path,
+    )
+    return current_user
 
 
 def _can_access_document_scope(current_user: AuthenticatedUser, stored_file) -> bool:
@@ -57,25 +68,19 @@ def _can_access_document_scope(current_user: AuthenticatedUser, stored_file) -> 
         return False
 
     if document.scope == DocumentScope.LOCAL:
-        return True
+        sector_ids = current_user.normalized_sector_ids()
+        if not sector_ids:
+            return False
+        return getattr(document, "sector_id", None) in sector_ids
 
     if document.scope == DocumentScope.CORPORATIVO:
-        if current_user.has_role(UserRole.ADMIN):
-            return True
-        company_ids = current_user.normalized_company_ids()
-        sector_ids = current_user.normalized_sector_ids()
-        if not company_ids and not sector_ids:
-            return False
-        return (
-            getattr(document, "company_id", None) in company_ids
-            or getattr(document, "sector_id", None) in sector_ids
-        )
+        return True
 
     return False
 
 
 def _can_access_non_vigente_file(current_user: AuthenticatedUser, stored_file) -> bool:
-    if current_user.has_any_role({UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+    if current_user.has_any_role({UserRole.COORDENADOR, UserRole.ADMIN}):
         return True
 
     if current_user.user_id is None:

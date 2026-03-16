@@ -26,7 +26,7 @@ Nao tratar como CRUD generico.
 
 ### 3.1 Documento
 
-- criacao exige: titulo, empresa, setor, tipo documental, escopo, `file_path`, vencimento
+- criacao exige: titulo, empresa, setor (para `LOCAL`), tipo documental, escopo, `file_path`, vencimento
 - codigo automatico: `TIPO-SET-ID`
 - criacao gera versao `1` em `RASCUNHO`
 - nova versao inicia em `RASCUNHO` e recebe numero automatico
@@ -39,7 +39,6 @@ Status validos:
 - `RASCUNHO`
 - `RASCUNHO_REVISADO`
 - `REVISAR_RASCUNHO`
-- `PENDENTE_QUALIDADE`
 - `PENDENTE_COORDENACAO` (compatibilidade legada)
 - `EM_REVISAO` (compatibilidade legada)
 - `REPROVADO`
@@ -49,31 +48,38 @@ Status validos:
 Transicoes:
 
 - `AUTOR` cria documento/versao em `RASCUNHO`
-- `COORDENADOR` aprova rascunho para `PENDENTE_QUALIDADE`
-- `COORDENADOR` reprova rascunho para `REVISAR_RASCUNHO`
+- `COORDENADOR` envia para revisao e move para `REVISAR_RASCUNHO`
+- `COORDENADOR` aprova para `VIGENTE`
+- `COORDENADOR` reprova para ajuste (`REVISAR_RASCUNHO`)
+- `COORDENADOR` reprova definitivo (`REPROVADO`)
 - editar `REVISAR_RASCUNHO` move para `RASCUNHO_REVISADO`
-- `REVISOR` (nome funcional `QUALIDADE`) aprova `PENDENTE_QUALIDADE` para `VIGENTE`
-- `REVISOR` (nome funcional `QUALIDADE`) reprova `PENDENTE_QUALIDADE` para `REPROVADO`
-- `VIGENTE -> OBSOLETO` (quando nova versao vira vigente)
+- `VIGENTE -> OBSOLETO` quando nova versao vira vigente.
 
 ### 3.3 Regras por perfil (backend)
 
-- criar documento e criar nova versao: apenas `AUTOR`
-- aprovacao/reprovacao de rascunho: apenas `COORDENADOR`
-- aprovacao/reprovacao etapa final: apenas `REVISOR` (nome funcional `QUALIDADE`)
+- criar documento e criar nova versao: `AUTOR` (admin por heranca)
+- aprovacao/reprovacao: `COORDENADOR` (admin por heranca)
 - coordenador com setor definido aprova/reprova apenas documentos do mesmo setor
 - edicao/exclusao de rascunho: apenas solicitante da criacao
 - gestao de usuarios: apenas `ADMIN`
-- catalogo backend: `ADMIN` e `REVISOR` (nome funcional `QUALIDADE`)
-- historico de acoes: `ADMIN` global, `COORDENADOR` por setor.
+- catalogo backend: apenas `ADMIN`
+- historico de acoes: `ADMIN` global, `COORDENADOR` por setor
+- `REVISOR` e mantido apenas por compatibilidade historica e tratado como papel inativo.
 
-### 3.4 Regras de data
+### 3.4 Regras de primeiro login
+
+- novo usuario nasce com `must_change_password = true`
+- backend deve bloquear acesso a rotas protegidas enquanto `must_change_password = true`
+- excecoes permitidas: `POST /auth/change-password` e `POST /auth/refresh`
+- mesma blindagem deve ser aplicada aos acessos por token em query/header (ex.: arquivo e websocket).
+
+### 3.5 Regras de data
 
 - `DocumentCreate.expiration_date`: `>= hoje` e `<= hoje + 2 anos`
 - `DocumentVersionCreate.expiration_date`: `>= hoje`
 - `DocumentDraftUpdate.expiration_date`: `>= hoje`
 
-### 3.5 Regras de cadastro
+### 3.6 Regras de cadastro
 
 Empresas, setores e nome de tipo documental:
 
@@ -123,8 +129,10 @@ Diretrizes:
 - versions (`/documents/{id}/versions`)
 - search (`/documents/search`)
 - files (`/file-storage`)
+- realtime (`/ws/events`)
 - admin users (`/admin/users`)
 - admin catalog (`/admin/catalog`)
+- audit (`/audit/events`)
 
 ## 7. Menu e paginas atuais
 
@@ -132,6 +140,7 @@ Itens diretos:
 
 - `Busca`
 - `Central de Aprovacao`
+- `Historico de Acoes`
 
 Grupo `Solicitacoes`:
 

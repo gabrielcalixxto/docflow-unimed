@@ -17,6 +17,10 @@ class Document(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
     sector_id: Mapped[int] = mapped_column(ForeignKey("sectors.id"))
     document_type: Mapped[str] = mapped_column(String(120))
+    adjustment_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    adjustment_reply_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    adjustment_comment_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    adjustment_reply_comment_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     scope: Mapped[DocumentScope] = mapped_column(
         SqlEnum(DocumentScope, name="document_scope"),
         default=DocumentScope.LOCAL,
@@ -27,6 +31,8 @@ class Document(Base):
     company = relationship("Company", back_populates="documents")
     sector = relationship("Sector", back_populates="documents")
     creator = relationship("User", back_populates="created_documents", foreign_keys=[created_by])
+    adjustment_comment_author = relationship("User", foreign_keys=[adjustment_comment_by])
+    adjustment_reply_comment_author = relationship("User", foreign_keys=[adjustment_reply_comment_by])
     versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
     stored_files = relationship("StoredFile", back_populates="document")
     events = relationship("DocumentEvent", back_populates="document", cascade="all, delete-orphan")

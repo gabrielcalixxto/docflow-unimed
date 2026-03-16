@@ -1,4 +1,4 @@
-from sqlalchemy import Enum as SqlEnum
+from sqlalchemy import Boolean, Enum as SqlEnum
 from sqlalchemy import ForeignKey, JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -12,9 +12,12 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
+    job_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
     username: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[UserRole] = mapped_column(SqlEnum(UserRole, name="user_role"), default=UserRole.LEITOR)
     roles: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=list)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)

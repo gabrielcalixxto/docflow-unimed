@@ -44,7 +44,7 @@ export default function LoginPage({ onLogin }) {
             className={inputVariants()}
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            placeholder="gabriel.soares"
+            placeholder="nome.exemplo"
             autoComplete="username"
           />
 

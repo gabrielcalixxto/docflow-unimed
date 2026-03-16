@@ -10,9 +10,7 @@ import HistoricoAcoesPage from "./pages/HistoricoAcoesPage";
 import HistoricoSolicitacoesPage from "./pages/HistoricoSolicitacoesPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
-import NovaRncPage from "./pages/NovaRncPage";
 import PainelDocumentos from "./pages/PainelDocumentos";
-import PainelRncPage from "./pages/PainelRncPage";
 import SearchPage from "./pages/SearchPage";
 import SolicitacoesPage from "./pages/SolicitacoesPage";
 import {
@@ -38,10 +36,10 @@ import {
 import { cn } from "./utils/cn";
 
 const FONT_SCALE_STEPS = [
-  { value: 1.08, label: 100 },
-  { value: 1.16, label: 116 },
-  { value: 1.24, label: 124 },
-  { value: 0.95, label: 95 },
+  { value: 0.95, level: 1 },
+  { value: 1.08, level: 2 },
+  { value: 1.16, level: 3 },
+  { value: 1.24, level: 4 },
 ];
 const THEME_STORAGE_KEY = "docflow_theme_mode";
 const FONT_SCALE_STORAGE_KEY = "docflow_font_scale";
@@ -49,11 +47,9 @@ const FONT_SCALE_STORAGE_KEY = "docflow_font_scale";
 const PAGE_ACCESS_RULES = {
   search: canAccessSearch,
   "novo-documento": canAccessNovoDocumento,
-  "nova-rnc": canAccessNovoDocumento,
   "historico-solicitacoes": canAccessHistoricoSolicitacoes,
   "central-aprovacao": canAccessCentralAprovacao,
   "painel-documentos": canAccessPainel,
-  "painel-rnc": canAccessPainel,
   "painel-usuarios": canAccessAdminUsers,
   "cadastro-setores": canAccessAdminCatalog,
   "cadastro-empresas": canAccessAdminCatalog,
@@ -64,11 +60,9 @@ const PAGE_ACCESS_RULES = {
 const PAGE_FALLBACK_ORDER = [
   "search",
   "novo-documento",
-  "nova-rnc",
   "historico-solicitacoes",
   "central-aprovacao",
   "painel-documentos",
-  "painel-rnc",
   "painel-usuarios",
   "cadastro-setores",
   "cadastro-empresas",
@@ -133,6 +127,8 @@ function buildSession(token) {
   return {
     username: payload.sub,
     email: typeof payload?.email === "string" ? payload.email : payload.sub,
+    name: typeof payload?.name === "string" ? payload.name : null,
+    jobTitle: typeof payload?.job_title === "string" ? payload.job_title : null,
     role: roles[0],
     roles,
     userId: payload.user_id ?? null,
@@ -140,6 +136,7 @@ function buildSession(token) {
     companyIds,
     sectorId: sectorIds[0] ?? null,
     sectorIds,
+    mustChangePassword: Boolean(payload?.must_change_password),
     expiresAt: typeof payload.exp === "number" ? payload.exp : null,
   };
 }
@@ -173,6 +170,7 @@ export default function App() {
   const [token, setToken] = useState(() => getStoredToken());
   const [isBootstrappingSession, setIsBootstrappingSession] = useState(() => Boolean(getStoredToken()));
   const [activePage, setActivePage] = useState("search");
+  const [draftEditPrefill, setDraftEditPrefill] = useState(null);
   const [authError, setAuthError] = useState("");
   const [globalErrorMessage, setGlobalErrorMessage] = useState("");
   const [themeMode, setThemeMode] = useState(loadStoredTheme);
@@ -301,6 +299,23 @@ export default function App() {
     });
   }, []);
 
+  const handlePasswordChanged = useCallback(async () => {
+    const data = await refreshSession();
+    if (data?.access_token) {
+      storeToken(data.access_token);
+      setToken(data.access_token);
+    }
+  }, []);
+
+  const handleOpenDraftInNovoDocumento = useCallback((draftPayload) => {
+    setDraftEditPrefill(draftPayload || null);
+    setActivePage("novo-documento");
+  }, []);
+
+  const handleDraftPrefillConsumed = useCallback(() => {
+    setDraftEditPrefill(null);
+  }, []);
+
   if (isBootstrappingSession) {
     return (
       <>
@@ -331,9 +346,11 @@ export default function App() {
         onLogout={() => handleLogout("")}
         themeMode={themeMode}
         fontScale={fontScale}
-        fontScaleLabel={fontScaleStep.label}
+        fontScaleLevel={fontScaleStep.level}
         onToggleTheme={handleToggleTheme}
         onIncreaseFont={handleIncreaseFont}
+        forcePasswordChange={Boolean(session.mustChangePassword)}
+        onPasswordChanged={handlePasswordChanged}
       >
         {resolvedPage === "search" && (
           <SearchPage onUnauthorized={handleUnauthorized} />
@@ -341,16 +358,22 @@ export default function App() {
         {resolvedPage === "painel-documentos" && (
           <PainelDocumentos session={session} onUnauthorized={handleUnauthorized} />
         )}
-        {resolvedPage === "painel-rnc" && <PainelRncPage />}
-        {resolvedPage === "nova-rnc" && <NovaRncPage />}
         {resolvedPage === "novo-documento" && (
-          <NovoDocumentoPage onUnauthorized={handleUnauthorized} />
+          <NovoDocumentoPage
+            onUnauthorized={handleUnauthorized}
+            prefillDraft={draftEditPrefill}
+            onPrefillConsumed={handleDraftPrefillConsumed}
+          />
         )}
         {resolvedPage === "central-aprovacao" && (
           <SolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
         )}
         {resolvedPage === "historico-solicitacoes" && (
-          <HistoricoSolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
+          <HistoricoSolicitacoesPage
+            session={session}
+            onUnauthorized={handleUnauthorized}
+            onEditDraft={handleOpenDraftInNovoDocumento}
+          />
         )}
         {resolvedPage === "painel-usuarios" && (
           <AdminUsuariosPage onUnauthorized={handleUnauthorized} />

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminSector,
@@ -111,6 +113,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
       }),
     [sectors, filterCompanyId, filterTerm, companyNameById],
   );
+  const sectorsPagination = usePagination(filteredSectors);
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -325,7 +328,7 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {filteredSectors.map((sector) => (
+              {sectorsPagination.pagedItems.map((sector) => (
                 <tr key={sector.id}>
                   <td>
                     {editingSectorId === Number(sector.id) ? (
@@ -409,6 +412,15 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={sectorsPagination.page}
+          pageSize={sectorsPagination.pageSize}
+          totalItems={sectorsPagination.totalItems}
+          totalPages={sectorsPagination.totalPages}
+          pageSizeOptions={sectorsPagination.pageSizeOptions}
+          onPageChange={sectorsPagination.setPage}
+          onPageSizeChange={sectorsPagination.setPageSize}
+        />
       </section>
     </div>
   );

@@ -1,9 +1,8 @@
 const STATUS_LABELS = {
   RASCUNHO: "Rascunho",
   RASCUNHO_REVISADO: "Rascunho revisado",
-  REVISAR_RASCUNHO: "Revisar rascunho",
+  REVISAR_RASCUNHO: "Pendente Ajuste",
   PENDENTE_COORDENACAO: "Pendente coordenacao",
-  PENDENTE_QUALIDADE: "Pendente qualidade",
   EM_REVISAO: "Em revisao",
   REPROVADO: "Reprovado",
   VIGENTE: "Vigente",

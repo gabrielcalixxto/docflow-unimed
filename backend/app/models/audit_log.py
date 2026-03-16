@@ -39,4 +39,4 @@ class AuditLog(Base):
     def user_name(self) -> str | None:
         if self.user is None:
             return self.actor_name_snapshot
-        return self.user.name
+        return self.user.username or self.user.name

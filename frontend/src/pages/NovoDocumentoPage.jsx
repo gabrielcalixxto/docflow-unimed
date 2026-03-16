@@ -7,10 +7,13 @@ import {
   getDocumentFormOptions,
   searchDocuments,
   showGlobalError,
+  updateDraftDocument,
   uploadDocumentFile,
 } from "../services/api";
 import { getCurrentLocalDateISO, getLocalDatePlusYearsISO } from "../utils/date";
 import { formatStatusLabel } from "../utils/status";
+
+const FORM_CACHE_KEY = "docflow_novo_documento_cache_v1";
 
 const INITIAL_DOCUMENT_FORM = {
   title: "",
@@ -18,12 +21,22 @@ const INITIAL_DOCUMENT_FORM = {
   sectorId: "",
   documentType: "",
   scope: "LOCAL",
+  adjustmentReplyComment: "",
   expirationDate: "",
 };
 
 const INITIAL_VERSION_FORM = {
   documentId: "",
   expirationDate: "",
+};
+
+const INITIAL_FILTERS = {
+  term: "",
+  company: "ALL",
+  sector: "ALL",
+  status: "ALL",
+  version: "ALL",
+  expiration: "ALL",
 };
 
 function buildInitialDocumentForm(initialExpirationDate) {
@@ -37,6 +50,81 @@ function buildInitialVersionForm(initialExpirationDate) {
   return {
     ...INITIAL_VERSION_FORM,
     expirationDate: initialExpirationDate,
+  };
+}
+
+function asString(value, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function readCachedFormState() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = window.localStorage.getItem(FORM_CACHE_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeCachedFormState(cachedValue, initialExpirationDate) {
+  const documentDefaults = buildInitialDocumentForm(initialExpirationDate);
+  const versionDefaults = buildInitialVersionForm(initialExpirationDate);
+  const filtersDefaults = { ...INITIAL_FILTERS };
+
+  if (!cachedValue || typeof cachedValue !== "object") {
+    return {
+      documentForm: documentDefaults,
+      versionForm: versionDefaults,
+      filters: filtersDefaults,
+    };
+  }
+
+  const rawDocumentForm =
+    cachedValue.documentForm && typeof cachedValue.documentForm === "object"
+      ? cachedValue.documentForm
+      : {};
+  const rawVersionForm =
+    cachedValue.versionForm && typeof cachedValue.versionForm === "object"
+      ? cachedValue.versionForm
+      : {};
+  const rawFilters =
+    cachedValue.filters && typeof cachedValue.filters === "object"
+      ? cachedValue.filters
+      : {};
+
+  return {
+    documentForm: {
+      ...documentDefaults,
+      title: asString(rawDocumentForm.title),
+      companyId: asString(rawDocumentForm.companyId) === "ALL" ? "" : asString(rawDocumentForm.companyId),
+      sectorId: asString(rawDocumentForm.sectorId) === "ALL" ? "" : asString(rawDocumentForm.sectorId),
+      documentType: asString(rawDocumentForm.documentType),
+      scope: asString(rawDocumentForm.scope, documentDefaults.scope),
+      adjustmentReplyComment: asString(rawDocumentForm.adjustmentReplyComment),
+      expirationDate: asString(rawDocumentForm.expirationDate, documentDefaults.expirationDate),
+    },
+    versionForm: {
+      ...versionDefaults,
+      documentId: asString(rawVersionForm.documentId),
+      expirationDate: asString(rawVersionForm.expirationDate, versionDefaults.expirationDate),
+    },
+    filters: {
+      ...filtersDefaults,
+      term: asString(rawFilters.term),
+      company: asString(rawFilters.company, filtersDefaults.company),
+      sector: asString(rawFilters.sector, filtersDefaults.sector),
+      status: asString(rawFilters.status, filtersDefaults.status),
+      version: asString(rawFilters.version, filtersDefaults.version),
+      expiration: asString(rawFilters.expiration, filtersDefaults.expiration),
+    },
   };
 }
 
@@ -100,17 +188,17 @@ function resolveDefaultCompanyAndSector(companies, sectors, preferredCompanyId =
   };
 }
 
-export default function NovoDocumentoPage({ onUnauthorized }) {
+export default function NovoDocumentoPage({ onUnauthorized, prefillDraft, onPrefillConsumed }) {
   const { preserveViewport } = useViewportPreserver();
   const minExpirationDate = getCurrentLocalDateISO();
   const suggestedExpirationDate = getLocalDatePlusYearsISO(1);
   const maxExpirationDate = getLocalDatePlusYearsISO(2);
-  const [documentForm, setDocumentForm] = useState(() =>
-    buildInitialDocumentForm(suggestedExpirationDate),
+  const cachedState = useMemo(
+    () => normalizeCachedFormState(readCachedFormState(), suggestedExpirationDate),
+    [suggestedExpirationDate],
   );
-  const [versionForm, setVersionForm] = useState(() =>
-    buildInitialVersionForm(suggestedExpirationDate),
-  );
+  const [documentForm, setDocumentForm] = useState(() => cachedState.documentForm);
+  const [versionForm, setVersionForm] = useState(() => cachedState.versionForm);
   const [options, setOptions] = useState({
     companies: [],
     sectors: [],
@@ -118,25 +206,62 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
     scopes: ["LOCAL", "CORPORATIVO"],
   });
   const [activeDocuments, setActiveDocuments] = useState([]);
-  const [filters, setFilters] = useState({
-    term: "",
-    company: "ALL",
-    sector: "ALL",
-    status: "ALL",
-    version: "ALL",
-    expiration: "ALL",
-  });
+  const [filters, setFilters] = useState(() => cachedState.filters);
   const [selectedActiveDocument, setSelectedActiveDocument] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const [versionFile, setVersionFile] = useState(null);
+  const [draftEditContext, setDraftEditContext] = useState(null);
   const [isCreateDropActive, setIsCreateDropActive] = useState(false);
   const [isUpdateDropActive, setIsUpdateDropActive] = useState(false);
+  const [isVersionSearchFocused, setIsVersionSearchFocused] = useState(false);
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submittingVersion, setSubmittingVersion] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const createFileInputRef = useRef(null);
   const updateFileInputRef = useRef(null);
+  const isEditingDraft = Boolean(draftEditContext?.documentId);
+
+  const clearFormCache = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.removeItem(FORM_CACHE_KEY);
+  };
+
+  const resetFormsAfterSuccessfulSubmit = () => {
+    const defaultScope = options.scopes.includes("LOCAL") ? "LOCAL" : options.scopes[0] || "LOCAL";
+    const defaults = resolveDefaultCompanyAndSector(options.companies, options.sectors);
+
+    setDocumentForm({
+      ...buildInitialDocumentForm(suggestedExpirationDate),
+      documentType: options.documentTypes[0]?.sigla || "",
+      scope: defaultScope,
+      companyId: defaults.companyId,
+      sectorId: defaultScope === "LOCAL" ? defaults.sectorId : "",
+    });
+    setVersionForm(buildInitialVersionForm(suggestedExpirationDate));
+    setSelectedActiveDocument(null);
+    setDocumentFile(null);
+    setVersionFile(null);
+    setDraftEditContext(null);
+    clearFormCache();
+  };
+
+  const resetCreateCardToDefault = () => {
+    const defaultScope = options.scopes.includes("LOCAL") ? "LOCAL" : options.scopes[0] || "LOCAL";
+    const defaults = resolveDefaultCompanyAndSector(options.companies, options.sectors);
+    setDocumentForm({
+      ...buildInitialDocumentForm(suggestedExpirationDate),
+      documentType: options.documentTypes[0]?.sigla || "",
+      scope: defaultScope,
+      companyId: defaults.companyId,
+      sectorId: defaultScope === "LOCAL" ? defaults.sectorId : "",
+    });
+    setDocumentFile(null);
+    setDraftEditContext(null);
+    onPrefillConsumed?.();
+  };
 
   const showFeedback = (type, message) => {
     if (type === "error") {
@@ -200,7 +325,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         setActiveDocuments(mappedActiveDocuments);
         setDocumentForm((prev) => {
           const resolvedScope = scopes.includes(prev.scope) ? prev.scope : scopes[0] || "LOCAL";
-          const currentCompanyId = prev.companyId !== "ALL" ? prev.companyId : "";
+          const currentCompanyId = prev.companyId || "";
           const defaults = resolveDefaultCompanyAndSector(companies, sectors, currentCompanyId);
           const selectedCompanyId =
             currentCompanyId && companies.some((company) => String(company.id) === currentCompanyId)
@@ -221,8 +346,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
           const documentTypeExists = documentTypes.some((item) => item.sigla === prev.documentType);
           return {
             ...prev,
-            companyId: resolvedScope === "LOCAL" ? "ALL" : selectedCompanyId,
-            sectorId: resolvedScope === "LOCAL" ? "ALL" : selectedSectorId,
+            companyId: selectedCompanyId,
+            sectorId: resolvedScope === "LOCAL" ? selectedSectorId : "",
             documentType: documentTypeExists ? prev.documentType : documentTypes[0]?.sigla || "",
             scope: resolvedScope,
             expirationDate: prev.expirationDate || suggestedExpirationDate,
@@ -259,6 +384,61 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
 
     loadOptions();
   }, [onUnauthorized, suggestedExpirationDate]);
+
+  useEffect(() => {
+    if (!prefillDraft?.documentId) {
+      return;
+    }
+
+    const normalizedScope = prefillDraft.scope || "LOCAL";
+    const latestStatus = prefillDraft.latestStatus || "";
+    const requiresAdjustmentResponse = latestStatus === "REVISAR_RASCUNHO";
+    setDraftEditContext({
+      documentId: Number(prefillDraft.documentId),
+      filePath: prefillDraft.filePath || "",
+      latestStatus,
+      adjustmentComment: prefillDraft.adjustmentComment || "",
+      requiresAdjustmentResponse,
+    });
+    setDocumentForm((prev) => ({
+      ...prev,
+      title: prefillDraft.title || "",
+      documentType: prefillDraft.documentType || prev.documentType,
+      scope: normalizedScope,
+      companyId: String(prefillDraft.companyId || ""),
+      sectorId: normalizedScope === "LOCAL" ? String(prefillDraft.sectorId || "") : "",
+      adjustmentReplyComment: prefillDraft.adjustmentReplyComment || "",
+      expirationDate: prefillDraft.expirationDate || prev.expirationDate || suggestedExpirationDate,
+    }));
+    setDocumentFile(null);
+    setFeedback({ type: "", message: "" });
+    onPrefillConsumed?.();
+  }, [onPrefillConsumed, prefillDraft, suggestedExpirationDate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const payload = {
+      documentForm,
+      versionForm,
+      filters,
+    };
+
+    window.localStorage.setItem(FORM_CACHE_KEY, JSON.stringify(payload));
+  }, [documentForm, versionForm, filters]);
+
+  useEffect(() => {
+    if (!versionForm.documentId) {
+      setSelectedActiveDocument(null);
+      return;
+    }
+
+    const selected =
+      activeDocuments.find((item) => String(item.document_id) === versionForm.documentId) || null;
+    setSelectedActiveDocument(selected);
+  }, [activeDocuments, versionForm.documentId]);
 
   const companies = useMemo(
     () =>
@@ -315,7 +495,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const availableSectors = useMemo(
     () =>
       options.sectors.filter((sector) => {
-        if (!documentForm.companyId || documentForm.companyId === "ALL") {
+        if (!documentForm.companyId) {
           return true;
         }
         return String(sector.company_id) === documentForm.companyId;
@@ -326,21 +506,6 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const filteredActiveDocuments = useMemo(() => {
     const term = filters.term.trim().toLowerCase();
     return activeDocuments.filter((item) => {
-      if (filters.company !== "ALL" && item.companyName !== filters.company) {
-        return false;
-      }
-      if (filters.sector !== "ALL" && item.sectorName !== filters.sector) {
-        return false;
-      }
-      if (filters.status !== "ALL" && item.latestStatus !== filters.status) {
-        return false;
-      }
-      if (filters.version !== "ALL" && item.latestVersionNumber !== filters.version) {
-        return false;
-      }
-      if (filters.expiration !== "ALL" && item.latestExpiration !== filters.expiration) {
-        return false;
-      }
       if (!term) {
         return true;
       }
@@ -359,13 +524,19 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [activeDocuments, filters]);
+  }, [activeDocuments, filters.term]);
+
+  const versionSearchResults = useMemo(() => filteredActiveDocuments.slice(0, 8), [filteredActiveDocuments]);
 
   const selectActiveDocument = (item) => {
     setSelectedActiveDocument(item);
     setVersionForm((prev) => ({
       ...prev,
       documentId: String(item.document_id),
+    }));
+    setFilters((prev) => ({
+      ...prev,
+      term: `${item.code} - ${item.title}`,
     }));
   };
 
@@ -408,49 +579,81 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const handleCreateDocument = async (event) => {
     event.preventDefault();
     const scopeIsLocal = documentForm.scope === "LOCAL";
-    const fallbackTarget = resolveDefaultCompanyAndSector(options.companies, options.sectors);
-    const resolvedCompanyId = scopeIsLocal ? fallbackTarget.companyId : documentForm.companyId;
-    const resolvedSectorId = scopeIsLocal ? fallbackTarget.sectorId : documentForm.sectorId;
+    const fallbackTarget = resolveDefaultCompanyAndSector(
+      options.companies,
+      options.sectors,
+      documentForm.companyId,
+    );
+    const resolvedCompanyId = documentForm.companyId || fallbackTarget.companyId;
+    const sectorFallbackForCompany = resolveDefaultCompanyAndSector(
+      options.companies,
+      options.sectors,
+      resolvedCompanyId,
+    );
+    const resolvedSectorId = scopeIsLocal
+      ? documentForm.sectorId || sectorFallbackForCompany.sectorId
+      : documentForm.sectorId || null;
 
     if (!documentForm.documentType) {
       showFeedback("error", "Selecione o tipo documental.");
       return;
     }
-    if (!resolvedCompanyId || !resolvedSectorId) {
-      showFeedback(
-        "error",
-        "E necessario ter empresa e setor cadastrados para criar o documento.",
-      );
+    if (!resolvedCompanyId) {
+      showFeedback("error", "Selecione a empresa do documento.");
       return;
     }
-    if (!scopeIsLocal && (!documentForm.companyId || !documentForm.sectorId)) {
-      showFeedback("error", "Selecione empresa e setor para escopo corporativo.");
+    if (scopeIsLocal && !resolvedSectorId) {
+      showFeedback("error", "Para escopo LOCAL, selecione um setor permitido.");
       return;
     }
-    if (!documentFile) {
+    if (!documentFile && !draftEditContext?.filePath) {
       showFeedback("error", "Selecione ou arraste um arquivo no card de Novo documento.");
       return;
     }
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const uploadResponse = await uploadDocumentFile(documentFile);
-      const response = await createDocument({
-        title: documentForm.title.trim(),
-        company_id: Number(resolvedCompanyId),
-        sector_id: Number(resolvedSectorId),
-        document_type: documentForm.documentType.trim(),
-        scope: documentForm.scope,
-        file_path: uploadResponse?.file_path || documentFile.name,
-        expiration_date: documentForm.expirationDate,
-      });
-      setDocumentForm((prev) => ({
-        ...prev,
-        title: "",
-        expirationDate: suggestedExpirationDate,
-      }));
-      setDocumentFile(null);
-      showFeedback("success", response.message || "Documento criado.");
+      let nextFilePath = draftEditContext?.filePath || "";
+      if (documentFile) {
+        const uploadResponse = await uploadDocumentFile(documentFile);
+        nextFilePath = uploadResponse?.file_path || documentFile.name;
+      }
+      let response;
+      if (isEditingDraft && draftEditContext?.documentId) {
+        const draftPayload = {
+          title: documentForm.title.trim(),
+          company_id: Number(resolvedCompanyId),
+          document_type: documentForm.documentType.trim(),
+          scope: documentForm.scope,
+          file_path: nextFilePath,
+          expiration_date: documentForm.expirationDate,
+        };
+        if (resolvedSectorId) {
+          draftPayload.sector_id = Number(resolvedSectorId);
+        }
+        if (draftEditContext.requiresAdjustmentResponse) {
+          draftPayload.adjustment_reply_comment = documentForm.adjustmentReplyComment;
+        }
+        response = await updateDraftDocument(Number(draftEditContext.documentId), draftPayload);
+      } else {
+        const createPayload = {
+          title: documentForm.title.trim(),
+          company_id: Number(resolvedCompanyId),
+          document_type: documentForm.documentType.trim(),
+          scope: documentForm.scope,
+          file_path: nextFilePath,
+          expiration_date: documentForm.expirationDate,
+        };
+        if (resolvedSectorId) {
+          createPayload.sector_id = Number(resolvedSectorId);
+        }
+        response = await createDocument(createPayload);
+      }
+      resetFormsAfterSuccessfulSubmit();
+      showFeedback(
+        "success",
+        response.message || (isEditingDraft ? "Rascunho atualizado." : "Documento criado."),
+      );
     } catch (requestError) {
       if (requestError.status === 401) {
         onUnauthorized?.();
@@ -459,7 +662,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
       showFeedback(
         "error",
         requestError.message ||
-          "Falha ao criar documento. Verifique company_id e sector_id validos.",
+          (isEditingDraft
+            ? "Falha ao atualizar rascunho."
+            : "Falha ao criar documento. Verifique company_id e sector_id validos."),
       );
     } finally {
       setSubmitting(false);
@@ -469,7 +674,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const handleCreateVersion = async (event) => {
     event.preventDefault();
     if (!versionForm.documentId) {
-      showFeedback("error", "Selecione um documento vigente na lista abaixo.");
+      showFeedback("error", "Selecione um documento vigente na busca.");
       return;
     }
     if (!versionFile) {
@@ -486,11 +691,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         file_path: uploadResponse?.file_path || versionFile.name,
         expiration_date: versionForm.expirationDate,
       });
-      setVersionForm((prev) => ({
-        ...buildInitialVersionForm(suggestedExpirationDate),
-        documentId: prev.documentId,
-      }));
-      setVersionFile(null);
+      resetFormsAfterSuccessfulSubmit();
       showFeedback("success", response.message || "Documento atualizado com nova versao.");
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -522,7 +723,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
 
       <section className="workflow-grid dual-workflow-grid">
         <form
-          className="panel-float workflow-card"
+          className="panel-float workflow-card workflow-card-fixed-submit"
           onSubmit={handleCreateDocument}
           onDragOver={(event) => {
             event.preventDefault();
@@ -531,8 +732,15 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
           onDragLeave={() => setIsCreateDropActive(false)}
           onDrop={handleCreateDrop}
         >
-          <h3>Criar documento</h3>
-          <p className="workflow-hint">O codigo e o numero da primeira versao sao definidos pelo backend.</p>
+          <h3>{isEditingDraft ? "Editar rascunho" : "Criar documento"}</h3>
+          <p className="workflow-hint">
+            {isEditingDraft
+              ? "Edicao iniciada pelo Historico de Solicitacoes. Ao salvar, o rascunho segue para Rascunho Revisado."
+              : "O codigo e o numero da primeira versao sao definidos pelo backend."}
+          </p>
+          {isEditingDraft && draftEditContext?.adjustmentComment && (
+            <p className="workflow-hint">Comentario de ajuste do gestor: {draftEditContext.adjustmentComment}</p>
+          )}
           <div className="form-grid form-grid-vertical">
             <label>
               Tipo de documento
@@ -562,24 +770,24 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 onChange={(event) => {
                   const nextScope = event.target.value;
                   setDocumentForm((prev) => {
+                    const defaults = resolveDefaultCompanyAndSector(
+                      options.companies,
+                      options.sectors,
+                      prev.companyId,
+                    );
                     if (nextScope === "LOCAL") {
                       return {
                         ...prev,
                         scope: nextScope,
-                        companyId: "ALL",
-                        sectorId: "ALL",
+                        companyId: prev.companyId || defaults.companyId,
+                        sectorId: defaults.sectorId,
                       };
                     }
-                    const defaults = resolveDefaultCompanyAndSector(
-                      options.companies,
-                      options.sectors,
-                      prev.companyId !== "ALL" ? prev.companyId : "",
-                    );
                     return {
                       ...prev,
                       scope: nextScope,
-                      companyId: defaults.companyId,
-                      sectorId: defaults.sectorId,
+                      companyId: prev.companyId || defaults.companyId,
+                      sectorId: "",
                     };
                   });
                 }}
@@ -594,11 +802,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
             <label>
               Empresa
               <select
-                required={documentForm.scope !== "LOCAL"}
-                value={documentForm.scope === "LOCAL" ? "ALL" : documentForm.companyId}
-                disabled={
-                  documentForm.scope === "LOCAL" || loadingOptions || options.companies.length === 0
-                }
+                required
+                value={documentForm.companyId}
+                disabled={loadingOptions || options.companies.length === 0}
                 onChange={(event) => {
                   const companyId = event.target.value;
                   const defaults = resolveDefaultCompanyAndSector(
@@ -609,41 +815,33 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                   setDocumentForm((prev) => ({
                     ...prev,
                     companyId,
-                    sectorId: defaults.sectorId,
+                    sectorId: prev.scope === "LOCAL" ? defaults.sectorId : "",
                   }));
                 }}
               >
-                {documentForm.scope === "LOCAL" ? (
-                  <option value="ALL">TODOS</option>
-                ) : (
-                  <>
-                    <option value="" disabled>
-                      {loadingOptions ? "Carregando..." : "Selecione"}
-                    </option>
-                    {options.companies.map((company) => (
-                      <option key={company.id} value={String(company.id)}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </>
-                )}
+                <option value="" disabled>
+                  {loadingOptions ? "Carregando..." : "Selecione"}
+                </option>
+                {options.companies.map((company) => (
+                  <option key={company.id} value={String(company.id)}>
+                    {company.name}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
               Setor
               <select
-                required={documentForm.scope !== "LOCAL"}
-                value={documentForm.scope === "LOCAL" ? "ALL" : documentForm.sectorId}
+                required={documentForm.scope === "LOCAL"}
+                value={documentForm.scope === "LOCAL" ? documentForm.sectorId : ""}
                 disabled={
-                  documentForm.scope === "LOCAL" || loadingOptions || availableSectors.length === 0
+                  documentForm.scope !== "LOCAL" || loadingOptions || availableSectors.length === 0
                 }
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
                 }
               >
                 {documentForm.scope === "LOCAL" ? (
-                  <option value="ALL">TODOS</option>
-                ) : (
                   <>
                     <option value="" disabled>
                       {loadingOptions ? "Carregando..." : "Selecione"}
@@ -654,6 +852,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                       </option>
                     ))}
                   </>
+                ) : (
+                  <option value="">Nao se aplica para documento corporativo</option>
                 )}
               </select>
             </label>
@@ -665,49 +865,22 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 onChange={(event) => setDocumentForm((prev) => ({ ...prev, title: event.target.value }))}
               />
             </label>
-            <label>
-              Arquivo da solicitacao
-              <div className="file-upload-row">
-                <button
-                  type="button"
-                  className="table-btn"
-                  onClick={() => createFileInputRef.current?.click()}
-                >
-                  Selecionar arquivo
-                </button>
-                <input
-                  ref={createFileInputRef}
-                  type="file"
-                  className="file-upload-hidden"
-                  onChange={handleCreateFileInputChange}
+            {isEditingDraft && draftEditContext?.requiresAdjustmentResponse && (
+              <label>
+                Comentario de reajuste (opcional)
+                <textarea
+                  rows={3}
+                  value={documentForm.adjustmentReplyComment}
+                  placeholder="Descreva o que foi ajustado para o gestor."
+                  onChange={(event) =>
+                    setDocumentForm((prev) => ({
+                      ...prev,
+                      adjustmentReplyComment: event.target.value,
+                    }))
+                  }
                 />
-              </div>
-            </label>
-            <label>
-              Arraste o arquivo aqui
-              <div
-                className={`file-drop-zone ${isCreateDropActive ? "active" : ""}`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsCreateDropActive(true);
-                }}
-                onDragLeave={() => setIsCreateDropActive(false)}
-                onDrop={handleCreateDrop}
-              >
-                Solte o arquivo dentro do card de Novo documento
-              </div>
-            </label>
-            <div className="field-block">
-              <p>Arquivo selecionado</p>
-              <div className="selected-document-box selected-file-box">
-                <span>{documentFile ? documentFile.name : "Nenhum arquivo selecionado"}</span>
-                {documentFile && (
-                  <button type="button" className="file-remove-btn" onClick={() => setDocumentFile(null)}>
-                    X
-                  </button>
-                )}
-              </div>
-            </div>
+              </label>
+            )}
             <label>
               Data de vencimento
               <input
@@ -721,14 +894,69 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 }
               />
             </label>
+            <label>
+              Arquivo da solicitacao
+              <div className="file-upload-group">
+                <div className="file-upload-row">
+                  <button
+                    type="button"
+                    className="table-btn"
+                    onClick={() => createFileInputRef.current?.click()}
+                  >
+                    Selecionar arquivo
+                  </button>
+                  <input
+                    ref={createFileInputRef}
+                    type="file"
+                    className="file-upload-hidden"
+                    onChange={handleCreateFileInputChange}
+                  />
+                </div>
+                <div
+                  className={`file-drop-zone ${isCreateDropActive ? "active" : ""}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsCreateDropActive(true);
+                  }}
+                  onDragLeave={() => setIsCreateDropActive(false)}
+                  onDrop={handleCreateDrop}
+                >
+                  Solte o arquivo dentro do card de Novo documento
+                </div>
+                <div className="field-block">
+                  <p>Arquivo selecionado</p>
+                  <div className="selected-document-box selected-file-box">
+                    <span>
+                      {documentFile
+                        ? documentFile.name
+                        : isEditingDraft && draftEditContext?.filePath
+                          ? extractFileName(draftEditContext.filePath)
+                          : "Nenhum arquivo selecionado"}
+                    </span>
+                    {documentFile && (
+                      <button type="button" className="file-remove-btn" onClick={() => setDocumentFile(null)}>
+                        X
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </label>
           </div>
-          <button type="submit" className="compact-submit" disabled={submitting}>
-            Criar documento
-          </button>
+          <div className="workflow-card-footer">
+            <button type="submit" className="compact-submit" disabled={submitting}>
+              {isEditingDraft ? "Salvar rascunho" : "Criar documento"}
+            </button>
+            {isEditingDraft && (
+              <button type="button" className="ghost-btn" disabled={submitting} onClick={resetCreateCardToDefault}>
+                Cancelar edicao
+              </button>
+            )}
+          </div>
         </form>
 
         <form
-          className="panel-float workflow-card"
+          className="panel-float workflow-card workflow-card-fixed-submit"
           onSubmit={handleCreateVersion}
           onDragOver={(event) => {
             event.preventDefault();
@@ -739,60 +967,53 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         >
           <h3>Criar nova versao</h3>
           <p className="workflow-hint">
-            Selecione um documento vigente abaixo. O ID e preenchido internamente.
+            Pesquise por codigo ou titulo para selecionar um documento vigente.
           </p>
-          <div className="form-grid form-grid-vertical">
+          <div className="form-grid version-form-grid">
             <label>
-              Documento selecionado
+              Buscar documento vigente
+              <input
+                type="text"
+                placeholder="Digite codigo ou titulo"
+                value={filters.term}
+                onFocus={() => setIsVersionSearchFocused(true)}
+                onBlur={() => setTimeout(() => setIsVersionSearchFocused(false), 120)}
+                onChange={(event) =>
+                  preserveViewport(() =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      term: event.target.value,
+                    })),
+                  )
+                }
+              />
+              {isVersionSearchFocused && filters.term.trim() && (
+                <div className="autocomplete-list">
+                  {versionSearchResults.length > 0 ? (
+                    versionSearchResults.map((item) => {
+                      const isSelected = String(item.document_id) === versionForm.documentId;
+                      return (
+                        <button
+                          key={`${item.document_id}-${item.active_version_id}`}
+                          type="button"
+                          className={`autocomplete-option ${isSelected ? "is-selected" : ""}`}
+                          onClick={() => selectActiveDocument(item)}
+                        >
+                          {item.code} - {item.title}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="autocomplete-empty">Nenhum documento vigente encontrado.</p>
+                  )}
+                </div>
+              )}
               <div className="selected-document-box">
                 {selectedActiveDocument
                   ? `${selectedActiveDocument.title} (${selectedActiveDocument.code})`
                   : "Nenhum documento selecionado"}
               </div>
             </label>
-            <label>
-              Arquivo da nova versao
-              <div className="file-upload-row">
-                <button
-                  type="button"
-                  className="table-btn"
-                  onClick={() => updateFileInputRef.current?.click()}
-                >
-                  Selecionar arquivo
-                </button>
-                <input
-                  ref={updateFileInputRef}
-                  type="file"
-                  className="file-upload-hidden"
-                  onChange={handleUpdateFileInputChange}
-                />
-              </div>
-            </label>
-            <label>
-              Arraste o arquivo aqui
-              <div
-                className={`file-drop-zone ${isUpdateDropActive ? "active" : ""}`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsUpdateDropActive(true);
-                }}
-                onDragLeave={() => setIsUpdateDropActive(false)}
-                onDrop={handleUpdateDrop}
-              >
-                Solte o arquivo dentro do card de Criar nova versao
-              </div>
-            </label>
-            <div className="field-block">
-              <p>Arquivo selecionado</p>
-              <div className="selected-document-box selected-file-box">
-                <span>{versionFile ? versionFile.name : "Nenhum arquivo selecionado"}</span>
-                {versionFile && (
-                  <button type="button" className="file-remove-btn" onClick={() => setVersionFile(null)}>
-                    X
-                  </button>
-                )}
-              </div>
-            </div>
             <label>
               Data de vencimento
               <input
@@ -806,186 +1027,55 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 }
               />
             </label>
-          </div>
-          <button type="submit" className="compact-submit" disabled={submittingVersion}>
-            Criar nova versao
-          </button>
-        </form>
-      </section>
-
-      <section className="panel-float workflow-list">
-        <div className="workflow-list-head">
-          <div>
-            <h3>Documentos vigentes</h3>
-            <p className="workflow-hint">Escolha um documento para atualizar a versao.</p>
-          </div>
-        </div>
-        <section className="painel-filters-grid">
-          <label>
-            Pesquisa
-            <input
-              type="text"
-              placeholder="Codigo, titulo, empresa, setor..."
-              value={filters.term}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    term: event.target.value,
-                  })),
-                )
-              }
-            />
-          </label>
-
-          <label>
-            Empresas
-            <select
-              value={filters.company}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    company: event.target.value,
-                  })),
-                )
-              }
-            >
-              <option value="ALL">Todas</option>
-              {companies.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Setor
-            <select
-              value={filters.sector}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    sector: event.target.value,
-                  })),
-                )
-              }
-            >
-              <option value="ALL">Todos</option>
-              {sectors.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Status
-            <select
-              value={filters.status}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    status: event.target.value,
-                  })),
-                )
-              }
-            >
-              <option value="ALL">Todos</option>
-              {statuses.map((value) => (
-                <option key={value} value={value}>
-                  {formatStatusLabel(value)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Versao
-            <select
-              value={filters.version}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    version: event.target.value,
-                  })),
-                )
-              }
-            >
-              <option value="ALL">Todas</option>
-              {versions.map((value) => (
-                <option key={value} value={value}>
-                  {value === "SEM_VERSAO" ? "Sem versao" : `v${value}`}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Vencimento
-            <select
-              value={filters.expiration}
-              onChange={(event) =>
-                preserveViewport(() =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    expiration: event.target.value,
-                  })),
-                )
-              }
-            >
-              <option value="ALL">Todos</option>
-              {expirations.map((value) => (
-                <option key={value} value={value}>
-                  {value === "SEM_VENCIMENTO" ? "Sem vencimento" : formatDate(value)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Codigo</th>
-                <th>Titulo</th>
-                <th>Empresa</th>
-                <th>Setor</th>
-                <th>Arquivo</th>
-                <th>Acoes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredActiveDocuments.map((item) => {
-                const isSelected = String(item.document_id) === versionForm.documentId;
-                return (
-                  <tr key={`${item.document_id}-${item.active_version_id}`} className={isSelected ? "row-selected" : ""}>
-                    <td>{item.code}</td>
-                    <td>{item.title}</td>
-                    <td>{item.companyName}</td>
-                    <td>{item.sectorName}</td>
-                    <td>{item.fileName}</td>
-                    <td>
-                      <button type="button" className="table-btn" onClick={() => selectActiveDocument(item)}>
-                        {isSelected ? "Selecionado" : "Selecionar"}
+            <label>
+              Arquivo da nova versao
+              <div className="file-upload-group">
+                <div className="file-upload-row">
+                  <button
+                    type="button"
+                    className="table-btn"
+                    onClick={() => updateFileInputRef.current?.click()}
+                  >
+                    Selecionar arquivo
+                  </button>
+                  <input
+                    ref={updateFileInputRef}
+                    type="file"
+                    className="file-upload-hidden"
+                    onChange={handleUpdateFileInputChange}
+                  />
+                </div>
+                <div
+                  className={`file-drop-zone ${isUpdateDropActive ? "active" : ""}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsUpdateDropActive(true);
+                  }}
+                  onDragLeave={() => setIsUpdateDropActive(false)}
+                  onDrop={handleUpdateDrop}
+                >
+                  Solte o arquivo dentro do card de Criar nova versao
+                </div>
+                <div className="field-block">
+                  <p>Arquivo selecionado</p>
+                  <div className="selected-document-box selected-file-box">
+                    <span>{versionFile ? versionFile.name : "Nenhum arquivo selecionado"}</span>
+                    {versionFile && (
+                      <button type="button" className="file-remove-btn" onClick={() => setVersionFile(null)}>
+                        X
                       </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!loadingOptions && filteredActiveDocuments.length === 0 && (
-                <tr>
-                  <td colSpan={6}>Nenhum documento vigente encontrado com o filtro atual.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </label>
+          </div>
+          <div className="workflow-card-footer">
+            <button type="submit" className="compact-submit" disabled={submittingVersion}>
+              Criar nova versao
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );

@@ -6,8 +6,8 @@ from jose import jwt
 
 from app.core.config import settings
 from app.core.enums import UserRole
-from app.core.security import hash_password
-from app.schemas.auth import LoginRequest
+from app.core.security import hash_password, verify_password
+from app.schemas.auth import ChangePasswordRequest, LoginRequest
 from app.services.auth_service import AuthService, InvalidCredentialsError
 
 
@@ -67,6 +67,24 @@ def test_login_raises_invalid_credentials_on_wrong_password() -> None:
 
     with pytest.raises(InvalidCredentialsError):
         service.login(LoginRequest(username="autor.docflow", password="senha-incorreta"))
+
+
+def test_login_raises_invalid_credentials_for_inactive_user() -> None:
+    repository = Mock()
+    repository.get_user_by_username.return_value = SimpleNamespace(
+        id=9,
+        username="autor.docflow",
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR.value],
+        is_active=False,
+        sector_ids=[],
+        password_hash=hash_password("senha-correta"),
+    )
+    service = AuthService(repository=repository)
+
+    with pytest.raises(InvalidCredentialsError):
+        service.login(LoginRequest(username="autor.docflow", password="senha-correta"))
 
 
 def test_login_supports_multiple_sessions_without_claim_interference() -> None:
@@ -166,3 +184,31 @@ def test_refresh_session_returns_latest_roles_from_database() -> None:
     assert decoded["company_ids"] == [1, 2]
     assert decoded["sector_ids"] == [10, 11]
     repository.get_user_by_id.assert_called_once_with(7)
+
+
+def test_change_password_updates_hash_and_clears_mandatory_flag() -> None:
+    repository = Mock()
+    repository.db = Mock()
+    user = SimpleNamespace(
+        id=5,
+        username="novo.usuario",
+        password_hash=hash_password("Senha@123"),
+        is_active=True,
+        must_change_password=True,
+    )
+    repository.get_user_by_id.return_value = user
+    service = AuthService(repository=repository)
+
+    service.change_password(
+        current_user_id=5,
+        payload=ChangePasswordRequest(
+            old_password="Senha@123",
+            new_password="NovaSenha@123",
+            new_password_confirm="NovaSenha@123",
+        ),
+    )
+
+    assert verify_password("NovaSenha@123", user.password_hash) is True
+    assert user.must_change_password is False
+    repository.save_user.assert_called_once_with(user)
+    repository.db.commit.assert_called_once_with()

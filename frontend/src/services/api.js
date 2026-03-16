@@ -1,7 +1,23 @@
 import axios from "axios";
 
 const TOKEN_STORAGE_KEY = "docflow_access_token";
-const API_BASE_URL = "http://localhost:8000";
+
+function resolveApiBaseUrl() {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+  if (envBaseUrl) {
+    return envBaseUrl.replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "http://localhost:5173";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
+
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
 
 const http = axios.create({
   baseURL: API_BASE_URL,
@@ -39,10 +55,21 @@ function normalizeError(error) {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status ?? 0;
     const detail = error.response?.data?.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : error.message || "Falha de comunicacao com o backend.";
+    let message = error.message || "Falha de comunicacao com o backend.";
+    if (typeof detail === "string" && detail.trim()) {
+      message = detail.trim();
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      const firstDetail = detail[0];
+      const detailMessage =
+        typeof firstDetail === "string"
+          ? firstDetail
+          : typeof firstDetail?.msg === "string"
+            ? firstDetail.msg
+            : "";
+      if (detailMessage.trim()) {
+        message = detailMessage.trim();
+      }
+    }
     const normalized = new Error(message);
     normalized.status = status;
     return normalized;
@@ -120,7 +147,7 @@ export function resolveApiFileUrl(path, { download = false } = {}) {
     return "";
   }
 
-  const url = new URL(`${API_BASE_URL}${value}`);
+  const url = new URL(value, `${API_BASE_URL}/`);
   if (value.startsWith("/file-storage/")) {
     const token = getStoredToken();
     if (token) {
@@ -142,6 +169,14 @@ export async function login(credentials) {
     },
     false,
   );
+}
+
+export async function changePassword(payload) {
+  return request({
+    method: "post",
+    url: "/auth/change-password",
+    data: payload,
+  });
 }
 
 export async function refreshSession() {
@@ -265,6 +300,14 @@ export async function rejectDocument(documentId, payload = {}) {
   });
 }
 
+export async function rejectDocumentDefinitive(documentId, payload = {}) {
+  return request({
+    method: "post",
+    url: `/documents/${documentId}/reject-definitive`,
+    data: payload,
+  });
+}
+
 export async function getAdminUsers() {
   return request({
     method: "get",
@@ -292,6 +335,20 @@ export async function updateAdminUser(userId, payload) {
     method: "put",
     url: `/admin/users/${userId}`,
     data: payload,
+  });
+}
+
+export async function inactivateAdminUser(userId) {
+  return request({
+    method: "patch",
+    url: `/admin/users/${userId}/inactivate`,
+  });
+}
+
+export async function reactivateAdminUser(userId) {
+  return request({
+    method: "patch",
+    url: `/admin/users/${userId}/reactivate`,
   });
 }
 

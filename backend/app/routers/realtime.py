@@ -1,9 +1,9 @@
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from app.core.realtime import build_realtime_event, realtime_broker
-from app.core.security import get_authenticated_user_from_token
+from app.core.security import enforce_must_change_password, get_authenticated_user_from_token
 
 router = APIRouter(tags=["Realtime"])
 
@@ -36,6 +36,15 @@ async def ws_events(websocket: WebSocket) -> None:
         current_user = get_authenticated_user_from_token(token)
     except ValueError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token.")
+        return
+    try:
+        enforce_must_change_password(
+            current_user,
+            request_method=str(websocket.scope.get("method") or "GET"),
+            request_path=websocket.url.path,
+        )
+    except HTTPException as exc:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc.detail))
         return
 
     await websocket.accept()

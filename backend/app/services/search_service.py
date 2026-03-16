@@ -14,6 +14,8 @@ class SearchService:
                 document_id=document.id,
                 code=document.code,
                 title=document.title,
+                created_by=getattr(document, "created_by", None),
+                created_by_name=getattr(document, "created_by_name", None),
                 company_id=document.company_id,
                 sector_id=document.sector_id,
                 document_type=document.document_type,

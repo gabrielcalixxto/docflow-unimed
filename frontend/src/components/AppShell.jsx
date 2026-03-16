@@ -1,6 +1,9 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 
 import { buttonVariants } from "./ui/variants";
+import PasswordField from "./PasswordField";
+import defaultAvatar from "../assets/avatar-default.svg";
+import { changePassword } from "../services/api";
 import {
   canAccessAdminCatalog,
   canAccessAdminUsers,
@@ -13,6 +16,50 @@ import {
   displayRole,
 } from "../utils/roles";
 import { cn } from "../utils/cn";
+import { useEffect } from "react";
+
+const PASSWORD_NUMBER_PATTERN = /\d/;
+const PASSWORD_SPECIAL_PATTERN = /[^A-Za-z0-9\s]/;
+
+function isPasswordComplexEnough(value) {
+  return (
+    typeof value === "string" &&
+    value.length >= 8 &&
+    PASSWORD_NUMBER_PATTERN.test(value) &&
+    PASSWORD_SPECIAL_PATTERN.test(value)
+  );
+}
+
+function resolveProfileName(session) {
+  const rawName = typeof session?.name === "string" ? session.name.trim() : "";
+  if (rawName) {
+    const parts = rawName.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) {
+      return parts[0];
+    }
+    return `${parts[0]} ${parts[parts.length - 1]}`;
+  }
+
+  const fallback = String(session?.username || session?.email || "Usuario").trim();
+  const normalized = fallback.includes("@") ? fallback.split("@")[0] : fallback;
+  const words = normalized
+    .replace(/[._-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) {
+    return "Usuario";
+  }
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function resolveProfileSubtitle(session, roles) {
+  if (typeof session?.jobTitle === "string" && session.jobTitle.trim()) {
+    return session.jobTitle.trim();
+  }
+  return displayRole(roles);
+}
 
 const SEARCH_ITEM = {
   id: "search",
@@ -56,15 +103,6 @@ const AUDIT_HISTORY_ITEM = {
   ),
 };
 
-const MAINTENANCE_ICON = (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path
-      d="M21.3 6.3a4.8 4.8 0 0 1-6.4 6.1l-7.2 7.2a1.5 1.5 0 0 1-2.1-2.1l7.2-7.2a4.8 4.8 0 0 1 6.1-6.4l-2.8 2.8 1.4 1.4 2.8-2.8ZM8.9 6.8 7.2 8.5 5.8 7.1 7.5 5.4 6.8 4.7a1 1 0 0 1 1.4-1.4l3.5 3.5a1 1 0 0 1-1.4 1.4l-.7-.7Z"
-      fill="currentColor"
-    />
-  </svg>
-);
-
 const NAV_GROUPS = [
   {
     id: "solicitacoes",
@@ -104,12 +142,6 @@ const NAV_GROUPS = [
           </svg>
         ),
       },
-      {
-        id: "nova-rnc",
-        label: "Nova RNC (Em breve)",
-        isVisible: canAccessNovoDocumento,
-        icon: MAINTENANCE_ICON,
-      },
     ],
   },
   {
@@ -136,12 +168,6 @@ const NAV_GROUPS = [
             />
           </svg>
         ),
-      },
-      {
-        id: "painel-rnc",
-        label: "Painel de RNC (Em breve)",
-        isVisible: canAccessPainel,
-        icon: MAINTENANCE_ICON,
       },
     ],
   },
@@ -219,13 +245,15 @@ export default function AppShell({
   onPageChange,
   session,
   onLogout,
+  forcePasswordChange = false,
+  onPasswordChanged,
   themeMode = "light",
   fontScale = 1,
-  fontScaleLabel,
+  fontScaleLevel,
   onToggleTheme,
   onIncreaseFont,
 }) {
-  const resolvedFontScaleLabel = typeof fontScaleLabel === "number" ? fontScaleLabel : Math.round(fontScale * 100);
+  const resolvedFontScaleLevel = Number.isInteger(fontScaleLevel) ? fontScaleLevel : 1;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
@@ -233,11 +261,31 @@ export default function AppShell({
     "painel-indicadores": false,
     "gestao-cadastros": false,
   });
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    oldPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordFeedback, setPasswordFeedback] = useState({ type: "", message: "" });
+  const [savingPassword, setSavingPassword] = useState(false);
   const sessionRoles = session.roles || session.role;
+  const profileName = resolveProfileName(session);
+  const profileSubtitle = resolveProfileSubtitle(session, sessionRoles);
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => !item.isVisible || item.isVisible(sessionRoles)),
   })).filter((group) => group.items.length > 0);
+
+  useEffect(() => {
+    if (forcePasswordChange) {
+      setProfileOpen(true);
+      setPasswordFeedback({
+        type: "info",
+        message: "Primeiro acesso detectado. Atualize sua senha para continuar.",
+      });
+    }
+  }, [forcePasswordChange]);
 
   const handleToggleGroup = (groupId) => {
     if (collapsed) {
@@ -252,6 +300,70 @@ export default function AppShell({
       ...prev,
       [groupId]: !prev[groupId],
     }));
+  };
+
+  const closeProfileModal = () => {
+    if (forcePasswordChange || savingPassword) {
+      return;
+    }
+    setProfileOpen(false);
+    setPasswordFeedback({ type: "", message: "" });
+    setPasswordForm({
+      oldPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  };
+
+  const handleSavePassword = async (event) => {
+    event.preventDefault();
+    const oldPassword = passwordForm.oldPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
+
+    if (!oldPassword) {
+      setPasswordFeedback({ type: "error", message: "Informe a senha atual." });
+      return;
+    }
+    if (!isPasswordComplexEnough(newPassword)) {
+      setPasswordFeedback({
+        type: "error",
+        message: "A nova senha deve ter minimo de 8 caracteres, numero e caractere especial.",
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordFeedback({ type: "error", message: "Os campos de nova senha nao conferem." });
+      return;
+    }
+
+    setSavingPassword(true);
+    setPasswordFeedback({ type: "", message: "" });
+    try {
+      const response = await changePassword({
+        old_password: oldPassword,
+        new_password: newPassword,
+        new_password_confirm: confirmPassword,
+      });
+      await onPasswordChanged?.();
+      setPasswordForm({
+        oldPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setPasswordFeedback({
+        type: "success",
+        message: response?.message || "Senha atualizada com sucesso.",
+      });
+      setProfileOpen(false);
+    } catch (error) {
+      setPasswordFeedback({
+        type: "error",
+        message: error?.message || "Nao foi possivel atualizar a senha.",
+      });
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   return (
@@ -377,6 +489,7 @@ export default function AppShell({
             );
           })}
 
+
           {(!AUDIT_HISTORY_ITEM.isVisible || AUDIT_HISTORY_ITEM.isVisible(sessionRoles)) && (
             <button
               key={AUDIT_HISTORY_ITEM.id}
@@ -462,11 +575,11 @@ export default function AppShell({
                 type="button"
                 className={cn("topbar-control-btn", buttonVariants({ variant: "ghost", size: "sm" }))}
                 onClick={onIncreaseFont}
-                title={`Aumentar fonte (${resolvedFontScaleLabel}%)`}
-                aria-label={`Aumentar fonte. Tamanho atual ${resolvedFontScaleLabel} por cento`}
+                title={`Aumentar fonte (Tamanho ${resolvedFontScaleLevel})`}
+                aria-label={`Aumentar fonte. Tamanho atual ${resolvedFontScaleLevel}`}
               >
                 <span className="topbar-control-text">A+</span>
-                <span className="topbar-control-label">{resolvedFontScaleLabel}%</span>
+                <span className="topbar-control-label">{resolvedFontScaleLevel}</span>
               </button>
 
               <button
@@ -494,22 +607,128 @@ export default function AppShell({
                 <span className="topbar-control-label">{themeMode === "dark" ? "Dark" : "Light"}</span>
               </button>
             </div>
-            <div className="user-chip">
-              <p>{session.username || session.email}</p>
-            </div>
             <button
               type="button"
-              className={cn("logout-btn", buttonVariants({ variant: "secondary", size: "sm" }))}
-              onClick={onLogout}
+              className="user-profile user-profile-btn"
+              onClick={() => setProfileOpen(true)}
+              aria-label="Abrir perfil do usuario"
+              title="Abrir perfil"
             >
-              Sair
+              <img className="user-avatar" src={defaultAvatar} alt="Avatar padrao do usuario" />
+              <div className="user-profile-meta">
+                <p className="user-profile-name">{profileName}</p>
+                <p className="user-profile-role">{profileSubtitle}</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              className="logout-icon-btn"
+              onClick={onLogout}
+              title="Sair"
+              aria-label="Sair"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M13 5H8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M11 12h9m-3-3 3 3-3 3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
           </div>
         </header>
 
         <main className="page-root">{children}</main>
       </div>
+
+      {profileOpen && (
+        <div
+          className="profile-modal-backdrop"
+          onClick={closeProfileModal}
+          role="presentation"
+        >
+          <div
+            className="profile-modal-card panel-float"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="profile-modal-head">
+              <div className="profile-modal-user">
+                <img className="profile-modal-avatar" src={defaultAvatar} alt="Avatar do usuario" />
+                <div>
+                  <h3 id="profile-modal-title">{profileName}</h3>
+                  <p>{session.email || "-"}</p>
+                  <p>{profileSubtitle || "-"}</p>
+                </div>
+              </div>
+              {!forcePasswordChange && (
+                <button type="button" className="ghost-btn" onClick={closeProfileModal}>
+                  Fechar
+                </button>
+              )}
+            </div>
+
+            <form className="profile-password-form" onSubmit={handleSavePassword}>
+              <h4>Alterar senha</h4>
+              <PasswordField
+                label="Senha atual"
+                required
+                value={passwordForm.oldPassword}
+                onChange={(event) =>
+                  setPasswordForm((prev) => ({ ...prev, oldPassword: event.target.value }))
+                }
+                autoComplete="current-password"
+              />
+              <PasswordField
+                label="Nova senha"
+                required
+                minLength={8}
+                value={passwordForm.newPassword}
+                onChange={(event) =>
+                  setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))
+                }
+                autoComplete="new-password"
+              />
+              <PasswordField
+                label="Repetir nova senha"
+                required
+                minLength={8}
+                value={passwordForm.confirmPassword}
+                onChange={(event) =>
+                  setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))
+                }
+                autoComplete="new-password"
+              />
+
+              {passwordFeedback.message && (
+                <p className={`feedback ${passwordFeedback.type === "error" ? "error" : "success"}`}>
+                  {passwordFeedback.message}
+                </p>
+              )}
+
+              <button type="submit" className="compact-submit" disabled={savingPassword}>
+                {savingPassword ? "Salvando..." : "Salvar nova senha"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
 

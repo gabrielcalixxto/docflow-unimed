@@ -19,3 +19,7 @@ class AuthRepository:
     def get_user_by_id(self, user_id: int) -> User | None:
         statement = select(User).where(User.id == user_id)
         return self.db.scalar(statement)
+
+    def save_user(self, user: User) -> None:
+        self.db.add(user)
+        self.db.flush()

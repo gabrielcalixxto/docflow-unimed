@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { approveDocument, rejectDocument, resolveApiFileUrl, showGlobalError } from "../services/api";
+import {
+  approveDocument,
+  rejectDocument,
+  rejectDocumentDefinitive,
+  resolveApiFileUrl,
+  showGlobalError,
+} from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
-import { canAccessCentralAprovacao, isCoordinator, isReviewer } from "../utils/roles";
+import { canAccessCentralAprovacao, isAdmin, isCoordinator } from "../utils/roles";
 import { formatStatusLabel } from "../utils/status";
 
 const FLOATING_BAR_TOP_OFFSET = 16;
@@ -21,6 +29,17 @@ function formatDate(value) {
   return parsed.toLocaleDateString("pt-BR");
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString("pt-BR");
+}
+
 function extractFileName(path) {
   if (!path) {
     return "arquivo";
@@ -29,12 +48,56 @@ function extractFileName(path) {
   return parts[parts.length - 1] || String(path);
 }
 
+function ActionIcon({ kind }) {
+  if (kind === "view") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 6c4.8 0 8.7 3.4 9.8 5.5a1 1 0 0 1 0 1C20.7 14.6 16.8 18 12 18S3.3 14.6 2.2 12.5a1 1 0 0 1 0-1C3.3 9.4 7.2 6 12 6Zm0 2c-3.7 0-6.9 2.5-7.8 4 .9 1.5 4.1 4 7.8 4s6.9-2.5 7.8-4c-.9-1.5-4.1-4-7.8-4Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l2.3 2.3V4a1 1 0 0 1 1-1ZM5 18a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function resolveFileUrl(path) {
   return resolveApiFileUrl(path);
 }
 
 function resolveFileDownloadUrl(path) {
   return resolveApiFileUrl(path, { download: true });
+}
+
+function resolvePreviewSrc(path) {
+  return resolveApiFileUrl(path);
+}
+
+function buildViewerSrc(path) {
+  const src = resolvePreviewSrc(path);
+  if (!src) {
+    return "";
+  }
+  return src;
+}
+
+function formatCommentAuthor(name) {
+  const normalizedName = String(name || "").trim();
+  if (!normalizedName) {
+    return "-";
+  }
+
+  const nameParts = normalizedName.split(/\s+/).filter(Boolean);
+  const shortName = nameParts.length >= 2 ? `${nameParts[0]} ${nameParts[nameParts.length - 1]}` : nameParts[0];
+  return `${shortName}:`;
 }
 
 export default function SolicitacoesPage({ session, onUnauthorized }) {
@@ -55,6 +118,8 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
   });
   const [rejectReasons, setRejectReasons] = useState({});
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedResult, setSelectedResult] = useState(null);
   const [filters, setFilters] = useState({
     term: "",
     company: "ALL",
@@ -72,8 +137,13 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     }
     setFeedback({ type, message });
   };
-  const coordinatorStatuses = ["RASCUNHO", "RASCUNHO_REVISADO", "REVISAR_RASCUNHO"];
-  const qualityStatuses = ["PENDENTE_QUALIDADE", "PENDENTE_COORDENACAO", "EM_REVISAO"];
+  const coordinatorStatuses = [
+    "RASCUNHO",
+    "RASCUNHO_REVISADO",
+    "REVISAR_RASCUNHO",
+    "PENDENTE_COORDENACAO",
+    "EM_REVISAO",
+  ];
 
   const loadItems = async () => {
     setLoading(true);
@@ -97,7 +167,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
   useRealtimeEvents(loadItems, { channels: ["workflow", "catalog"] });
 
   const sessionRoles = session?.roles || session?.role;
-  const qualityRole = isReviewer(sessionRoles);
+  const adminRole = isAdmin(sessionRoles);
   const coordinatorRole = isCoordinator(sessionRoles);
   const canOpenSolicitacoes = canAccessCentralAprovacao(sessionRoles);
 
@@ -105,7 +175,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     if (!canOpenSolicitacoes) {
       return [];
     }
-    if (coordinatorRole) {
+    if (coordinatorRole && !adminRole) {
       const allowedSectorIds = Array.isArray(session?.sectorIds)
         ? session.sectorIds
         : session?.sectorId
@@ -117,7 +187,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
       return items.filter((item) => allowedSectorIds.includes(Number(item.sector_id)));
     }
     return items;
-  }, [items, canOpenSolicitacoes, coordinatorRole, session?.sectorId, session?.sectorIds]);
+  }, [items, canOpenSolicitacoes, coordinatorRole, adminRole, session?.sectorId, session?.sectorIds]);
 
   const companies = useMemo(
     () =>
@@ -183,7 +253,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
 
   const filteredVisibleItems = useMemo(() => {
     const normalizedTerm = filters.term.trim().toLowerCase();
-    return visibleItems.filter((item) => {
+    const filteredItems = visibleItems.filter((item) => {
       const versionValue =
         item.latestVersion?.version_number != null
           ? String(item.latestVersion.version_number)
@@ -216,6 +286,8 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
         item.sectorName,
         item.created_by_name,
         item.latestVersion?.created_by_name,
+        item.adjustment_comment,
+        item.adjustment_reply_comment,
         formatStatusLabel(item.latestStatus),
         item.document_type,
         item.scope,
@@ -228,7 +300,22 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
 
       return searchable.includes(normalizedTerm);
     });
+
+    return [...filteredItems].sort((left, right) => {
+      const leftIsNewDraft = left.latestStatus === "RASCUNHO" || left.latestStatus === "RASCUNHO_REVISADO";
+      const rightIsNewDraft = right.latestStatus === "RASCUNHO" || right.latestStatus === "RASCUNHO_REVISADO";
+      if (leftIsNewDraft !== rightIsNewDraft) {
+        return leftIsNewDraft ? -1 : 1;
+      }
+
+      const leftDateValue = left.latestVersion?.created_at || left.created_at;
+      const rightDateValue = right.latestVersion?.created_at || right.created_at;
+      const leftDate = leftDateValue ? new Date(leftDateValue).getTime() : 0;
+      const rightDate = rightDateValue ? new Date(rightDateValue).getTime() : 0;
+      return rightDate - leftDate;
+    });
   }, [visibleItems, filters]);
+  const visibleItemsPagination = usePagination(filteredVisibleItems);
 
   const updateFloatingBarLayout = useCallback(() => {
     const tableWrap = tableWrapRef.current;
@@ -344,12 +431,18 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      const response =
-        action === "approve"
-          ? await approveDocument(documentId)
-          : await rejectDocument(documentId, {
-              reason: rejectReasons[documentId] || "",
-            });
+      let response;
+      if (action === "approve") {
+        response = await approveDocument(documentId);
+      } else if (action === "reject-definitive") {
+        response = await rejectDocumentDefinitive(documentId, {
+          reason: rejectReasons[documentId] || "",
+        });
+      } else {
+        response = await rejectDocument(documentId, {
+          reason: rejectReasons[documentId] || "",
+        });
+      }
       showFeedback("success", response.message || "Acao executada.");
       await loadItems();
     } catch (requestError) {
@@ -363,12 +456,9 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     }
   };
 
-  const openPreviewInNewTab = (filePath) => {
-    const url = resolveFileUrl(filePath);
-    if (!url) {
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
+  const openPreview = (item) => {
+    setSelectedResult(item);
+    setViewerOpen(true);
   };
 
   const downloadFile = (filePath) => {
@@ -392,10 +482,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
         <div>
           <p className="kicker">Fila operacional</p>
           <h2>Central de Aprovacao</h2>
-          <p>
-            Coordenador/Aprovador revisa rascunhos e envia para qualidade. Qualidade realiza
-            aprovacao final para vigencia.
-          </p>
+          <p>Coordenador/Aprovador revisa rascunhos, devolve para ajuste ou aprova como vigente.</p>
         </div>
       </section>
 
@@ -562,6 +649,8 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                   <th>Empresas</th>
                   <th>Setor</th>
                   <th>Status</th>
+                  <th>Comentario ajuste</th>
+                  <th>Resposta Correcao</th>
                   <th>Versao</th>
                   <th>Vencimento</th>
                   <th>Criado por</th>
@@ -569,7 +658,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredVisibleItems.map((item) => (
+                {visibleItemsPagination.pagedItems.map((item) => (
                   <tr key={item.id}>
                     <td>{item.code}</td>
                     <td>{item.title}</td>
@@ -580,94 +669,98 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                         {formatStatusLabel(item.latestStatus)}
                       </span>
                     </td>
+                    <td>
+                      {item.adjustment_comment ? (
+                        <div className="comment-with-author">
+                          <span>{formatCommentAuthor(item.adjustment_comment_by_name)}</span>
+                          <p>{item.adjustment_comment}</p>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td>
+                      {item.adjustment_reply_comment ? (
+                        <div className="comment-with-author">
+                          <span>{formatCommentAuthor(item.adjustment_reply_comment_by_name)}</span>
+                          <p>{item.adjustment_reply_comment}</p>
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
                     <td>{item.latestVersion?.expiration_date || "-"}</td>
                     <td>{item.latestVersion?.created_by_name || item.created_by_name || "-"}</td>
                     <td>
-                      <div className="request-actions">
-                        <button
-                          type="button"
-                          className="table-btn"
-                          onClick={() => openPreviewInNewTab(item.latestVersion?.file_path)}
-                          disabled={!resolveFileUrl(item.latestVersion?.file_path)}
-                          title="Pre-visualizar arquivo"
-                        >
-                          Ver
-                        </button>
-                        <button
-                          type="button"
-                          className="table-btn"
-                          onClick={() => downloadFile(item.latestVersion?.file_path)}
-                          disabled={!resolveFileUrl(item.latestVersion?.file_path)}
-                          title="Baixar arquivo"
-                        >
-                          Download
-                        </button>
+                      <div className="panel-docs-actions panel-docs-actions--workflow">
+                        <div className="workflow-action-row">
+                          <button
+                            type="button"
+                            className="table-btn table-btn-view"
+                            onClick={() => openPreview(item)}
+                            title="Pre-visualizar"
+                          >
+                            <ActionIcon kind="view" />
+                            <span>Ver</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="table-btn table-btn-download"
+                            onClick={() => downloadFile(item.latestVersion?.file_path)}
+                            disabled={!resolveFileUrl(item.latestVersion?.file_path)}
+                            title="Download"
+                          >
+                            <ActionIcon kind="download" />
+                            <span>Baixar</span>
+                          </button>
+                        </div>
 
                         {coordinatorStatuses.includes(item.latestStatus) && coordinatorRole && (
-                          <>
-                            <input
-                              className="reject-reason"
-                              type="text"
-                              placeholder="Motivo da devolucao (opcional)"
-                              value={rejectReasons[item.id] || ""}
-                              onChange={(event) =>
-                                setRejectReasons((prev) => ({
-                                  ...prev,
-                                  [item.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="table-btn"
-                              disabled={submitting}
-                              onClick={() => runAction(item.id, "approve")}
-                            >
-                              Aprovar e enviar para qualidade
-                            </button>
-                            <button
-                              type="button"
-                              className="table-btn"
-                              disabled={submitting}
-                              onClick={() => runAction(item.id, "reject")}
-                            >
-                              Devolver para revisao
-                            </button>
-                          </>
-                        )}
-
-                        {qualityStatuses.includes(item.latestStatus) && qualityRole && (
-                          <>
-                            <input
-                              className="reject-reason"
-                              type="text"
-                              placeholder="Motivo da reprovacao (opcional)"
-                              value={rejectReasons[item.id] || ""}
-                              onChange={(event) =>
-                                setRejectReasons((prev) => ({
-                                  ...prev,
-                                  [item.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="table-btn"
-                              disabled={submitting}
-                              onClick={() => runAction(item.id, "approve")}
-                            >
-                              Aprovar e tornar vigente
-                            </button>
-                            <button
-                              type="button"
-                              className="table-btn"
-                              disabled={submitting}
-                              onClick={() => runAction(item.id, "reject")}
-                            >
-                              Reprovar
-                            </button>
-                          </>
+                          <div className="workflow-decision-block">
+                            <label className="reject-reason-field" htmlFor={`reject-reason-${item.id}`}>
+                              Comentario da devolucao (opcional)
+                              <textarea
+                                id={`reject-reason-${item.id}`}
+                                className="reject-reason"
+                                rows={3}
+                                placeholder="Explique o motivo da devolucao."
+                                value={rejectReasons[item.id] || ""}
+                                onChange={(event) =>
+                                  setRejectReasons((prev) => ({
+                                    ...prev,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                            <div className="workflow-action-row">
+                              <button
+                                type="button"
+                                className="table-btn table-btn-approve"
+                                disabled={submitting}
+                                onClick={() => runAction(item.id, "approve")}
+                              >
+                                Aprovar e tornar vigente
+                              </button>
+                              <button
+                                type="button"
+                                className="table-btn table-btn-adjust"
+                                disabled={submitting}
+                                onClick={() => runAction(item.id, "reject")}
+                              >
+                                Enviar para ajuste
+                              </button>
+                              <button
+                                type="button"
+                                className="table-btn table-btn-reject-final"
+                                disabled={submitting}
+                                onClick={() => runAction(item.id, "reject-definitive")}
+                              >
+                                Reprovado
+                              </button>
+                            </div>
+                          </div>
                         )}
 
                         {item.latestStatus === "SEM_VERSAO" && <span className="workflow-hint">Sem versao criada</span>}
@@ -677,14 +770,95 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                 ))}
                 {!loading && filteredVisibleItems.length === 0 && (
                   <tr>
-                    <td colSpan={9}>Nenhuma solicitacao encontrada.</td>
+                    <td colSpan={11}>Nenhuma solicitacao encontrada.</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
+        <PaginationControls
+          page={visibleItemsPagination.page}
+          pageSize={visibleItemsPagination.pageSize}
+          totalItems={visibleItemsPagination.totalItems}
+          totalPages={visibleItemsPagination.totalPages}
+          pageSizeOptions={visibleItemsPagination.pageSizeOptions}
+          onPageChange={visibleItemsPagination.setPage}
+          onPageSizeChange={visibleItemsPagination.setPageSize}
+        />
       </section>
+      <aside className={`viewer-drawer ${viewerOpen ? "open" : ""}`} aria-label="Visualizador de arquivo">
+        <header className="viewer-head">
+          <div>
+            <p className="kicker">Visualizacao</p>
+            <h3>{selectedResult ? selectedResult.title : "Documento"}</h3>
+          </div>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => {
+              setViewerOpen(false);
+              setSelectedResult(null);
+            }}
+          >
+            Fechar
+          </button>
+        </header>
+
+        {selectedResult && (
+          <div className="viewer-body">
+            <div className="preview-panel panel-float">
+              {resolvePreviewSrc(selectedResult.latestVersion?.file_path) ? (
+                <iframe
+                  title="Visualizacao do arquivo"
+                  src={buildViewerSrc(selectedResult.latestVersion?.file_path)}
+                  className="file-frame"
+                  scrolling="yes"
+                />
+              ) : (
+                <div className="no-preview">
+                  <p>Pre-visualizacao indisponivel para caminho local.</p>
+                  <p className="mono">{selectedResult.latestVersion?.file_path || "-"}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="meta-panel panel-float">
+              <h4>Dados simples</h4>
+              <ul>
+                <li>
+                  <strong>Codigo:</strong> {selectedResult.code}
+                </li>
+                <li>
+                  <strong>Status:</strong> {formatStatusLabel(selectedResult.latestStatus)}
+                </li>
+                <li>
+                  <strong>Versao:</strong>{" "}
+                  {selectedResult.latestVersion?.version_number
+                    ? `v${selectedResult.latestVersion.version_number}`
+                    : "-"}
+                </li>
+                <li>
+                  <strong>Empresa:</strong> {selectedResult.companyName || "-"}
+                </li>
+                <li>
+                  <strong>Setor:</strong> {selectedResult.sectorName || "-"}
+                </li>
+                <li>
+                  <strong>Criado por:</strong>{" "}
+                  {selectedResult.latestVersion?.created_by_name || selectedResult.created_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado por:</strong> {selectedResult.latestVersion?.approved_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado em:</strong> {formatDateTime(selectedResult.latestVersion?.approved_at)}
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

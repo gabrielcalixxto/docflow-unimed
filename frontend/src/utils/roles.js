@@ -1,3 +1,5 @@
+const INACTIVE_ROLES = new Set(["REVISOR"]);
+
 function toRoleList(roleOrRoles) {
   if (Array.isArray(roleOrRoles)) {
     return roleOrRoles.filter((value) => typeof value === "string");
@@ -9,7 +11,14 @@ function toRoleList(roleOrRoles) {
 }
 
 function hasRole(roleOrRoles, roleToCheck) {
-  return toRoleList(roleOrRoles).includes(roleToCheck);
+  if (INACTIVE_ROLES.has(roleToCheck)) {
+    return false;
+  }
+  const roles = toRoleList(roleOrRoles);
+  if (roles.includes(roleToCheck)) {
+    return true;
+  }
+  return roleToCheck !== "ADMIN" && roles.includes("ADMIN");
 }
 
 export function isAdmin(roleOrRoles) {
@@ -38,7 +47,7 @@ export function displayRole(roleOrRoles) {
       ({
         ADMIN: "ADMIN",
         COORDENADOR: "COORDENADOR/APROVADOR",
-        REVISOR: "QUALIDADE",
+        REVISOR: "QUALIDADE (INATIVO)",
         AUTOR: "AUTOR",
         LEITOR: "LEITOR",
       }[role] || role),
@@ -62,11 +71,11 @@ export function canAccessHistoricoSolicitacoes(roleOrRoles) {
 }
 
 export function canAccessCentralAprovacao(roleOrRoles) {
-  return isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+  return isCoordinator(roleOrRoles);
 }
 
 export function canAccessPainel(roleOrRoles) {
-  return isReviewer(roleOrRoles);
+  return isCoordinator(roleOrRoles);
 }
 
 export function canAccessAdminUsers(roleOrRoles) {
@@ -74,11 +83,11 @@ export function canAccessAdminUsers(roleOrRoles) {
 }
 
 export function canAccessAdminCatalog(roleOrRoles) {
-  return isReviewer(roleOrRoles) || isAdmin(roleOrRoles);
+  return isAdmin(roleOrRoles);
 }
 
 export function canAccessAuditHistory(roleOrRoles) {
-  return isAdmin(roleOrRoles) || isCoordinator(roleOrRoles) || isReviewer(roleOrRoles);
+  return isAdmin(roleOrRoles) || isCoordinator(roleOrRoles);
 }
 
 export function canAccessSolicitacoesSection(roleOrRoles) {

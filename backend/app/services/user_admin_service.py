@@ -1,7 +1,7 @@
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.audit import AuditContext
-from app.core.enums import UserRole
+from app.core.enums import INACTIVE_USER_ROLES, UserRole
 from app.core.security import AuthenticatedUser, hash_password
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
@@ -37,10 +37,12 @@ class UserAdminService:
         audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_admin(current_user)
+        self._ensure_no_inactive_roles(payload.roles)
         self._ensure_companies_exist(payload.company_ids)
         self._ensure_sectors_exist(payload.sector_ids)
         self._ensure_sector_company_consistency(payload.company_ids, payload.sector_ids)
         normalized_name = self._normalize_full_name(payload.name)
+        normalized_job_title = self._normalize_job_title(payload.job_title)
         username = str(payload.username).strip().lower()
         self._ensure_email_available(str(payload.email).lower(), excluded_user_id=None)
         self._ensure_username_available(username, excluded_user_id=None)
@@ -49,6 +51,7 @@ class UserAdminService:
             user = self.repository.create_user(
                 payload=payload,
                 name=normalized_name,
+                job_title=normalized_job_title,
                 username=username,
                 password_hash=hash_password(payload.password),
             )
@@ -70,6 +73,14 @@ class UserAdminService:
                         "new_display_value": normalized_name,
                     },
                     {
+                        "field_name": "job_title",
+                        "field_label": "Funcao",
+                        "old_value": None,
+                        "new_value": normalized_job_title,
+                        "old_display_value": None,
+                        "new_display_value": normalized_job_title,
+                    },
+                    {
                         "field_name": "username",
                         "field_label": "Login",
                         "old_value": None,
@@ -84,6 +95,22 @@ class UserAdminService:
                         "new_value": str(payload.email).lower(),
                         "old_display_value": None,
                         "new_display_value": str(payload.email).lower(),
+                    },
+                    {
+                        "field_name": "is_active",
+                        "field_label": "Ativo",
+                        "old_value": None,
+                        "new_value": True,
+                        "old_display_value": None,
+                        "new_display_value": "Sim",
+                    },
+                    {
+                        "field_name": "must_change_password",
+                        "field_label": "Troca de senha obrigatoria",
+                        "old_value": None,
+                        "new_value": True,
+                        "old_display_value": None,
+                        "new_display_value": "Sim",
                     },
                     {
                         "field_name": "roles",
@@ -131,24 +158,24 @@ class UserAdminService:
         if user is None:
             raise NotFoundServiceError("User not found.")
 
+        self._ensure_no_inactive_roles(payload.roles, existing_roles=list(user.roles or []))
         self._ensure_companies_exist(payload.company_ids)
         self._ensure_sectors_exist(payload.sector_ids)
         self._ensure_sector_company_consistency(payload.company_ids, payload.sector_ids)
         normalized_name = self._normalize_full_name(payload.name)
+        normalized_job_title = self._normalize_job_title(payload.job_title)
         email = str(payload.email).lower()
-        username = str(payload.username).strip().lower()
         self._ensure_email_available(email, excluded_user_id=user_id)
-        self._ensure_username_available(username, excluded_user_id=user_id)
 
         previous_name = user.name
-        previous_username = user.username
+        previous_job_title = getattr(user, "job_title", None)
         previous_email = user.email
         previous_roles = list(user.roles or [])
         previous_company_ids = list(user.company_ids or [])
         previous_sector_ids = list(user.sector_ids or [])
 
         user.name = normalized_name
-        user.username = username
+        user.job_title = normalized_job_title
         user.email = email
         user.role = payload.roles[0]
         user.roles = [role.value for role in payload.roles]
@@ -179,12 +206,12 @@ class UserAdminService:
                         "new_display_value": user.name,
                     },
                     {
-                        "field_name": "username",
-                        "field_label": "Login",
-                        "old_value": previous_username,
-                        "new_value": user.username,
-                        "old_display_value": previous_username,
-                        "new_display_value": user.username,
+                        "field_name": "job_title",
+                        "field_label": "Funcao",
+                        "old_value": previous_job_title,
+                        "new_value": user.job_title,
+                        "old_display_value": previous_job_title,
+                        "new_display_value": user.job_title,
                     },
                     {
                         "field_name": "email",
@@ -227,6 +254,100 @@ class UserAdminService:
 
         return MessageResponse(message="User updated successfully.")
 
+    def inactivate_user(
+        self,
+        user_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_admin(current_user)
+        if current_user.user_id == user_id:
+            raise ConflictServiceError("Admin user cannot inactivate itself.")
+
+        user = self.repository.get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundServiceError("User not found.")
+
+        if not getattr(user, "is_active", True):
+            return MessageResponse(message="User is already inactive.")
+
+        previous_active = bool(getattr(user, "is_active", True))
+        user.is_active = False
+
+        try:
+            self.repository.save(user)
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._user_entity_label(user.id, user.name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "is_active",
+                        "field_label": "Ativo",
+                        "old_value": previous_active,
+                        "new_value": False,
+                        "old_display_value": "Sim" if previous_active else "Nao",
+                        "new_display_value": "Nao",
+                    }
+                ],
+            )
+            self.repository.db.commit()
+        except SQLAlchemyError as exc:
+            self.repository.db.rollback()
+            raise ConflictServiceError("Could not inactivate user.") from exc
+
+        return MessageResponse(message="User inactivated successfully.")
+
+    def reactivate_user(
+        self,
+        user_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_admin(current_user)
+
+        user = self.repository.get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundServiceError("User not found.")
+
+        if bool(getattr(user, "is_active", True)):
+            return MessageResponse(message="User is already active.")
+
+        previous_active = bool(getattr(user, "is_active", True))
+        user.is_active = True
+
+        try:
+            self.repository.save(user)
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._user_entity_label(user.id, user.name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "is_active",
+                        "field_label": "Ativo",
+                        "old_value": previous_active,
+                        "new_value": True,
+                        "old_display_value": "Sim" if previous_active else "Nao",
+                        "new_display_value": "Sim",
+                    }
+                ],
+            )
+            self.repository.db.commit()
+        except SQLAlchemyError as exc:
+            self.repository.db.rollback()
+            raise ConflictServiceError("Could not reactivate user.") from exc
+
+        return MessageResponse(message="User reactivated successfully.")
+
     def delete_user(
         self,
         user_id: int,
@@ -250,6 +371,7 @@ class UserAdminService:
                 field_name="record",
                 old_value={
                     "name": user.name,
+                    "job_title": getattr(user, "job_title", None),
                     "username": user.username,
                     "email": user.email,
                     "roles": user.roles,
@@ -331,9 +453,31 @@ class UserAdminService:
         return " ".join(transformed_words)
 
     @staticmethod
+    def _normalize_job_title(value: str | None) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ConflictServiceError("Function is required.")
+        return normalized
+
+    @staticmethod
     def _ensure_admin(current_user: AuthenticatedUser) -> None:
         if not current_user.has_role(UserRole.ADMIN):
             raise ForbiddenServiceError("Only admin users can manage users.")
+
+    @staticmethod
+    def _ensure_no_inactive_roles(
+        roles: list[UserRole],
+        existing_roles: list[str | UserRole] | None = None,
+    ) -> None:
+        existing_roles_set = {
+            role.value if isinstance(role, UserRole) else str(role)
+            for role in (existing_roles or [])
+        }
+        for role in roles:
+            # Allow keeping legacy inactive roles already present in user,
+            # but block assigning inactive roles to new users/updates.
+            if role in INACTIVE_USER_ROLES and role.value not in existing_roles_set:
+                raise ConflictServiceError(f"Role {role.value} is inactive and cannot be assigned.")
 
     def _company_names(self, company_ids: list[int]) -> list[str]:
         names: list[str] = []

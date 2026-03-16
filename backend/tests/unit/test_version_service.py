@@ -141,8 +141,56 @@ def test_list_versions_delegates_to_repository(fake_version, current_user) -> No
     document_repository.get_document_by_id.return_value = build_document(7)
     repository.list_versions_for_document.return_value = [fake_version]
     service = build_service(repository=repository, document_repository=document_repository)
+    author_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=99,
+        sector_id=10,
+        sector_ids=[10],
+    )
 
-    result = service.list_versions(7, current_user)
+    result = service.list_versions(7, author_user)
 
     assert result == [fake_version]
     repository.list_versions_for_document.assert_called_once_with(7)
+
+
+def test_list_versions_blocks_local_document_for_other_sector(fake_version, current_user) -> None:
+    repository = Mock()
+    document_repository = Mock()
+    document_repository.get_document_by_id.return_value = SimpleNamespace(
+        id=7,
+        scope=DocumentScope.LOCAL,
+        sector_id=99,
+        company_id=1,
+    )
+    service = build_service(repository=repository, document_repository=document_repository)
+
+    with pytest.raises(ForbiddenServiceError):
+        service.list_versions(7, current_user)
+
+
+def test_list_versions_allows_corporate_document_for_any_sector(fake_version, current_user) -> None:
+    repository = Mock()
+    repository.list_versions_for_document.return_value = [fake_version]
+    document_repository = Mock()
+    document_repository.get_document_by_id.return_value = SimpleNamespace(
+        id=7,
+        scope=DocumentScope.CORPORATIVO,
+        sector_id=99,
+        company_id=1,
+    )
+    service = build_service(repository=repository, document_repository=document_repository)
+    author_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=99,
+        sector_id=10,
+        sector_ids=[10],
+    )
+
+    result = service.list_versions(7, author_user)
+
+    assert result == [fake_version]

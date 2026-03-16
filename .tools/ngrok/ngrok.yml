@@ -1,0 +1,10 @@
+version: "3"
+agent:
+  web_addr: 127.0.0.1:4040
+tunnels:
+  backend:
+    proto: http
+    addr: 8000
+  frontend:
+    proto: http
+    addr: 5173

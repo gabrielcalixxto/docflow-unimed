@@ -61,7 +61,7 @@ def test_get_options_blocks_non_catalog_manager() -> None:
         service.get_options(author_user())
 
 
-def test_get_options_allows_reviewer() -> None:
+def test_get_options_blocks_reviewer() -> None:
     repository = Mock()
     repository.list_companies.return_value = [SimpleNamespace(id=1, name="DocFlow Unimed")]
     repository.list_sectors.return_value = [SimpleNamespace(id=10, name="Qualidade", company_id=1)]
@@ -70,9 +70,8 @@ def test_get_options_allows_reviewer() -> None:
     ]
     service = build_service(repository=repository)
 
-    response = service.get_options(reviewer_user())
-
-    assert response.companies[0].id == 1
+    with pytest.raises(ForbiddenServiceError):
+        service.get_options(reviewer_user())
 
 
 def test_create_company_persists_normalized_name() -> None:

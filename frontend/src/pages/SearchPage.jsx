@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
+import usePagination from "../hooks/usePagination";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
@@ -8,8 +10,6 @@ import {
   searchDocuments,
   showGlobalError,
 } from "../services/api";
-
-const PDF_VIEWER_PARAMS = "toolbar=0&navpanes=0&scrollbar=1";
 
 function extractFileName(path) {
   if (!path) {
@@ -28,10 +28,7 @@ function buildViewerSrc(path) {
   if (!src) {
     return "";
   }
-  if (src.includes("#")) {
-    return src;
-  }
-  return `${src}#${PDF_VIEWER_PARAMS}`;
+  return src;
 }
 
 function formatDateTime(value) {
@@ -156,50 +153,11 @@ export default function SearchPage({ onUnauthorized }) {
       return true;
     });
   }, [items, filters]);
+  const filteredItemsPagination = usePagination(filteredItems);
 
   const openViewer = (item) => {
     setSelectedResult(item);
     setViewerOpen(true);
-  };
-
-  const handleDownloadSelected = () => {
-    if (!selectedResult) {
-      return;
-    }
-    const src = resolveApiFileUrl(selectedResult.file_path, { download: true });
-    if (!src) {
-      return;
-    }
-    const link = document.createElement("a");
-    link.href = src;
-    link.download = extractFileName(selectedResult.file_path);
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handlePrintSelected = () => {
-    if (!selectedResult) {
-      return;
-    }
-    const src = resolvePreviewSrc(selectedResult.file_path);
-    if (!src) {
-      return;
-    }
-    const printWindow = window.open(src, "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      return;
-    }
-    try {
-      printWindow.addEventListener("load", () => {
-        printWindow.focus();
-        printWindow.print();
-      });
-    } catch {
-      // If browser blocks auto-print on cross-origin, opening the file is still useful.
-    }
   };
 
   return (
@@ -320,11 +278,16 @@ export default function SearchPage({ onUnauthorized }) {
       </section>
 
       <section className="results-grid">
-        {filteredItems.map((item, index) => (
+        {filteredItemsPagination.pagedItems.map((item, index) => (
           <button
             key={`${item.document_id}-${item.active_version_id}`}
             type="button"
-            className="result-card panel-float"
+            className={`result-card panel-float ${
+              selectedResult?.document_id === item.document_id &&
+              selectedResult?.active_version_id === item.active_version_id
+                ? "result-card-selected"
+                : ""
+            }`}
             onClick={() => openViewer(item)}
             style={{ animationDelay: `${index * 40}ms` }}
           >
@@ -347,6 +310,16 @@ export default function SearchPage({ onUnauthorized }) {
           </button>
         ))}
       </section>
+
+      <PaginationControls
+        page={filteredItemsPagination.page}
+        pageSize={filteredItemsPagination.pageSize}
+        totalItems={filteredItemsPagination.totalItems}
+        totalPages={filteredItemsPagination.totalPages}
+        pageSizeOptions={filteredItemsPagination.pageSizeOptions}
+        onPageChange={filteredItemsPagination.setPage}
+        onPageSizeChange={filteredItemsPagination.setPageSize}
+      />
 
       {!loading && filteredItems.length === 0 && (
         <section className="empty-box panel-float">
@@ -375,14 +348,6 @@ export default function SearchPage({ onUnauthorized }) {
         {selectedResult && (
           <div className="viewer-body">
             <div className="preview-panel panel-float">
-              <div className="preview-actions">
-                <button type="button" className="ghost-btn" onClick={handleDownloadSelected}>
-                  Download
-                </button>
-                <button type="button" className="ghost-btn" onClick={handlePrintSelected}>
-                  Imprimir
-                </button>
-              </div>
               {resolvePreviewSrc(selectedResult.file_path) ? (
                 <iframe
                   title="Visualizacao do arquivo"
@@ -415,6 +380,9 @@ export default function SearchPage({ onUnauthorized }) {
                 </li>
                 <li>
                   <strong>Versao ativa:</strong> {selectedResult.active_version_number}
+                </li>
+                <li>
+                  <strong>Criado por:</strong> {selectedResult.created_by_name || "-"}
                 </li>
                 <li>
                   <strong>Aprovado por:</strong> {selectedResult.approved_by_name || "-"}

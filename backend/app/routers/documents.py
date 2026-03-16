@@ -107,11 +107,11 @@ def create_document(
     responses=build_standard_error_responses(401, 422, 500),
 )
 def get_document_form_options(
-    _: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentFormOptionsRead:
     service = get_document_service(db)
-    return service.get_form_options()
+    return service.get_form_options(current_user)
 
 
 @router.get(
@@ -332,6 +332,39 @@ def reject_document(
         reason = payload.reason if payload is not None else None
         response = service.reject_document(document_id, current_user, reason=reason, audit_context=audit_context)
         _publish_workflow_event(action="document_rejected", current_user=current_user, document_id=document_id)
+        return response
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post(
+    "/{document_id}/reject-definitive",
+    response_model=MessageResponse,
+    summary="Reprovar documento definitivamente",
+    description="Reprova a versao de forma definitiva (status REPROVADO), com motivo opcional.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
+def reject_document_definitive(
+    document_id: int,
+    payload: DocumentRejectRequest | None = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_document_service(db)
+    try:
+        reason = payload.reason if payload is not None else None
+        response = service.reject_document_definitive(
+            document_id,
+            current_user,
+            reason=reason,
+            audit_context=audit_context,
+        )
+        _publish_workflow_event(
+            action="document_rejected_definitive",
+            current_user=current_user,
+            document_id=document_id,
+        )
         return response
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { getAuditEvents, showGlobalError } from "../services/api";
 
@@ -18,9 +20,8 @@ const ACTION_LABELS = {
 const STATUS_LABELS = {
   RASCUNHO: "Rascunho",
   RASCUNHO_REVISADO: "Rascunho revisado",
-  REVISAR_RASCUNHO: "Revisar rascunho",
+  REVISAR_RASCUNHO: "Pendente Ajuste",
   PENDENTE_COORDENACAO: "Pendente coordenacao",
-  PENDENTE_QUALIDADE: "Pendente qualidade",
   EM_REVISAO: "Em revisao",
   REPROVADO: "Reprovado",
   VIGENTE: "Vigente",
@@ -66,6 +67,13 @@ const FIELD_LABELS = {
   access_mode: "Modo de acesso",
 };
 
+const FILE_ACCESS_FILTER_OPTIONS = [
+  { value: "ALL", label: "Todos" },
+  { value: "FILE_ACCESS", label: "Visualizacao + Download" },
+  { value: "VIEW_FILE", label: "Somente visualizacao" },
+  { value: "DOWNLOAD_FILE", label: "Somente download" },
+];
+
 function formatDateTime(value) {
   if (!value) {
     return "-";
@@ -104,8 +112,8 @@ function formatFieldName(value) {
 
 function getActorLabel(eventItem) {
   return (
-    eventItem.user_name ||
     eventItem.actor_name_snapshot ||
+    eventItem.user_name ||
     (eventItem.user_id ? `Usuario #${eventItem.user_id}` : "Sistema")
   );
 }
@@ -216,6 +224,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
     actor: "ALL",
     entityType: "ALL",
     action: "ALL",
+    fileAccess: "ALL",
     sourceType: "ALL",
     fieldName: "ALL",
     requestId: "",
@@ -313,6 +322,15 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
       if (filters.action !== "ALL" && item.action !== filters.action) {
         return false;
       }
+      if (filters.fileAccess === "FILE_ACCESS" && item.action !== "VIEW_FILE" && item.action !== "DOWNLOAD_FILE") {
+        return false;
+      }
+      if (
+        (filters.fileAccess === "VIEW_FILE" || filters.fileAccess === "DOWNLOAD_FILE")
+        && item.action !== filters.fileAccess
+      ) {
+        return false;
+      }
       if (filters.sourceType !== "ALL" && item.source_type !== filters.sourceType) {
         return false;
       }
@@ -375,6 +393,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
       return searchable.includes(term);
     });
   }, [events, filters]);
+  const eventsPagination = usePagination(filteredEvents);
 
   const clearFilters = () => {
     preserveViewport(() =>
@@ -383,6 +402,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
         actor: "ALL",
         entityType: "ALL",
         action: "ALL",
+        fileAccess: "ALL",
         sourceType: "ALL",
         fieldName: "ALL",
         requestId: "",
@@ -488,6 +508,27 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
             {actions.map((value) => (
               <option key={value} value={value}>
                 {formatAction(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Acesso de arquivo
+          <select
+            value={filters.fileAccess}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setFilters((prev) => ({
+                  ...prev,
+                  fileAccess: event.target.value,
+                })),
+              )
+            }
+          >
+            {FILE_ACCESS_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -613,7 +654,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {filteredEvents.map((item) => {
+              {eventsPagination.pagedItems.map((item) => {
                 const isExpanded = !!expandedRows[item.id];
                 const actor = getActorLabel(item);
                 const entityLabel = item.entity_label || `${formatEntity(item.entity_type)} ${item.entity_id ? `#${item.entity_id}` : ""}`;
@@ -694,6 +735,15 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={eventsPagination.page}
+          pageSize={eventsPagination.pageSize}
+          totalItems={eventsPagination.totalItems}
+          totalPages={eventsPagination.totalPages}
+          pageSizeOptions={eventsPagination.pageSizeOptions}
+          onPageChange={eventsPagination.setPage}
+          onPageSizeChange={eventsPagination.setPageSize}
+        />
       </section>
     </div>
   );

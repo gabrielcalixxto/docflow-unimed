@@ -20,7 +20,7 @@ def _validate_password_complexity(value: str) -> str:
 
 class UserAdminBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    username: str = Field(min_length=3, max_length=120)
+    job_title: str | None = Field(default=None, max_length=120)
     email: str = Field(min_length=3, max_length=255)
     roles: list[UserRole] = Field(default_factory=list)
     company_ids: list[int] = Field(default_factory=list)
@@ -34,13 +34,13 @@ class UserAdminBase(BaseModel):
             raise ValueError("Name is required.")
         return normalized
 
-    @field_validator("username")
+    @field_validator("job_title")
     @classmethod
-    def validate_username(cls, value: str) -> str:
-        normalized = (value or "").strip().lower()
-        if not _USERNAME_PATTERN.fullmatch(normalized):
-            raise ValueError("Username must follow nome.texto format using letters and dots only.")
-        return normalized
+    def normalize_job_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().split())
+        return normalized or None
 
     @field_validator("email")
     @classmethod
@@ -85,7 +85,25 @@ class UserAdminBase(BaseModel):
 
 
 class UserAdminCreate(UserAdminBase):
+    username: str = Field(min_length=3, max_length=120)
+    job_title: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=8, max_length=255)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if not _USERNAME_PATTERN.fullmatch(normalized):
+            raise ValueError("Username must follow nome.texto format using letters and dots only.")
+        return normalized
+
+    @field_validator("job_title")
+    @classmethod
+    def validate_required_job_title(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("Job title is required.")
+        return normalized
 
     @field_validator("password")
     @classmethod
@@ -94,7 +112,16 @@ class UserAdminCreate(UserAdminBase):
 
 
 class UserAdminUpdate(UserAdminBase):
+    job_title: str = Field(min_length=1, max_length=120)
     password: str | None = Field(default=None, min_length=8, max_length=255)
+
+    @field_validator("job_title")
+    @classmethod
+    def validate_required_job_title(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("Job title is required.")
+        return normalized
 
     @field_validator("password")
     @classmethod
@@ -106,9 +133,12 @@ class UserAdminUpdate(UserAdminBase):
 
 class UserAdminRead(UserAdminBase):
     id: int
+    username: str
     role: UserRole
     company_id: int | None = None
     sector_id: int | None = None
+    is_active: bool = True
+    must_change_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

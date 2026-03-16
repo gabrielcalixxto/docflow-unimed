@@ -704,8 +704,8 @@ class AdminCatalogService:
 
     @staticmethod
     def _ensure_catalog_manager(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.ADMIN, UserRole.REVISOR}):
-            raise ForbiddenServiceError("Only admin or reviewer users can manage catalog data.")
+        if not current_user.has_role(UserRole.ADMIN):
+            raise ForbiddenServiceError("Only admin users can manage catalog data.")
 
     @staticmethod
     def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:

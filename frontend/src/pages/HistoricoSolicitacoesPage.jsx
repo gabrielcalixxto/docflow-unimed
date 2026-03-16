@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { deleteDraftDocument, showGlobalError, updateDraftDocument } from "../services/api";
+import { deleteDraftDocument, resolveApiFileUrl, showGlobalError } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
-import { getCurrentLocalDateISO } from "../utils/date";
 import { formatStatusLabel } from "../utils/status";
 
 function formatDateTime(value) {
@@ -29,13 +30,63 @@ function formatDate(value) {
   return parsed.toLocaleDateString("pt-BR");
 }
 
-export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
+function ActionIcon({ kind }) {
+  if (kind === "view") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 6c4.8 0 8.7 3.4 9.8 5.5a1 1 0 0 1 0 1C20.7 14.6 16.8 18 12 18S3.3 14.6 2.2 12.5a1 1 0 0 1 0-1C3.3 9.4 7.2 6 12 6Zm0 2c-3.7 0-6.9 2.5-7.8 4 .9 1.5 4.1 4 7.8 4s6.9-2.5 7.8-4c-.9-1.5-4.1-4-7.8-4Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l2.3 2.3V4a1 1 0 0 1 1-1ZM5 18a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function extractFileName(path) {
+  if (!path) {
+    return "arquivo";
+  }
+  const parts = String(path).split(/[\\/]/);
+  return parts[parts.length - 1] || String(path);
+}
+
+function resolveFileUrl(path) {
+  return resolveApiFileUrl(path);
+}
+
+function resolveFileDownloadUrl(path) {
+  return resolveApiFileUrl(path, { download: true });
+}
+
+function resolvePreviewSrc(path) {
+  return resolveApiFileUrl(path);
+}
+
+function buildViewerSrc(path) {
+  const src = resolvePreviewSrc(path);
+  if (!src) {
+    return "";
+  }
+  return src;
+}
+
+export default function HistoricoSolicitacoesPage({ session, onUnauthorized, onEditDraft }) {
   const { preserveViewport } = useViewportPreserver();
-  const minExpirationDate = getCurrentLocalDateISO();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedResult, setSelectedResult] = useState(null);
   const [filters, setFilters] = useState({
     term: "",
     company: "ALL",
@@ -43,12 +94,6 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
     status: "ALL",
     version: "ALL",
     expiration: "ALL",
-  });
-  const [editForm, setEditForm] = useState({
-    documentId: null,
-    title: "",
-    filePath: "",
-    expirationDate: "",
   });
 
   const showFeedback = (type, message) => {
@@ -236,16 +281,18 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
         return true;
       }
 
-      const searchable = [
-        item.code,
-        item.title,
-        item.companyName,
-        item.sectorName,
-        item.requestType,
-        formatStatusLabel(item.latestStatus),
-        versionValue === "SEM_VERSAO" ? "sem versao" : `v${versionValue}`,
-        expirationValue === "SEM_VENCIMENTO" ? "sem vencimento" : expirationValue,
-        formatDateTime(item.lastRequestAt),
+        const searchable = [
+          item.code,
+          item.title,
+          item.companyName,
+          item.sectorName,
+          item.requestType,
+          item.adjustment_comment,
+          item.adjustment_reply_comment,
+          formatStatusLabel(item.latestStatus),
+          versionValue === "SEM_VERSAO" ? "sem versao" : `v${versionValue}`,
+          expirationValue === "SEM_VENCIMENTO" ? "sem vencimento" : expirationValue,
+          formatDateTime(item.lastRequestAt),
       ]
         .filter(Boolean)
         .join(" ")
@@ -254,51 +301,26 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
       return searchable.includes(normalizedTerm);
     });
   }, [historyItems, filters]);
+  const historyItemsPagination = usePagination(filteredHistoryItems);
 
   const canManageDraft = (item) =>
     Number(item.created_by) === Number(session?.userId) &&
-    ["RASCUNHO", "REVISAR_RASCUNHO"].includes(item.latestStatus);
+    ["RASCUNHO", "REVISAR_RASCUNHO", "RASCUNHO_REVISADO"].includes(item.latestStatus);
 
-  const handleOpenEdit = (item) => {
-    setEditForm({
-      documentId: item.id,
+  const handleEditDraft = (item) => {
+    onEditDraft?.({
+      documentId: Number(item.id),
       title: item.title || "",
+      companyId: item.company_id != null ? String(item.company_id) : "",
+      sectorId: item.sector_id != null ? String(item.sector_id) : "",
+      documentType: item.document_type || "",
+      scope: item.scope || "LOCAL",
       filePath: item.latestVersion?.file_path || "",
       expirationDate: item.latestVersion?.expiration_date || "",
+      latestStatus: item.latestStatus || "",
+      adjustmentComment: item.adjustment_comment || "",
+      adjustmentReplyComment: item.adjustment_reply_comment || "",
     });
-    setFeedback({ type: "", message: "" });
-  };
-
-  const handleSaveEdit = async (event) => {
-    event.preventDefault();
-    if (!editForm.documentId) {
-      return;
-    }
-    setSubmitting(true);
-    setFeedback({ type: "", message: "" });
-    try {
-      const response = await updateDraftDocument(editForm.documentId, {
-        title: editForm.title.trim(),
-        file_path: editForm.filePath.trim(),
-        expiration_date: editForm.expirationDate,
-      });
-      showFeedback("success", response.message || "Rascunho atualizado.");
-      setEditForm({
-        documentId: null,
-        title: "",
-        filePath: "",
-        expirationDate: "",
-      });
-      await loadItems();
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        onUnauthorized?.();
-        return;
-      }
-      showFeedback("error", requestError.message || "Falha ao atualizar rascunho.");
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const handleDeleteDraft = async (documentId) => {
@@ -311,14 +333,6 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
     try {
       const response = await deleteDraftDocument(documentId);
       showFeedback("success", response.message || "Rascunho excluido.");
-      if (editForm.documentId === documentId) {
-        setEditForm({
-          documentId: null,
-          title: "",
-          filePath: "",
-          expirationDate: "",
-        });
-      }
       await loadItems();
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -329,6 +343,24 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openPreview = (item) => {
+    setSelectedResult(item);
+    setViewerOpen(true);
+  };
+
+  const downloadFile = (filePath) => {
+    const url = resolveFileDownloadUrl(filePath);
+    if (!url) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = extractFileName(filePath);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -474,77 +506,6 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
         </label>
       </section>
 
-      {editForm.documentId && (
-        <section className="workflow-grid">
-          <form className="panel-float workflow-card" onSubmit={handleSaveEdit}>
-            <h3>Editar solicitacao em rascunho</h3>
-            <div className="form-grid">
-              <label>
-                Titulo
-                <input
-                  required
-                  value={editForm.title}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      title: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Caminho/URL do arquivo
-                <input
-                  required
-                  value={editForm.filePath}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      filePath: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Data de vencimento
-                <input
-                  required
-                  type="date"
-                  min={minExpirationDate}
-                  value={editForm.expirationDate}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      expirationDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="action-row">
-              <button type="submit" className="compact-submit" disabled={submitting}>
-                Salvar alteracoes
-              </button>
-              <button
-                type="button"
-                className="ghost-btn"
-                disabled={submitting}
-                onClick={() =>
-                  setEditForm({
-                    documentId: null,
-                    title: "",
-                    filePath: "",
-                    expirationDate: "",
-                  })
-                }
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
       <section className="panel-float workflow-list">
         <div className="table-wrap">
           <table>
@@ -556,6 +517,8 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
                 <th>Setor</th>
                 <th>Tipo solicitacao</th>
                 <th>Status</th>
+                <th>Comentario ajuste</th>
+                <th>Comentario reajuste</th>
                 <th>Versao</th>
                 <th>Vencimento</th>
                 <th>Ultima solicitacao</th>
@@ -563,7 +526,7 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {filteredHistoryItems.map((item) => (
+              {historyItemsPagination.pagedItems.map((item) => (
                 <tr key={item.id}>
                   <td>{item.code}</td>
                   <td>{item.title}</td>
@@ -575,44 +538,140 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
                       {formatStatusLabel(item.latestStatus)}
                     </span>
                   </td>
+                  <td>{item.adjustment_comment || "-"}</td>
+                  <td>{item.adjustment_reply_comment || "-"}</td>
                   <td>{item.latestVersion ? `v${item.latestVersion.version_number}` : "-"}</td>
                   <td>{item.latestVersion?.expiration_date || "-"}</td>
                   <td>{formatDateTime(item.lastRequestAt)}</td>
                   <td>
-                    {canManageDraft(item) ? (
-                      <>
-                        <button
-                          type="button"
-                          className="table-btn"
-                          disabled={submitting}
-                          onClick={() => handleOpenEdit(item)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="table-btn"
-                          disabled={submitting}
-                          onClick={() => handleDeleteDraft(item.id)}
-                        >
-                          Excluir
-                        </button>
-                      </>
-                    ) : (
-                      "-"
-                    )}
+                    <div className="panel-docs-actions">
+                      {canManageDraft(item) && (
+                        <>
+                          <button
+                            type="button"
+                            className="table-btn"
+                            disabled={submitting}
+                            onClick={() => handleEditDraft(item)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="table-btn"
+                            disabled={submitting}
+                            onClick={() => handleDeleteDraft(item.id)}
+                          >
+                            Excluir
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        className="table-btn table-btn-view"
+                        onClick={() => openPreview(item)}
+                      >
+                        <ActionIcon kind="view" />
+                        <span>Ver</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="table-btn table-btn-download"
+                        onClick={() => downloadFile(item.latestVersion?.file_path)}
+                        disabled={!resolveFileUrl(item.latestVersion?.file_path)}
+                      >
+                        <ActionIcon kind="download" />
+                        <span>Baixar</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {!loading && filteredHistoryItems.length === 0 && (
                 <tr>
-                  <td colSpan={10}>Nenhuma solicitacao no seu historico.</td>
+                  <td colSpan={12}>Nenhuma solicitacao no seu historico.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={historyItemsPagination.page}
+          pageSize={historyItemsPagination.pageSize}
+          totalItems={historyItemsPagination.totalItems}
+          totalPages={historyItemsPagination.totalPages}
+          pageSizeOptions={historyItemsPagination.pageSizeOptions}
+          onPageChange={historyItemsPagination.setPage}
+          onPageSizeChange={historyItemsPagination.setPageSize}
+        />
       </section>
+      <aside className={`viewer-drawer ${viewerOpen ? "open" : ""}`} aria-label="Visualizador de arquivo">
+        <header className="viewer-head">
+          <div>
+            <p className="kicker">Visualizacao</p>
+            <h3>{selectedResult ? selectedResult.title : "Documento"}</h3>
+          </div>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => {
+              setViewerOpen(false);
+              setSelectedResult(null);
+            }}
+          >
+            Fechar
+          </button>
+        </header>
+
+        {selectedResult && (
+          <div className="viewer-body">
+            <div className="preview-panel panel-float">
+              {resolvePreviewSrc(selectedResult.latestVersion?.file_path) ? (
+                <iframe
+                  title="Visualizacao do arquivo"
+                  src={buildViewerSrc(selectedResult.latestVersion?.file_path)}
+                  className="file-frame"
+                  scrolling="yes"
+                />
+              ) : (
+                <div className="no-preview">
+                  <p>Pre-visualizacao indisponivel para caminho local.</p>
+                  <p className="mono">{selectedResult.latestVersion?.file_path || "-"}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="meta-panel panel-float">
+              <h4>Dados simples</h4>
+              <ul>
+                <li>
+                  <strong>Codigo:</strong> {selectedResult.code}
+                </li>
+                <li>
+                  <strong>Tipo solicitacao:</strong> {selectedResult.requestType || "-"}
+                </li>
+                <li>
+                  <strong>Status:</strong> {formatStatusLabel(selectedResult.latestStatus)}
+                </li>
+                <li>
+                  <strong>Versao:</strong>{" "}
+                  {selectedResult.latestVersion?.version_number
+                    ? `v${selectedResult.latestVersion.version_number}`
+                    : "-"}
+                </li>
+                <li>
+                  <strong>Empresa:</strong> {selectedResult.companyName || "-"}
+                </li>
+                <li>
+                  <strong>Setor:</strong> {selectedResult.sectorName || "-"}
+                </li>
+                <li>
+                  <strong>Ultima solicitacao:</strong> {formatDateTime(selectedResult.lastRequestAt)}
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

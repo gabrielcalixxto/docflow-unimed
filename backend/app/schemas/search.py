@@ -9,6 +9,8 @@ class DocumentSearchResult(BaseModel):
     document_id: int
     code: str
     title: str
+    created_by: int | None = None
+    created_by_name: str | None = None
     company_id: int
     sector_id: int
     document_type: str

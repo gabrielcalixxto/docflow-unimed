@@ -41,8 +41,21 @@ def ensure_document_status_enum_values() -> None:
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'RASCUNHO_REVISADO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REVISAR_RASCUNHO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_COORDENACAO'"))
-        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_QUALIDADE'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REPROVADO'"))
+
+
+def migrate_deprecated_quality_status() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET status = 'REVISAR_RASCUNHO' "
+                "WHERE status = 'PENDENTE_QUALIDADE'"
+            )
+        )
 
 
 def ensure_document_versions_audit_columns() -> None:
@@ -86,7 +99,10 @@ def ensure_users_table_supports_multi_access() -> None:
         return
 
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(120)"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(120)"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS roles JSONB"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_ids JSONB"))
@@ -106,10 +122,33 @@ def ensure_users_table_supports_multi_access() -> None:
         connection.execute(
             text(
                 "UPDATE users "
+                "SET job_title = 'Nao informado' "
+                "WHERE job_title IS NULL OR btrim(job_title) = ''"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE users "
                 "SET username = split_part(email, '@', 1) "
                 "WHERE username IS NULL OR btrim(username) = ''"
             )
         )
+        connection.execute(
+            text(
+                "UPDATE users "
+                "SET is_active = TRUE "
+                "WHERE is_active IS NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE users "
+                "SET must_change_password = FALSE "
+                "WHERE must_change_password IS NULL"
+            )
+        )
+        connection.execute(text("ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE"))
+        connection.execute(text("ALTER TABLE users ALTER COLUMN must_change_password SET DEFAULT FALSE"))
         connection.execute(
             text(
                 "UPDATE users "
@@ -169,6 +208,37 @@ def ensure_document_types_table_supports_sigla() -> None:
         )
         connection.execute(text("ALTER TABLE document_types ALTER COLUMN sigla SET NOT NULL"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_document_types_sigla ON document_types (sigla)"))
+
+
+def ensure_documents_table_supports_adjustment_comment() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_comment VARCHAR(500)"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_reply_comment VARCHAR(500)"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_comment_by INTEGER"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_reply_comment_by INTEGER"))
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE documents "
+                "ADD CONSTRAINT fk_documents_adjustment_comment_by "
+                "FOREIGN KEY (adjustment_comment_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE documents "
+                "ADD CONSTRAINT fk_documents_adjustment_reply_comment_by "
+                "FOREIGN KEY (adjustment_reply_comment_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
 
 
 def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
@@ -323,9 +393,11 @@ async def lifespan(_: FastAPI):
         Base.metadata.create_all(bind=engine)
         ensure_user_role_enum_values()
         ensure_document_status_enum_values()
+        migrate_deprecated_quality_status()
         ensure_document_versions_audit_columns()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
+        ensure_documents_table_supports_adjustment_comment()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()
         ensure_audit_log_structure()
         migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)

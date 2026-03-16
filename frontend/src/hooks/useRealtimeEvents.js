@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
 
-import { getStoredToken } from "../services/api";
+import { getApiBaseUrl, getStoredToken } from "../services/api";
 
-const API_BASE_URL = "http://localhost:8000";
 const RECONNECT_DELAY_MS = 3000;
 
 function buildWebSocketUrl(token) {
@@ -10,9 +9,10 @@ function buildWebSocketUrl(token) {
     return null;
   }
 
+  const apiBaseUrl = getApiBaseUrl();
   let parsedBaseUrl;
   try {
-    parsedBaseUrl = new URL(API_BASE_URL);
+    parsedBaseUrl = new URL(apiBaseUrl);
   } catch {
     return null;
   }

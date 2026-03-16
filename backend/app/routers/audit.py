@@ -16,7 +16,6 @@ router = APIRouter(prefix="/audit", tags=["Audit Logs"])
 def get_audit_log_service(db: Session = Depends(get_db)) -> AuditLogService:
     return AuditLogService(audit_service=AuditService(log_repository=AuditLogRepository(db)))
 
-
 @router.get(
     "/events",
     response_model=AuditLogListResponse,

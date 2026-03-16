@@ -23,7 +23,7 @@ def _mock_file_token_auth(
             roles=[role],
             user_id=user_id,
             company_ids=company_ids or [],
-            sector_ids=sector_ids or [],
+            sector_ids=sector_ids if sector_ids is not None else [10],
         )
 
     monkeypatch.setattr(files_router, "get_authenticated_user_from_token", fake_decode)
@@ -173,17 +173,39 @@ def test_get_stored_file_returns_401_without_token(public_client) -> None:
     assert response.json() == {"detail": "Could not validate credentials."}
 
 
-def test_get_stored_file_returns_403_when_user_has_no_corporate_scope(public_client, monkeypatch) -> None:
+def test_get_stored_file_allows_corporate_for_any_user(public_client, monkeypatch) -> None:
     import app.routers.files as files_router
 
     _mock_file_token_auth(monkeypatch, role=UserRole.LEITOR, company_ids=[], sector_ids=[])
-    _mock_file_audit_service(monkeypatch)
+    audit_service = _mock_file_audit_service(monkeypatch)
     repository = Mock()
     repository.get_by_storage_key.return_value = SimpleNamespace(
         content=b"abc",
         content_type="application/pdf",
         original_name="manual.pdf",
         document=SimpleNamespace(id=1, scope=DocumentScope.CORPORATIVO, company_id=1, sector_id=10, created_by=8),
+        version=SimpleNamespace(document_id=1, status=DocumentStatus.VIGENTE, created_by=8),
+    )
+    monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
+
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?token=fake-token")
+
+    assert response.status_code == 200
+    assert response.content == b"abc"
+    audit_service.create_action_log.assert_called_once()
+
+
+def test_get_stored_file_denies_local_document_for_other_sector(public_client, monkeypatch) -> None:
+    import app.routers.files as files_router
+
+    _mock_file_token_auth(monkeypatch, role=UserRole.LEITOR, company_ids=[], sector_ids=[99])
+    _mock_file_audit_service(monkeypatch)
+    repository = Mock()
+    repository.get_by_storage_key.return_value = SimpleNamespace(
+        content=b"abc",
+        content_type="application/pdf",
+        original_name="manual.pdf",
+        document=SimpleNamespace(id=1, scope=DocumentScope.LOCAL, company_id=1, sector_id=10, created_by=8),
         version=SimpleNamespace(document_id=1, status=DocumentStatus.VIGENTE, created_by=8),
     )
     monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
+import usePagination from "../hooks/usePagination";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import {
   createAdminDocumentType,
@@ -22,6 +24,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   const [editingDocumentTypeId, setEditingDocumentTypeId] = useState(null);
   const [editingSigla, setEditingSigla] = useState("");
   const [editingName, setEditingName] = useState("");
+  const documentTypesPagination = usePagination(documentTypes);
 
   const showFeedback = (type, message) => {
     if (type === "error") {
@@ -195,7 +198,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {documentTypes.map((documentType) => (
+              {documentTypesPagination.pagedItems.map((documentType) => (
                 <tr key={documentType.id}>
                   <td>
                     {editingDocumentTypeId === Number(documentType.id) ? (
@@ -263,6 +266,15 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={documentTypesPagination.page}
+          pageSize={documentTypesPagination.pageSize}
+          totalItems={documentTypesPagination.totalItems}
+          totalPages={documentTypesPagination.totalPages}
+          pageSizeOptions={documentTypesPagination.pageSizeOptions}
+          onPageChange={documentTypesPagination.setPage}
+          onPageSizeChange={documentTypesPagination.setPageSize}
+        />
       </section>
     </div>
   );

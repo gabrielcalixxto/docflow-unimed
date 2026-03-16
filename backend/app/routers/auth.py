@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.auth_repository import AuthRepository
+from app.schemas.common import MessageResponse
 from app.schemas.errors import build_standard_error_responses
-from app.schemas.auth import LoginRequest, TokenResponse
-from app.services.auth_service import AuthService, InvalidCredentialsError
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, TokenResponse
+from app.services.auth_service import AuthService, ChangePasswordError, InvalidCredentialsError
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -58,4 +59,31 @@ def refresh_session(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session user.",
+        ) from exc
+
+
+@router.post(
+    "/change-password",
+    response_model=MessageResponse,
+    summary="Alterar senha do usuario autenticado",
+    description="Valida senha atual e atualiza para a nova senha, removendo exigencia de troca no primeiro acesso.",
+    responses=build_standard_error_responses(400, 401, 403, 422),
+)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+) -> MessageResponse:
+    try:
+        service.change_password(current_user.user_id, payload)
+        return MessageResponse(message="Password updated successfully.")
+    except InvalidCredentialsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session user.",
+        ) from exc
+    except ChangePasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
         ) from exc

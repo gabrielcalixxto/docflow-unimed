@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PasswordField from "../components/PasswordField";
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminUser,
-  deleteAdminUser,
   getAdminUserOptions,
   getAdminUsers,
+  inactivateAdminUser,
+  reactivateAdminUser,
   showGlobalError,
   updateAdminUser,
 } from "../services/api";
@@ -21,6 +25,7 @@ const LOWERCASE_NAME_WORDS = new Set(["de", "do", "da"]);
 const INITIAL_CREATE_FORM = {
   username: "",
   name: "",
+  jobTitle: "",
   email: "",
   roles: [],
   companyIds: [],
@@ -33,6 +38,7 @@ const INITIAL_EDIT_FORM = {
   userId: null,
   username: "",
   name: "",
+  jobTitle: "",
   email: "",
   roles: [],
   companyIds: [],
@@ -393,9 +399,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     event.preventDefault();
     const normalizedUsername = normalizeLoginValue(createForm.username);
     const normalizedName = formatPersonName(createForm.name);
+    const normalizedJobTitle = String(createForm.jobTitle || "").trim();
 
     if (!LOGIN_PATTERN.test(normalizedUsername)) {
       showFeedback("error", "Login invalido. Use o formato nome.texto, sem espacos, numeros ou caracteres especiais.");
+      return;
+    }
+    if (!normalizedJobTitle) {
+      showFeedback("error", "Funcao e obrigatoria.");
       return;
     }
     if (createForm.roles.length === 0) {
@@ -417,6 +428,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       await createAdminUser({
         username: normalizedUsername,
         name: normalizedName,
+        job_title: normalizedJobTitle,
         email: createForm.email.trim().toLowerCase(),
         roles: createForm.roles,
         company_ids: createForm.companyIds.map((value) => Number(value)),
@@ -460,6 +472,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       userId: user.id,
       username: user.username || "",
       name: user.name || "",
+      jobTitle: user.job_title || "",
       email: user.email || "",
       roles,
       companyIds,
@@ -474,14 +487,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
   const handleUpdateUser = async (event) => {
     event.preventDefault();
-    const normalizedUsername = normalizeLoginValue(editForm.username);
     const normalizedName = formatPersonName(editForm.name);
+    const normalizedJobTitle = String(editForm.jobTitle || "").trim();
 
     if (!editForm.userId) {
       return;
     }
-    if (!LOGIN_PATTERN.test(normalizedUsername)) {
-      showFeedback("error", "Login invalido. Use o formato nome.texto, sem espacos, numeros ou caracteres especiais.");
+    if (!normalizedJobTitle) {
+      showFeedback("error", "Funcao e obrigatoria.");
       return;
     }
     if (editForm.roles.length === 0) {
@@ -501,8 +514,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       await updateAdminUser(editForm.userId, {
-        username: normalizedUsername,
         name: normalizedName,
+        job_title: normalizedJobTitle,
         email: editForm.email.trim().toLowerCase(),
         roles: editForm.roles,
         company_ids: editForm.companyIds.map((value) => Number(value)),
@@ -524,16 +537,16 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     }
   };
 
-  const handleDeleteUser = async (userId) => {
-    const confirmed = window.confirm("Confirma exclusao do usuario?");
+  const handleInactivateUser = async (userId) => {
+    const confirmed = window.confirm("Confirma inativacao do usuario?");
     if (!confirmed) {
       return;
     }
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      await deleteAdminUser(userId);
-      showFeedback("success", "Usuario removido.");
+      await inactivateAdminUser(userId);
+      showFeedback("success", "Usuario inativado.");
       if (editForm.userId === userId) {
         setEditForm(INITIAL_EDIT_FORM);
       }
@@ -543,7 +556,29 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      showFeedback("error", requestError.message || "Falha ao excluir usuario.");
+      showFeedback("error", requestError.message || "Falha ao inativar usuario.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReactivateUser = async (userId) => {
+    const confirmed = window.confirm("Confirma reativacao do usuario?");
+    if (!confirmed) {
+      return;
+    }
+    setSubmitting(true);
+    setFeedback({ type: "", message: "" });
+    try {
+      await reactivateAdminUser(userId);
+      showFeedback("success", "Usuario reativado.");
+      await loadData();
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        onUnauthorized?.();
+        return;
+      }
+      showFeedback("error", requestError.message || "Falha ao reativar usuario.");
     } finally {
       setSubmitting(false);
     }
@@ -586,7 +621,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       const searchable = [
         user.username || "",
         user.name || "",
+        user.job_title || "",
         user.email || "",
+        user.is_active === false ? "inativo" : "ativo",
         displayRole(roles),
         companiesLabel,
         sectorsLabel,
@@ -597,6 +634,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
       return searchable.includes(normalizedTerm);
     });
   }, [users, tableFilters, companyNameById, sectorNameById]);
+  const userPagination = usePagination(filteredUsers);
 
   return (
     <div className="page-animation">
@@ -633,6 +671,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 required
                 value={createForm.name}
                 onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            </label>
+            <label>
+              Funcao
+              <input
+                required
+                value={createForm.jobTitle}
+                onChange={(event) => setCreateForm((prev) => ({ ...prev, jobTitle: event.target.value }))}
               />
             </label>
             <label>
@@ -804,28 +850,24 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               )}
             </div>
 
-            <label>
-              Senha
-              <input
-                required
-                type="password"
-                minLength={8}
-                value={createForm.password}
-                onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
-              />
-            </label>
-            <label>
-              Repetir senha
-              <input
-                required
-                type="password"
-                minLength={8}
-                value={createForm.passwordConfirm}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
-                }
-              />
-            </label>
+            <PasswordField
+              label="Senha"
+              required
+              minLength={8}
+              value={createForm.password}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
+              autoComplete="new-password"
+            />
+            <PasswordField
+              label="Repetir senha"
+              required
+              minLength={8}
+              value={createForm.passwordConfirm}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
+              }
+              autoComplete="new-password"
+            />
           </div>
 
           <button type="submit" className="compact-submit" disabled={submitting || loading}>
@@ -843,9 +885,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   required
                   value={editForm.username}
                   placeholder="usuario.exemplo"
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, username: normalizeLoginInput(event.target.value) }))
-                  }
+                  disabled
+                  readOnly
                 />
               </label>
               <label>
@@ -854,6 +895,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   required
                   value={editForm.name}
                   onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+                />
+              </label>
+              <label>
+                Funcao
+                <input
+                  required
+                  value={editForm.jobTitle}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, jobTitle: event.target.value }))}
                 />
               </label>
               <label>
@@ -1025,26 +1074,22 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 )}
               </div>
 
-              <label>
-                Nova senha (opcional)
-                <input
-                  type="password"
-                  minLength={8}
-                  value={editForm.password}
-                  onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
-                />
-              </label>
-              <label>
-                Repetir nova senha
-                <input
-                  type="password"
-                  minLength={8}
-                  value={editForm.passwordConfirm}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
-                  }
-                />
-              </label>
+              <PasswordField
+                label="Nova senha (opcional)"
+                minLength={8}
+                value={editForm.password}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
+                autoComplete="new-password"
+              />
+              <PasswordField
+                label="Repetir nova senha"
+                minLength={8}
+                value={editForm.passwordConfirm}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
+                }
+                autoComplete="new-password"
+              />
             </div>
           ) : (
             <p className="workflow-hint">Selecione um usuario na tabela para editar.</p>
@@ -1163,7 +1208,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <tr>
                 <th>Login</th>
                 <th>Nome</th>
+                <th>Funcao</th>
                 <th>Email</th>
+                <th>Status</th>
                 <th>Papeis</th>
                 <th>Empresas</th>
                 <th>Setores</th>
@@ -1171,7 +1218,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user) => {
+              {userPagination.pagedItems.map((user) => {
                 const roles = getUserRoles(user);
                 const companyIds = getUserCompanyIds(user);
                 const sectorIds = getUserSectorIds(user);
@@ -1187,39 +1234,61 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   <tr key={user.id}>
                     <td>{user.username || "-"}</td>
                     <td>{user.name}</td>
+                    <td>{user.job_title || "-"}</td>
                     <td>{user.email}</td>
+                    <td>{user.is_active === false ? "Inativo" : "Ativo"}</td>
                     <td>{displayRole(roles)}</td>
                     <td>{companiesLabel || "-"}</td>
                     <td>{sectorsLabel || "-"}</td>
                     <td>
                       <button
                         type="button"
-                        className="table-btn"
+                        className="table-btn table-btn-edit"
                         disabled={submitting}
                         onClick={() => handleOpenEdit(user)}
                       >
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        className="table-btn"
-                        disabled={submitting}
-                        onClick={() => handleDeleteUser(user.id)}
-                      >
-                        Excluir
-                      </button>
+                      {user.is_active === false ? (
+                        <button
+                          type="button"
+                          className="table-btn table-btn-reactivate"
+                          disabled={submitting}
+                          onClick={() => handleReactivateUser(user.id)}
+                        >
+                          Reativar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="table-btn table-btn-inactivate"
+                          disabled={submitting}
+                          onClick={() => handleInactivateUser(user.id)}
+                        >
+                          Inativar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
               {!loading && filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={7}>Nenhum usuario encontrado.</td>
+                  <td colSpan={9}>Nenhum usuario encontrado.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={userPagination.page}
+          pageSize={userPagination.pageSize}
+          totalItems={userPagination.totalItems}
+          totalPages={userPagination.totalPages}
+          pageSizeOptions={userPagination.pageSizeOptions}
+          onPageChange={userPagination.setPage}
+          onPageSizeChange={userPagination.setPageSize}
+        />
       </section>
     </div>
   );

@@ -126,6 +126,29 @@ def test_auth_refresh_returns_401_when_session_user_is_invalid(authorized_client
         app.dependency_overrides.clear()
 
 
+def test_auth_change_password_returns_200(authorized_client) -> None:
+    import app.routers.auth as auth_router
+
+    service = Mock()
+    service.change_password.return_value = None
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = authorized_client.post(
+            "/auth/change-password",
+            json={
+                "old_password": "Senha@123",
+                "new_password": "NovaSenha@123",
+                "new_password_confirm": "NovaSenha@123",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Password updated successfully."}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_protected_documents_route_requires_authentication(public_client) -> None:
     response = public_client.get("/documents")
 

@@ -1,0 +1,9 @@
+t=2026-03-16T04:27:42-0300 lvl=info msg="no configuration paths supplied"
+t=2026-03-16T04:27:42-0300 lvl=info msg="ignoring default config path" path=C:\\Users\\Calixto\\AppData\\Local\\ngrok\\ngrok.yml err="GetFileAttributesEx C:\\Users\\Calixto\\AppData\\Local\\ngrok\\ngrok.yml: The system cannot find the path specified."
+t=2026-03-16T04:27:42-0300 lvl=info msg="FIPS 140 mode" enabled=false
+t=2026-03-16T04:27:42-0300 lvl=eror msg="unable to evaluate ngrok agent binary path for symlinks" obj=tunnels.session err="Access is denied."
+t=2026-03-16T04:27:42-0300 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-03-16T04:27:42-0300 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": dial tcp [2600:1f1e:4e5:0:e3e7:8ca1:85ee:c60b]:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions."
+t=2026-03-16T04:27:42-0300 lvl=warn msg="failed to check for update" obj=updater err="Post \"https://update.ngrok-agent.com/check\": dial tcp [2600:1f1e:4e5:1:944b:e45:e09c:9116]:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions."
+t=2026-03-16T04:27:43-0300 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": dial tcp [2600:1f1e:4e5:0:e3e7:8ca1:85ee:c60b]:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions."
+t=2026-03-16T04:27:44-0300 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": dial tcp [2600:1f1e:4e5:0:e3e7:8ca1:85ee:c60b]:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions."

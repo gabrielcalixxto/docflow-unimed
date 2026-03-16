@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import { resolveApiFileUrl, showGlobalError } from "../services/api";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
 import { formatStatusLabel } from "../utils/status";
 
 const FLOATING_BAR_TOP_OFFSET = 16;
-const FLOATING_BAR_HEIGHT = 15;
 
 const STATUS_ORDER = [
   "VIGENTE",
-  "PENDENTE_QUALIDADE",
   "PENDENTE_COORDENACAO",
   "RASCUNHO",
   "RASCUNHO_REVISADO",
@@ -21,6 +21,135 @@ const STATUS_ORDER = [
   "EM_REVISAO",
   "SEM_VERSAO",
 ];
+
+const METRIC_DEFINITIONS = [
+  { key: "total", label: "Total", tone: "total", icon: "stack" },
+  { key: "semVersao", label: "Sem versao", tone: "sem_versao", icon: "file" },
+  { key: "rascunho", label: "Rascunho", tone: "rascunho", icon: "draft" },
+  { key: "rascunhoRevisado", label: "Rascunho revisado", tone: "rascunho_revisado", icon: "draft" },
+  { key: "revisarRascunho", label: "Pendente Ajuste", tone: "revisar_rascunho", icon: "draft" },
+  { key: "pendenteCoordenacao", label: "Pendente coordenacao", tone: "pendente_coordenacao", icon: "clock" },
+  { key: "reprovado", label: "Reprovado", tone: "reprovado", icon: "close" },
+  { key: "vigente", label: "Vigente", tone: "vigente", icon: "check" },
+  { key: "obsoleto", label: "Obsoleto", tone: "obsoleto", icon: "archive" },
+];
+
+function SectionIcon({ kind }) {
+  if (kind === "summary") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 13h4v7H4v-7Zm6-9h4v16h-4V4Zm6 5h4v11h-4V9Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (kind === "filters") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 .8 1.6L14 13v5a1 1 0 0 1-1.4.9l-2-1A1 1 0 0 1 10 17v-4L4.2 5.6A1 1 0 0 1 4 5Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5Zm2 1v3h12V6H6Zm0 5v7h12v-7H6Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function MetricIcon({ kind }) {
+  if (kind === "check") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M9.6 16.2 6 12.6a1 1 0 1 1 1.4-1.4l2.2 2.2 7-7a1 1 0 1 1 1.4 1.4l-7.7 7.7a1 1 0 0 1-1.4 0Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (kind === "close") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M7 7a1 1 0 0 1 1.4 0L12 10.6 15.6 7a1 1 0 1 1 1.4 1.4L13.4 12l3.6 3.6a1 1 0 1 1-1.4 1.4L12 13.4 8.4 17a1 1 0 1 1-1.4-1.4L10.6 12 7 8.4A1 1 0 0 1 7 7Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (kind === "clock") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 3a9 9 0 1 1-6.4 2.6A8.9 8.9 0 0 1 12 3Zm0 2a7 7 0 1 0 7 7 7 7 0 0 0-7-7Zm-1 2a1 1 0 0 1 2 0v4l2.5 1.5a1 1 0 0 1-1 1.7l-3-1.8a1 1 0 0 1-.5-.9V7Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (kind === "archive") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3H4V5Zm0 5h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9Zm5 3a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H9Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (kind === "draft") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm8 1.5V9h4.5L14 4.5ZM8 13h8v2H8v-2Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (kind === "file") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm6 1.5V9h4.5L13 4.5ZM9 13h6v2H9v-2Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ActionIcon({ kind }) {
+  if (kind === "view") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 6c4.8 0 8.7 3.4 9.8 5.5a1 1 0 0 1 0 1C20.7 14.6 16.8 18 12 18S3.3 14.6 2.2 12.5a1 1 0 0 1 0-1C3.3 9.4 7.2 6 12 6Zm0 2c-3.7 0-6.9 2.5-7.8 4 .9 1.5 4.1 4 7.8 4s6.9-2.5 7.8-4c-.9-1.5-4.1-4-7.8-4Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l2.3 2.3V4a1 1 0 0 1 1-1ZM5 18a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
 
 function formatDate(value) {
   if (!value) {
@@ -60,6 +189,18 @@ function resolveFileDownloadUrl(path) {
   return resolveApiFileUrl(path, { download: true });
 }
 
+function resolvePreviewSrc(path) {
+  return resolveApiFileUrl(path);
+}
+
+function buildViewerSrc(path) {
+  const src = resolvePreviewSrc(path);
+  if (!src) {
+    return "";
+  }
+  return src;
+}
+
 function normalizeNumericIds(values) {
   if (!Array.isArray(values)) {
     return [];
@@ -78,12 +219,9 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
   const syncingScrollRef = useRef(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [floatingBarLayout, setFloatingBarLayout] = useState({
-    visible: false,
-    mode: "hidden",
-    left: 0,
-    width: 0,
-  });
+  const [floatingBarVisible, setFloatingBarVisible] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedResult, setSelectedResult] = useState(null);
   const [filters, setFilters] = useState({
     term: "",
     company: "ALL",
@@ -374,6 +512,15 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
   }, [scopedVersionRows, filters]);
 
   const stats = useMemo(() => summarizeWorkflow(filteredItems), [filteredItems]);
+  const metricCards = useMemo(
+    () =>
+      METRIC_DEFINITIONS.map((definition) => ({
+        ...definition,
+        value: stats[definition.key] ?? 0,
+      })),
+    [stats],
+  );
+  const filteredItemsPagination = usePagination(filteredItems);
 
   const updateFloatingBarLayout = useCallback(() => {
     const tableWrap = tableWrapRef.current;
@@ -392,40 +539,12 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
     }
 
     const areaRect = tableArea.getBoundingClientRect();
-    const isVisibleInViewport = areaRect.bottom > 0 && areaRect.top < window.innerHeight;
+    const isVisibleInViewport = areaRect.bottom > FLOATING_BAR_TOP_OFFSET && areaRect.top < window.innerHeight;
     if (!hasHorizontalOverflow || !isVisibleInViewport) {
-      setFloatingBarLayout((previous) =>
-        previous.visible
-          ? {
-              ...previous,
-              visible: false,
-              mode: "hidden",
-            }
-          : previous,
-      );
+      setFloatingBarVisible(false);
       return;
     }
-
-    let mode = "fixed";
-    if (areaRect.top >= FLOATING_BAR_TOP_OFFSET) {
-      mode = "top";
-    } else if (areaRect.bottom <= FLOATING_BAR_TOP_OFFSET + FLOATING_BAR_HEIGHT) {
-      mode = "bottom";
-    }
-
-    const nextLayout = {
-      visible: true,
-      mode,
-      left: areaRect.left,
-      width: areaRect.width,
-    };
-    setFloatingBarLayout((previous) => {
-      const sameVisibility = previous.visible === nextLayout.visible;
-      const sameMode = previous.mode === nextLayout.mode;
-      const sameLeft = Math.abs(previous.left - nextLayout.left) < 0.5;
-      const sameWidth = Math.abs(previous.width - nextLayout.width) < 0.5;
-      return sameVisibility && sameMode && sameLeft && sameWidth ? previous : nextLayout;
-    });
+    setFloatingBarVisible(true);
   }, []);
 
   useEffect(() => {
@@ -485,12 +604,9 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
     });
   };
 
-  const openPreviewInNewTab = (filePath) => {
-    const url = resolveFileUrl(filePath);
-    if (!url) {
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
+  const openPreview = (item) => {
+    setSelectedResult(item);
+    setViewerOpen(true);
   };
 
   const downloadFile = (filePath) => {
@@ -507,7 +623,7 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
   };
 
   return (
-    <div className="page-animation">
+    <div className="page-animation painel-documentos-page">
       <section className="hero-block">
         <div>
           <p className="kicker">Visao geral</p>
@@ -516,50 +632,42 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
         </div>
       </section>
 
-      <section className="workflow-summary-grid">
-        <article className="panel-float workflow-stat">
-          <p>Total</p>
-          <strong>{stats.total}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Sem versao</p>
-          <strong>{stats.semVersao}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Rascunho</p>
-          <strong>{stats.rascunho}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Rascunho revisado</p>
-          <strong>{stats.rascunhoRevisado}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Revisar rascunho</p>
-          <strong>{stats.revisarRascunho}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Pendente qualidade</p>
-          <strong>{stats.pendenteQualidade}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Pendente coordenacao</p>
-          <strong>{stats.pendenteCoordenacao}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Reprovado</p>
-          <strong>{stats.reprovado}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Vigente</p>
-          <strong>{stats.vigente}</strong>
-        </article>
-        <article className="panel-float workflow-stat">
-          <p>Obsoleto</p>
-          <strong>{stats.obsoleto}</strong>
-        </article>
+      <section className="dashboard-section">
+        <div className="section-title-row">
+          <span className="section-title-icon" aria-hidden="true">
+            <SectionIcon kind="summary" />
+          </span>
+          <div>
+            <h3 className="section-title">Resumo geral</h3>
+            <p className="section-subtitle">Indicadores por status do ciclo documental.</p>
+          </div>
+        </div>
+        <div className="workflow-summary-grid">
+          {metricCards.map((metric) => (
+            <article key={metric.key} className={`panel-float workflow-stat workflow-stat--${metric.tone}`}>
+              <div className="workflow-stat-head">
+                <p>{metric.label}</p>
+                <span className="workflow-stat-icon" aria-hidden="true">
+                  <MetricIcon kind={metric.icon} />
+                </span>
+              </div>
+              <strong>{metric.value}</strong>
+            </article>
+          ))}
+        </div>
       </section>
 
-      <section className="panel-float painel-filters-grid">
+      <section className="dashboard-section">
+        <div className="section-title-row">
+          <span className="section-title-icon" aria-hidden="true">
+            <SectionIcon kind="filters" />
+          </span>
+          <div>
+            <h3 className="section-title">Filtros</h3>
+            <p className="section-subtitle">Refine a visualizacao para focar no que importa agora.</p>
+          </div>
+        </div>
+        <div className="panel-float painel-filters-grid">
         <label>
           Pesquisa
           <input
@@ -818,34 +926,24 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
             ))}
           </select>
         </label>
+        </div>
       </section>
 
-      <section className="panel-float workflow-list">
-        <div className="workflow-list-head">
-          <h3>Resumo geral dos documentos e versoes</h3>
-        </div>
+      <section className="dashboard-section">
+        <div className="panel-float workflow-list">
         <div className="panel-docs-table-area" ref={tableAreaRef}>
-          {floatingBarLayout.visible && (
+          {floatingBarVisible && (
             <div
-              className={`table-scrollbar-card table-scrollbar-card--floating table-scrollbar-card--${floatingBarLayout.mode}`}
+              className="table-scrollbar-card table-scrollbar-card--floating"
               ref={floatingScrollbarRef}
               onScroll={handleFloatingScrollbarScroll}
               aria-label="Barra horizontal flutuante da tabela"
-              style={
-                floatingBarLayout.mode === "fixed"
-                  ? {
-                      left: `${floatingBarLayout.left}px`,
-                      width: `${floatingBarLayout.width}px`,
-                      top: `${FLOATING_BAR_TOP_OFFSET}px`,
-                    }
-                  : undefined
-              }
             >
               <div className="table-scrollbar-track" ref={floatingScrollbarTrackRef} />
             </div>
           )}
           <div className="table-wrap panel-docs-table-wrap" ref={tableWrapRef} onScroll={handleTableScroll}>
-            <table>
+            <table className="panel-docs-table">
               <thead>
                 <tr>
                   <th>Codigo</th>
@@ -860,16 +958,16 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
                   <th>Acoes</th>
                   <th>Documento criado em</th>
                   <th>Versao criada em</th>
-                  <th>Solicitado por</th>
+                  <th>Criado por</th>
                   <th>Solicitante da versao</th>
                   <th>Aprovada em</th>
-                  <th>Aprovador por</th>
+                  <th>Aprovado por</th>
                   <th>Invalidado por</th>
                   <th>Data invalidado</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((item) => (
+                {filteredItemsPagination.pagedItems.map((item) => (
                   <tr key={item.rowKey}>
                     <td>{item.code}</td>
                     <td>{item.title}</td>
@@ -889,24 +987,27 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
                         : "-"}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="table-btn"
-                        onClick={() => openPreviewInNewTab(item.latestVersion?.file_path)}
-                        disabled={!resolveFileUrl(item.latestVersion?.file_path)}
-                        title="Pre-visualizar"
-                      >
-                        {"\u{1F441}"} Ver
-                      </button>
-                      <button
-                        type="button"
-                        className="table-btn"
-                        onClick={() => downloadFile(item.latestVersion?.file_path)}
-                        disabled={!resolveFileUrl(item.latestVersion?.file_path)}
-                        title="Download"
-                      >
-                        Download
-                      </button>
+                      <div className="panel-docs-actions">
+                        <button
+                          type="button"
+                          className="table-btn table-btn-view"
+                          onClick={() => openPreview(item)}
+                          title="Pre-visualizar"
+                        >
+                          <ActionIcon kind="view" />
+                          <span>Ver</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="table-btn table-btn-download"
+                          onClick={() => downloadFile(item.latestVersion?.file_path)}
+                          disabled={!resolveFileUrl(item.latestVersion?.file_path)}
+                          title="Download"
+                        >
+                          <ActionIcon kind="download" />
+                          <span>Baixar</span>
+                        </button>
+                      </div>
                     </td>
                     <td>{formatDateTime(item.created_at)}</td>
                     <td>{formatDateTime(item.latestVersion?.created_at)}</td>
@@ -927,7 +1028,97 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
             </table>
           </div>
         </div>
+        <PaginationControls
+          page={filteredItemsPagination.page}
+          pageSize={filteredItemsPagination.pageSize}
+          totalItems={filteredItemsPagination.totalItems}
+          totalPages={filteredItemsPagination.totalPages}
+          pageSizeOptions={filteredItemsPagination.pageSizeOptions}
+          onPageChange={filteredItemsPagination.setPage}
+          onPageSizeChange={filteredItemsPagination.setPageSize}
+        />
+        </div>
       </section>
+      <aside className={`viewer-drawer ${viewerOpen ? "open" : ""}`} aria-label="Visualizador de arquivo">
+        <header className="viewer-head">
+          <div>
+            <p className="kicker">Visualizacao</p>
+            <h3>{selectedResult ? selectedResult.title : "Documento"}</h3>
+          </div>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => {
+              setViewerOpen(false);
+              setSelectedResult(null);
+            }}
+          >
+            Fechar
+          </button>
+        </header>
+
+        {selectedResult && (
+          <div className="viewer-body">
+            <div className="preview-panel panel-float">
+              {resolvePreviewSrc(selectedResult.latestVersion?.file_path) ? (
+                <iframe
+                  title="Visualizacao do arquivo"
+                  src={buildViewerSrc(selectedResult.latestVersion?.file_path)}
+                  className="file-frame"
+                  scrolling="yes"
+                />
+              ) : (
+                <div className="no-preview">
+                  <p>Pre-visualizacao indisponivel para caminho local.</p>
+                  <p className="mono">{selectedResult.latestVersion?.file_path || "-"}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="meta-panel panel-float">
+              <h4>Dados simples</h4>
+              <ul>
+                <li>
+                  <strong>Codigo:</strong> {selectedResult.code}
+                </li>
+                <li>
+                  <strong>Tipo:</strong> {selectedResult.document_type || "-"}
+                </li>
+                <li>
+                  <strong>Escopo:</strong> {selectedResult.scope || "-"}
+                </li>
+                <li>
+                  <strong>Status:</strong> {formatStatusLabel(selectedResult.latestStatus)}
+                </li>
+                <li>
+                  <strong>Versao:</strong>{" "}
+                  {selectedResult.latestVersion?.version_number
+                    ? `v${selectedResult.latestVersion.version_number}`
+                    : "-"}
+                </li>
+                <li>
+                  <strong>Empresa:</strong> {selectedResult.companyName || "-"}
+                </li>
+                <li>
+                  <strong>Setor:</strong> {selectedResult.sectorName || "-"}
+                </li>
+                <li>
+                  <strong>Solicitante:</strong>{" "}
+                  {selectedResult.latestVersion?.created_by_name || selectedResult.created_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovador:</strong> {selectedResult.latestVersion?.approved_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado em:</strong> {formatDateTime(selectedResult.latestVersion?.approved_at)}
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }
+
+

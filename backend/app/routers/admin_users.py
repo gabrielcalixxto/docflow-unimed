@@ -135,6 +135,50 @@ def update_user(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.patch(
+    "/{user_id}/inactivate",
+    response_model=MessageResponse,
+    summary="Inativar usuario",
+    description="Inativa usuario existente (exceto o proprio usuario autenticado).",
+    responses=ADMIN_USER_ERRORS,
+)
+def inactivate_user(
+    user_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_user_admin_service(db)
+    try:
+        response = service.inactivate_user(user_id, current_user, audit_context=audit_context)
+        _publish_user_event(action="user_inactivated", current_user=current_user, entity_id=user_id)
+        return response
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.patch(
+    "/{user_id}/reactivate",
+    response_model=MessageResponse,
+    summary="Reativar usuario",
+    description="Reativa usuario existente.",
+    responses=ADMIN_USER_ERRORS,
+)
+def reactivate_user(
+    user_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    service = get_user_admin_service(db)
+    try:
+        response = service.reactivate_user(user_id, current_user, audit_context=audit_context)
+        _publish_user_event(action="user_reactivated", current_user=current_user, entity_id=user_id)
+        return response
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.delete(
     "/{user_id}",
     response_model=MessageResponse,

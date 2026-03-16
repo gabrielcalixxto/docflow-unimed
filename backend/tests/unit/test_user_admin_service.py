@@ -57,6 +57,7 @@ def test_create_user_persists_user_with_hashed_password() -> None:
     service = build_service(repository=repository)
     payload = UserAdminCreate(
         name="Novo Usuario",
+        job_title="Analista de Processos",
         username="novo.usuario",
         email="novo@docflow.local",
         password="Senha@123",
@@ -72,6 +73,7 @@ def test_create_user_persists_user_with_hashed_password() -> None:
     repository.create_user.assert_called_once()
     assert repository.create_user.call_args.kwargs["username"] == "novo.usuario"
     assert repository.create_user.call_args.kwargs["name"] == "Novo Usuario"
+    assert repository.create_user.call_args.kwargs["job_title"] == "Analista de Processos"
     hashed_password = repository.create_user.call_args.kwargs["password_hash"]
     assert hashed_password != payload.password
     assert verify_password(payload.password, hashed_password) is True
@@ -84,7 +86,7 @@ def test_update_user_raises_not_found_when_user_missing() -> None:
     service = build_service(repository=repository)
     payload = UserAdminUpdate(
         name="Usuario Teste",
-        username="usuario.teste",
+        job_title="Supervisor",
         email="a@docflow.local",
         roles=[UserRole.ADMIN],
         company_ids=[],
@@ -97,12 +99,12 @@ def test_update_user_raises_not_found_when_user_missing() -> None:
 
 def test_update_user_rejects_duplicated_email() -> None:
     repository = Mock()
-    repository.get_user_by_id.return_value = SimpleNamespace(id=7)
+    repository.get_user_by_id.return_value = SimpleNamespace(id=7, roles=[UserRole.ADMIN.value])
     repository.get_user_by_email.return_value = SimpleNamespace(id=8)
     service = build_service(repository=repository)
     payload = UserAdminUpdate(
         name="Usuario Duplicado",
-        username="usuario.duplicado",
+        job_title="Supervisor",
         email="duplicado@docflow.local",
         roles=[UserRole.ADMIN],
         company_ids=[],

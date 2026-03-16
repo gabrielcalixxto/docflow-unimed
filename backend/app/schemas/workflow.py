@@ -34,6 +34,10 @@ class WorkflowDocumentRead(BaseModel):
     sector_id: int
     sector_name: str | None = None
     document_type: str
+    adjustment_comment: str | None = None
+    adjustment_comment_by_name: str | None = None
+    adjustment_reply_comment: str | None = None
+    adjustment_reply_comment_by_name: str | None = None
     scope: DocumentScope
     created_by: int | None = None
     created_by_name: str | None = None
