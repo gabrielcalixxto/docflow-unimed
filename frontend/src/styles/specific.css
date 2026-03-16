@@ -1,0 +1,132 @@
+﻿:root {
+  color-scheme: light;
+}
+
+body {
+  background:
+    radial-gradient(1100px 520px at 4% -22%, rgba(0, 153, 93, 0.23), transparent 62%),
+    radial-gradient(1020px 520px at 96% -18%, rgba(191, 215, 48, 0.2), transparent 58%),
+    linear-gradient(180deg, #f4f9f6, #edf6f0 52%, #e7f1eb);
+}
+
+.panel-float,
+.topbar,
+.hero-block {
+  position: relative;
+  overflow: visible;
+}
+
+.panel-float::after,
+.topbar::after,
+.hero-block::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 44%;
+  bottom: -11px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(15, 50, 41, 0.25), rgba(15, 50, 41, 0));
+  filter: blur(10px);
+  opacity: 0.54;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.file-drop-zone {
+  margin-top: 12px;
+  border: 1.5px dashed rgba(8, 122, 73, 0.34);
+  border-radius: 14px;
+  background: rgba(239, 251, 244, 0.85);
+  padding: 14px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.file-drop-zone.active {
+  border-color: rgba(0, 153, 93, 0.82);
+  background: rgba(221, 246, 234, 0.9);
+  transform: translateY(-1px);
+}
+
+.file-drop-zone p {
+  color: rgba(16, 50, 41, 0.76);
+  font-size: 0.82rem;
+}
+
+.workflow-list,
+.table-wrap,
+.panel-docs-table-wrap,
+.viewer-drawer,
+.sidebar-card {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 153, 93, 0.35) transparent;
+}
+
+.workflow-list::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.panel-docs-table-wrap::-webkit-scrollbar,
+.viewer-drawer::-webkit-scrollbar,
+.sidebar-card::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.workflow-list::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb,
+.panel-docs-table-wrap::-webkit-scrollbar-thumb,
+.viewer-drawer::-webkit-scrollbar-thumb,
+.sidebar-card::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 153, 93, 0.38);
+}
+
+.workflow-list::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track,
+.panel-docs-table-wrap::-webkit-scrollbar-track,
+.viewer-drawer::-webkit-scrollbar-track,
+.sidebar-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-scrollbar-card--floating {
+  pointer-events: none;
+}
+
+.table-scrollbar-card--floating .table-scrollbar-track {
+  pointer-events: auto;
+}
+
+.request-actions button,
+.action-row button {
+  white-space: nowrap;
+}
+
+.page-animation {
+  will-change: transform, opacity;
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1023px) {
+  .panel-float::after,
+  .topbar::after,
+  .hero-block::after {
+    left: 18px;
+    right: 18px;
+    opacity: 0.35;
+  }
+
+  .table-scrollbar-card--floating {
+    display: none;
+  }
+}

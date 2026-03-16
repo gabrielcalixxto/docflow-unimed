@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { buttonVariants } from "./ui/variants";
 import {
   canAccessAdminCatalog,
   canAccessAdminUsers,
@@ -11,6 +12,7 @@ import {
   canAccessSearch,
   displayRole,
 } from "../utils/roles";
+import { cn } from "../utils/cn";
 
 const SEARCH_ITEM = {
   id: "search",
@@ -243,7 +245,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
   return (
     <div className="layout-root">
       <aside
-        className={`sidebar-card ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
+        className={cn("sidebar-card", collapsed && "collapsed", mobileOpen && "mobile-open")}
         aria-label="Navegacao principal"
       >
         <div className="sidebar-head">
@@ -261,7 +263,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <button
               key={SEARCH_ITEM.id}
               type="button"
-              className={`nav-item ${activePage === SEARCH_ITEM.id ? "active" : ""}`}
+              className={cn("nav-item", activePage === SEARCH_ITEM.id && "active")}
               onClick={() => {
                 onPageChange(SEARCH_ITEM.id);
                 setMobileOpen(false);
@@ -277,7 +279,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <button
               key={APPROVAL_ITEM.id}
               type="button"
-              className={`nav-item ${activePage === APPROVAL_ITEM.id ? "active" : ""}`}
+              className={cn("nav-item", activePage === APPROVAL_ITEM.id && "active")}
               onClick={() => {
                 onPageChange(APPROVAL_ITEM.id);
                 setMobileOpen(false);
@@ -300,7 +302,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
                     <button
                       key={item.id}
                       type="button"
-                      className={`nav-item nav-subitem ${activePage === item.id ? "active" : ""}`}
+                      className={cn("nav-item nav-subitem", activePage === item.id && "active")}
                       onClick={() => {
                         onPageChange(item.id);
                         setMobileOpen(false);
@@ -318,13 +320,13 @@ export default function AppShell({ children, activePage, onPageChange, session, 
               <div key={`group-${group.id}`} className="nav-group">
                 <button
                   type="button"
-                  className={`nav-item nav-group-button ${hasActiveItem ? "active" : ""}`}
+                  className={cn("nav-item nav-group-button", hasActiveItem && "active")}
                   onClick={() => handleToggleGroup(group.id)}
                   title={group.label}
                 >
                   <span className="nav-icon">{group.icon}</span>
                   <span className="nav-label">{group.label}</span>
-                  <span className={`nav-group-chevron ${isOpen ? "open" : ""}`} aria-hidden="true">
+                  <span className={cn("nav-group-chevron", isOpen && "open")} aria-hidden="true">
                     <svg viewBox="0 0 24 24">
                       <path
                         d="M6 9l6 6 6-6"
@@ -344,7 +346,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
                       <button
                         key={item.id}
                         type="button"
-                        className={`nav-item nav-subitem ${activePage === item.id ? "active" : ""}`}
+                        className={cn("nav-item nav-subitem", activePage === item.id && "active")}
                         onClick={() => {
                           onPageChange(item.id);
                           setMobileOpen(false);
@@ -365,7 +367,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <button
               key={AUDIT_HISTORY_ITEM.id}
               type="button"
-              className={`nav-item ${activePage === AUDIT_HISTORY_ITEM.id ? "active" : ""}`}
+              className={cn("nav-item", activePage === AUDIT_HISTORY_ITEM.id && "active")}
               onClick={() => {
                 onPageChange(AUDIT_HISTORY_ITEM.id);
                 setMobileOpen(false);
@@ -381,7 +383,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         <div className="sidebar-foot">
           <button
             type="button"
-            className="collapse-btn"
+            className={cn("collapse-btn", buttonVariants({ variant: "ghost", size: "sm" }))}
             onClick={() => setCollapsed((prev) => !prev)}
             title={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
           >
@@ -405,7 +407,11 @@ export default function AppShell({ children, activePage, onPageChange, session, 
       <div className="content-root">
         <header className="topbar">
           <div className="topbar-left">
-            <button type="button" className="mobile-toggle" onClick={() => setMobileOpen((prev) => !prev)}>
+            <button
+              type="button"
+              className={cn("mobile-toggle", buttonVariants({ variant: "ghost", size: "sm" }))}
+              onClick={() => setMobileOpen((prev) => !prev)}
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M4 6h16M4 12h16M4 18h16"
@@ -428,7 +434,11 @@ export default function AppShell({ children, activePage, onPageChange, session, 
             <div className="user-chip">
               <p>{session.username || session.email}</p>
             </div>
-            <button type="button" className="logout-btn" onClick={onLogout}>
+            <button
+              type="button"
+              className={cn("logout-btn", buttonVariants({ variant: "secondary", size: "sm" }))}
+              onClick={onLogout}
+            >
               Sair
             </button>
           </div>

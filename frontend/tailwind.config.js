@@ -3,6 +3,10 @@ export default {
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Manrope", "Segoe UI", "sans-serif"],
+        display: ["Space Grotesk", "Trebuchet MS", "sans-serif"],
+      },
       colors: {
         unimed: {
           50: "#eef9f2",

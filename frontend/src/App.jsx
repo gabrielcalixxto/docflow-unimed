@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppShell from "./components/AppShell";
+import { buttonVariants, cardVariants } from "./components/ui/variants";
 import AdminUsuariosPage from "./pages/AdminUsuariosPage";
 import CadastroEmpresasPage from "./pages/CadastroEmpresasPage";
 import CadastroSetoresPage from "./pages/CadastroSetoresPage";
@@ -34,6 +35,7 @@ import {
   canAccessPainel,
   canAccessSearch,
 } from "./utils/roles";
+import { cn } from "./utils/cn";
 
 const PAGE_ACCESS_RULES = {
   search: canAccessSearch,
@@ -76,10 +78,19 @@ function GlobalErrorDialog({ message, onClose }) {
 
   return (
     <div className="app-error-dialog-backdrop" role="presentation">
-      <div className="app-error-dialog" role="dialog" aria-modal="true" aria-labelledby="app-error-title">
+      <div
+        className={cn("app-error-dialog", cardVariants({ variant: "elevated" }))}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-error-title"
+      >
         <h3 id="app-error-title">Erro</h3>
         <p>{message}</p>
-        <button type="button" className="app-error-dialog-btn" onClick={onClose}>
+        <button
+          type="button"
+          className={cn("app-error-dialog-btn", buttonVariants({ variant: "primary", size: "sm" }))}
+          onClick={onClose}
+        >
           OK
         </button>
       </div>
