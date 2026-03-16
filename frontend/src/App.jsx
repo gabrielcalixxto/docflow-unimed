@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "./components/AppShell";
 import AdminUsuariosPage from "./pages/AdminUsuariosPage";
@@ -14,7 +14,7 @@ import PainelDocumentos from "./pages/PainelDocumentos";
 import PainelRncPage from "./pages/PainelRncPage";
 import SearchPage from "./pages/SearchPage";
 import SolicitacoesPage from "./pages/SolicitacoesPage";
-import { clearStoredToken, getStoredToken, login, storeToken } from "./services/api";
+import { clearStoredToken, getStoredToken, login, refreshSession, storeToken } from "./services/api";
 import { parseJwtPayload } from "./utils/jwt";
 import {
   canAccessAdminCatalog,
@@ -99,10 +99,49 @@ function buildSession(token) {
 
 export default function App() {
   const [token, setToken] = useState(() => getStoredToken());
+  const [isBootstrappingSession, setIsBootstrappingSession] = useState(() => Boolean(getStoredToken()));
   const [activePage, setActivePage] = useState("search");
   const [authError, setAuthError] = useState("");
 
   const session = useMemo(() => buildSession(token), [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const bootstrapSession = async () => {
+      const storedToken = getStoredToken();
+      if (!storedToken) {
+        if (!cancelled) {
+          setIsBootstrappingSession(false);
+        }
+        return;
+      }
+      try {
+        const data = await refreshSession();
+        if (cancelled) {
+          return;
+        }
+        if (data?.access_token) {
+          storeToken(data.access_token);
+          setToken(data.access_token);
+        }
+      } catch (_error) {
+        if (cancelled) {
+          return;
+        }
+        clearStoredToken();
+        setToken(null);
+        setAuthError("Sessao expirada. Faca login novamente.");
+      } finally {
+        if (!cancelled) {
+          setIsBootstrappingSession(false);
+        }
+      }
+    };
+    bootstrapSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleLogin = async (credentials) => {
     try {
@@ -131,6 +170,10 @@ export default function App() {
       setAuthError(message);
     }
   };
+
+  if (isBootstrappingSession) {
+    return <div className="page-animation">Carregando sessao...</div>;
+  }
 
   if (!session) {
     return <LoginPage onLogin={handleLogin} errorMessage={authError} />;

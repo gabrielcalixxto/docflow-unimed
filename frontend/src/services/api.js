@@ -69,6 +69,13 @@ export async function login(credentials) {
   );
 }
 
+export async function refreshSession() {
+  return request({
+    method: "post",
+    url: "/auth/refresh",
+  });
+}
+
 export async function searchDocuments() {
   return request({
     method: "get",

@@ -74,6 +74,58 @@ def test_auth_login_returns_401_on_invalid_credentials(public_client) -> None:
         app.dependency_overrides.clear()
 
 
+def test_auth_refresh_returns_new_token_for_current_session(authorized_client, current_user) -> None:
+    import app.routers.auth as auth_router
+
+    service = Mock()
+    token = create_access_token(
+        subject=current_user.username or "revisor.docflow",
+        role=UserRole.ADMIN,
+        roles=[UserRole.ADMIN, UserRole.REVISOR],
+        email=current_user.email,
+        user_id=current_user.user_id,
+        sector_ids=[10],
+    )
+    service.refresh_session.return_value = TokenResponse(access_token=token, token_type="bearer")
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = authorized_client.post("/auth/refresh")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["token_type"] == "bearer"
+        decoded = jwt.decode(
+            body["access_token"],
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+        assert decoded["sub"] == (current_user.username or current_user.email)
+        assert set(decoded["roles"]) == {"ADMIN", "REVISOR"}
+        service.refresh_session.assert_called_once_with(
+            current_user_subject=current_user.username or current_user.email,
+            current_user_id=current_user.user_id,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_auth_refresh_returns_401_when_session_user_is_invalid(authorized_client) -> None:
+    import app.routers.auth as auth_router
+
+    service = Mock()
+    service.refresh_session.side_effect = InvalidCredentialsError
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = authorized_client.post("/auth/refresh")
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid session user."}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_protected_documents_route_requires_authentication(public_client) -> None:
     response = public_client.get("/documents")
 
