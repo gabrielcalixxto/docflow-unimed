@@ -14,14 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
-from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
+from app.core.logging_config import configure_logging
 from app.core.realtime import realtime_broker
 from app.models.document_version import DocumentVersion
 from app.models.stored_file import StoredFile
 from app.models import audit_log, audit_log_change, company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
 from app.routers import admin_catalog, admin_users, audit, auth, documents, files, realtime, search, versions
 
-configure_logging(settings.log_level)
+configure_logging("ERROR")
 logger = logging.getLogger(__name__)
 
 
@@ -314,7 +314,7 @@ def migrate_legacy_uploaded_files_to_database(legacy_root: Path) -> None:
                 session.commit()
         except SQLAlchemyError as exc:
             session.rollback()
-            logger.warning("Legacy file migration skipped: %s", exc)
+            logger.error("Legacy file migration failed: %s", exc)
 
 
 @asynccontextmanager
@@ -330,7 +330,7 @@ async def lifespan(_: FastAPI):
         ensure_audit_log_structure()
         migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)
     except SQLAlchemyError as exc:
-        logger.warning("Database initialization skipped: %s", exc)
+        logger.error("Database initialization failed: %s", exc)
     realtime_broker.start()
     yield
     realtime_broker.stop()
@@ -358,6 +358,11 @@ OPENAPI_TAGS = [
     {"name": "health", "description": "Verificação de saúde da API."},
 ]
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
@@ -372,18 +377,11 @@ app.mount("/files", StaticFiles(directory=LEGACY_UPLOAD_ROOT), name="legacy-uplo
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=DEFAULT_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-if settings.log_requests:
-    app.add_middleware(
-        RequestResponseLoggingMiddleware,
-        log_response_body=settings.log_response_body,
-        max_body_chars=settings.log_response_body_max_chars,
-    )
 
 
 @app.get("/health", tags=["health"])

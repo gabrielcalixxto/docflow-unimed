@@ -3,29 +3,50 @@ from __future__ import annotations
 import json
 import logging
 from time import perf_counter
+from urllib.parse import parse_qsl, urlencode
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-_SENSITIVE_KEYS = {"password", "password_hash", "access_token", "refresh_token", "authorization"}
+_SENSITIVE_KEY_FRAGMENTS = {
+    "password",
+    "token",
+    "authorization",
+    "secret",
+    "api_key",
+    "apikey",
+    "cookie",
+}
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = key.strip().lower()
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _SENSITIVE_KEY_FRAGMENTS)
 
 
 def configure_logging(level: str) -> None:
-    normalized_level = level.upper()
-    resolved_level = getattr(logging, normalized_level, logging.INFO)
+    normalized_level = (level or "ERROR").upper()
+    resolved_level = getattr(logging, normalized_level, logging.ERROR)
     logging.basicConfig(
         level=resolved_level,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        force=True,
     )
+    # Keep third-party noise low in production containers.
+    logging.getLogger("uvicorn.access").setLevel(logging.CRITICAL)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.ERROR)
 
 
 def _sanitize_json_payload(payload: object) -> object:
     if isinstance(payload, dict):
         sanitized: dict[object, object] = {}
         for key, value in payload.items():
-            if isinstance(key, str) and key.lower() in _SENSITIVE_KEYS:
+            if isinstance(key, str) and _is_sensitive_key(key):
                 sanitized[key] = "***"
             else:
                 sanitized[key] = _sanitize_json_payload(value)
@@ -33,6 +54,19 @@ def _sanitize_json_payload(payload: object) -> object:
     if isinstance(payload, list):
         return [_sanitize_json_payload(item) for item in payload]
     return payload
+
+
+def _sanitize_query_string(query: str) -> str:
+    if not query:
+        return ""
+    parsed = parse_qsl(query, keep_blank_values=True)
+    sanitized_pairs: list[tuple[str, str]] = []
+    for key, value in parsed:
+        if _is_sensitive_key(key):
+            sanitized_pairs.append((key, "***"))
+        else:
+            sanitized_pairs.append((key, value))
+    return urlencode(sanitized_pairs)
 
 
 class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
@@ -53,7 +87,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         method = request.method
         path = request.url.path
-        query = str(request.url.query)
+        query = _sanitize_query_string(str(request.url.query))
         started_at = perf_counter()
 
         self.logger.info(
