@@ -37,6 +37,15 @@ import {
 } from "./utils/roles";
 import { cn } from "./utils/cn";
 
+const FONT_SCALE_STEPS = [
+  { value: 1.08, label: 100 },
+  { value: 1.16, label: 116 },
+  { value: 1.24, label: 124 },
+  { value: 0.95, label: 95 },
+];
+const THEME_STORAGE_KEY = "docflow_theme_mode";
+const FONT_SCALE_STORAGE_KEY = "docflow_font_scale";
+
 const PAGE_ACCESS_RULES = {
   search: canAccessSearch,
   "novo-documento": canAccessNovoDocumento,
@@ -135,12 +144,40 @@ function buildSession(token) {
   };
 }
 
+function loadStoredTheme() {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return saved === "dark" ? "dark" : "light";
+}
+
+function resolveFontScaleStep(value) {
+  return FONT_SCALE_STEPS.reduce((closest, step) =>
+    Math.abs(step.value - value) < Math.abs(closest.value - value) ? step : closest,
+  FONT_SCALE_STEPS[0]);
+}
+
+function loadStoredFontScale() {
+  if (typeof window === "undefined") {
+    return FONT_SCALE_STEPS[0].value;
+  }
+  const saved = Number(window.localStorage.getItem(FONT_SCALE_STORAGE_KEY));
+  if (Number.isNaN(saved)) {
+    return FONT_SCALE_STEPS[0].value;
+  }
+  return resolveFontScaleStep(saved).value;
+}
+
 export default function App() {
   const [token, setToken] = useState(() => getStoredToken());
   const [isBootstrappingSession, setIsBootstrappingSession] = useState(() => Boolean(getStoredToken()));
   const [activePage, setActivePage] = useState("search");
   const [authError, setAuthError] = useState("");
   const [globalErrorMessage, setGlobalErrorMessage] = useState("");
+  const [themeMode, setThemeMode] = useState(loadStoredTheme);
+  const [fontScale, setFontScale] = useState(loadStoredFontScale);
+  const fontScaleStep = useMemo(() => resolveFontScaleStep(fontScale), [fontScale]);
 
   const session = useMemo(() => buildSession(token), [token]);
 
@@ -237,11 +274,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.body.classList.toggle("theme-dark", themeMode === "dark");
+    document.documentElement.style.fontSize = `${Math.round(fontScale * 100)}%`;
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    window.localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(fontScale));
+  }, [themeMode, fontScale]);
+
+  useEffect(() => {
     setGlobalErrorListener(handleGlobalError);
     return () => {
       setGlobalErrorListener(null);
     };
   }, [handleGlobalError]);
+
+  const handleToggleTheme = useCallback(() => {
+    setThemeMode((prev) => (prev === "dark" ? "light" : "dark"));
+  }, []);
+
+  const handleIncreaseFont = useCallback(() => {
+    setFontScale((prev) => {
+      const currentStep = resolveFontScaleStep(prev);
+      const currentIndex = FONT_SCALE_STEPS.findIndex((step) => step.value === currentStep.value);
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextIndex = (safeIndex + 1) % FONT_SCALE_STEPS.length;
+      return FONT_SCALE_STEPS[nextIndex].value;
+    });
+  }, []);
 
   if (isBootstrappingSession) {
     return (
@@ -271,6 +329,11 @@ export default function App() {
         onPageChange={setActivePage}
         session={session}
         onLogout={() => handleLogout("")}
+        themeMode={themeMode}
+        fontScale={fontScale}
+        fontScaleLabel={fontScaleStep.label}
+        onToggleTheme={handleToggleTheme}
+        onIncreaseFont={handleIncreaseFont}
       >
         {resolvedPage === "search" && (
           <SearchPage onUnauthorized={handleUnauthorized} />
