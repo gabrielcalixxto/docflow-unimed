@@ -18,7 +18,7 @@
   }
 
   body {
-    @apply font-sans text-ink bg-mist;
+    @apply bg-zinc-50 font-sans text-zinc-900;
   }
 
   h1,
@@ -46,7 +46,7 @@
   input,
   select,
   textarea {
-    @apply w-full rounded-xl border border-emerald-900/15 bg-white px-3 py-2.5 text-sm text-ink shadow-sm outline-none transition focus:border-unimed-400 focus:ring-2 focus:ring-unimed-300/45;
+    @apply w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition hover:border-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100;
   }
 
   select:disabled,
@@ -63,7 +63,7 @@
 
 @layer components {
   .ui-card {
-    @apply rounded-2xl border border-emerald-900/10 bg-white/90 shadow-card backdrop-blur;
+    @apply rounded-2xl border border-zinc-200 bg-white shadow-sm;
   }
 
   .ui-btn {
@@ -75,11 +75,11 @@
   }
 
   .ui-btn-secondary {
-    @apply border-emerald-900/20 bg-white text-ink hover:border-unimed-500 hover:bg-unimed-50;
+    @apply border-zinc-300 bg-white text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50;
   }
 
   .ui-btn-ghost {
-    @apply border-unimed-500/30 bg-white/80 text-unimed-700 hover:border-unimed-500 hover:bg-unimed-50;
+    @apply border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50;
   }
 
   .ui-btn-danger {
@@ -87,7 +87,7 @@
   }
 
   .ui-input {
-    @apply w-full rounded-xl border border-emerald-900/15 bg-white px-3 py-2.5 text-sm text-ink shadow-sm outline-none transition focus:border-unimed-400 focus:ring-2 focus:ring-unimed-300/45;
+    @apply w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition hover:border-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100;
   }
 
   .ui-badge {
@@ -95,23 +95,23 @@
   }
 
   .kicker {
-    @apply text-[0.7rem] font-extrabold uppercase tracking-[0.18em] text-unimed-700;
+    @apply text-[0.7rem] font-extrabold uppercase tracking-[0.18em] text-zinc-600;
   }
 
   .panel-float {
-    @apply rounded-2xl border border-emerald-900/10 bg-white/90 shadow-card backdrop-blur;
+    @apply rounded-2xl border border-zinc-200 bg-white shadow-sm backdrop-blur;
   }
 
   .hero-block {
-    @apply flex items-center justify-between gap-4 rounded-2xl border border-emerald-900/10 bg-white/90 p-5 shadow-card backdrop-blur;
+    @apply flex items-center justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm backdrop-blur;
   }
 
   .hero-block h2 {
-    @apply text-[1.55rem] text-ink;
+    @apply text-[1.85rem] font-semibold text-zinc-900;
   }
 
   .hero-block p {
-    @apply mt-1 text-sm leading-relaxed text-ink/80;
+    @apply mt-1 text-sm leading-relaxed text-zinc-600;
   }
 
   .layout-root {
@@ -132,7 +132,11 @@
   }
 
   .brand-mark {
-    @apply grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-amber-300 to-citrus font-extrabold text-amber-950;
+    @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-emerald-900/15 bg-gradient-to-br from-emerald-100 to-citrus px-2 text-emerald-900 shadow-sm;
+  }
+
+  .brand-mark-text {
+    @apply text-[0.62rem] font-extrabold uppercase tracking-[0.08em];
   }
 
   .brand-title {
@@ -204,10 +208,25 @@
   }
 
   .sidebar-foot {
-    @apply mt-auto;
+    @apply mt-auto flex justify-end;
   }
 
-  .collapse-btn,
+  .sidebar-card.collapsed .sidebar-foot {
+    @apply justify-center;
+  }
+
+  .collapse-btn {
+    @apply ml-auto inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 text-xs font-semibold text-white shadow-sm backdrop-blur transition-all duration-150 hover:border-white/45 hover:bg-white/20;
+  }
+
+  .collapse-btn svg {
+    @apply h-3.5 w-3.5;
+  }
+
+  .collapse-btn.is-collapsed {
+    @apply h-9 w-9 rounded-full px-0;
+  }
+
   .mobile-toggle,
   .ghost-btn,
   .compact-submit,
@@ -220,14 +239,13 @@
     @apply inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-all duration-150;
   }
 
-  .collapse-btn,
   .mobile-toggle,
   .ghost-btn,
   .table-btn,
   .section-clear-btn,
   .file-remove-btn,
   .logout-btn {
-    @apply border-unimed-500/30 bg-white/80 text-unimed-700 hover:border-unimed-500 hover:bg-unimed-50;
+    @apply border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50;
   }
 
   .compact-submit,
@@ -252,10 +270,6 @@
     @apply min-h-8 px-2 py-1 text-xs;
   }
 
-  .collapse-btn {
-    @apply w-full;
-  }
-
   .mobile-toggle {
     @apply hidden min-h-9 min-w-9 px-2;
   }
@@ -269,7 +283,7 @@
   }
 
   .topbar {
-    @apply sticky top-3 z-20 flex items-center justify-between gap-3 rounded-2xl border border-emerald-900/10 bg-white/90 p-4 shadow-card backdrop-blur;
+    @apply sticky top-3 z-20 flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm backdrop-blur;
   }
 
   .topbar-left,
@@ -277,16 +291,36 @@
     @apply flex items-center gap-3;
   }
 
+  .topbar-accessibility {
+    @apply flex items-center gap-2;
+  }
+
+  .topbar-control-btn {
+    @apply min-h-9 px-2.5;
+  }
+
+  .topbar-control-btn svg {
+    @apply h-4 w-4;
+  }
+
+  .topbar-control-text {
+    @apply text-xs font-extrabold;
+  }
+
+  .topbar-control-label {
+    @apply text-xs font-semibold;
+  }
+
   .topbar-title {
-    @apply text-sm font-semibold text-ink;
+    @apply text-sm font-semibold text-zinc-900;
   }
 
   .topbar-subtitle {
-    @apply text-xs text-ink/70;
+    @apply text-xs text-zinc-600;
   }
 
   .user-chip {
-    @apply inline-flex items-center rounded-full bg-unimed-100 px-2.5 py-1 text-xs font-semibold text-unimed-800;
+    @apply inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700;
   }
 
   .page-root {
@@ -321,7 +355,7 @@
   }
 
   .workflow-hint {
-    @apply mt-1 text-xs leading-relaxed text-ink/65;
+    @apply mt-1 text-xs leading-relaxed text-zinc-500;
   }
 
   .form-grid {
@@ -336,7 +370,7 @@
   .form-grid label,
   .painel-filters-grid label,
   .catalog-filter {
-    @apply flex flex-col gap-1.5 text-xs font-semibold text-ink/80;
+    @apply flex flex-col gap-1.5 text-sm font-medium text-zinc-700;
   }
 
   .span-2 {
@@ -365,7 +399,7 @@
   }
 
   .check-item {
-    @apply flex items-center gap-2 rounded-xl border border-emerald-900/10 bg-white px-3 py-2 text-sm;
+    @apply flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm;
   }
 
   .check-item input {
@@ -376,7 +410,7 @@
   .panel-docs-table-wrap,
   .workflow-list,
   .versions-box {
-    @apply rounded-2xl border border-emerald-900/10 bg-white/90 shadow-card backdrop-blur;
+    @apply rounded-2xl border border-zinc-200 bg-white shadow-sm backdrop-blur;
   }
 
   .workflow-list,
@@ -390,34 +424,59 @@
   }
 
   .workflow-list-head h3 {
-    @apply text-lg font-bold text-ink;
+    @apply text-lg font-semibold text-zinc-900;
   }
 
   .catalog-filter-row {
-    @apply mb-3 grid gap-3;
-    grid-template-columns: repeat(1, minmax(0, 1fr));
+    @apply mb-3 flex flex-nowrap items-end gap-2.5 overflow-x-auto;
   }
 
   .catalog-filter {
-    @apply w-full;
+    @apply w-auto min-w-[170px] shrink-0;
   }
 
   .painel-filters-grid,
   .filters-grid {
-    @apply grid gap-3 rounded-2xl border border-emerald-900/10 bg-white/90 p-4 shadow-card backdrop-blur;
-    grid-template-columns: repeat(1, minmax(0, 1fr));
+    @apply flex flex-nowrap items-end gap-2.5 overflow-x-auto rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 shadow-sm backdrop-blur;
+  }
+
+  .painel-filters-grid > label,
+  .filters-grid > label,
+  .catalog-filter-row > .catalog-filter {
+    @apply min-w-[170px] max-w-[220px] shrink-0;
+  }
+
+  .painel-filters-grid > label:first-child,
+  .filters-grid > label:first-child,
+  .catalog-filter-row > .catalog-filter:first-child {
+    @apply min-w-[220px] max-w-[320px];
+  }
+
+  .painel-filters-grid > label input,
+  .painel-filters-grid > label select,
+  .filters-grid > label input,
+  .filters-grid > label select,
+  .catalog-filter-row > .catalog-filter input,
+  .catalog-filter-row > .catalog-filter select {
+    @apply min-h-9 px-2.5 py-1.5 text-xs;
+  }
+
+  .painel-filters-grid > .ghost-btn,
+  .filters-grid > .ghost-btn,
+  .catalog-filter-row > .ghost-btn {
+    @apply mb-[1px] min-h-9 shrink-0 whitespace-nowrap px-3 py-1.5 text-xs;
   }
 
   .table-wrap {
-    @apply overflow-x-auto rounded-xl border border-emerald-900/10;
+    @apply overflow-x-auto rounded-xl border border-zinc-200;
   }
 
   table thead th {
-    @apply whitespace-nowrap border-b border-emerald-900/10 bg-unimed-50 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-ink/70;
+    @apply whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600;
   }
 
   table tbody td {
-    @apply border-b border-emerald-900/10 px-3 py-2 text-sm text-ink/90;
+    @apply border-b border-zinc-200 px-3 py-2 text-sm text-zinc-900;
   }
 
   table tbody tr:last-child td {
@@ -425,16 +484,16 @@
   }
 
   table tbody tr:hover td {
-    @apply bg-unimed-50/45;
+    @apply bg-zinc-50;
   }
 
   .row-selected td {
-    @apply bg-unimed-100/60;
+    @apply bg-zinc-100/80;
   }
 
   .feedback,
   .error-text {
-    @apply rounded-xl border border-emerald-900/10 bg-white/90 px-4 py-3 text-sm font-semibold shadow-card backdrop-blur;
+    @apply rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold shadow-sm backdrop-blur;
   }
 
   .feedback.success {
@@ -488,11 +547,11 @@
   }
 
   .workflow-stat p {
-    @apply text-xs uppercase tracking-wide text-ink/70;
+    @apply text-xs uppercase tracking-wide text-zinc-500;
   }
 
   .workflow-stat strong {
-    @apply text-lg font-extrabold text-ink;
+    @apply text-lg font-semibold text-zinc-900;
   }
 
   .request-actions {
@@ -509,7 +568,7 @@
   }
 
   .result-card {
-    @apply flex flex-col gap-2 rounded-2xl border border-emerald-900/10 bg-white/90 p-4 text-left shadow-card backdrop-blur transition hover:-translate-y-0.5 hover:border-unimed-300;
+    @apply flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-zinc-300;
   }
 
   .result-head {
@@ -517,15 +576,15 @@
   }
 
   .result-type-pill {
-    @apply inline-flex items-center rounded-full bg-unimed-100 px-2.5 py-1 text-xs font-semibold text-unimed-800;
+    @apply inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700;
   }
 
   .result-head-title {
-    @apply text-sm font-bold text-ink;
+    @apply text-sm font-semibold text-zinc-900;
   }
 
   .result-midline {
-    @apply text-xs font-medium text-ink/65;
+    @apply text-xs font-medium text-zinc-600;
   }
 
   .result-head-meta {
@@ -533,11 +592,11 @@
   }
 
   .result-code {
-    @apply text-xs text-ink/70;
+    @apply text-xs text-zinc-600;
   }
 
   .viewer-drawer {
-    @apply fixed bottom-0 right-0 top-0 z-40 w-full max-w-[920px] translate-x-full border-l border-emerald-900/10 bg-white/95 p-4 shadow-2xl backdrop-blur transition-transform duration-300;
+    @apply fixed bottom-0 right-0 top-0 z-40 w-full max-w-[920px] translate-x-full border-l border-zinc-200 bg-zinc-50 p-4 shadow-2xl backdrop-blur transition-transform duration-300;
   }
 
   .viewer-drawer.open {
@@ -545,7 +604,7 @@
   }
 
   .viewer-head {
-    @apply flex items-start justify-between gap-3 border-b border-emerald-900/10 pb-3;
+    @apply flex items-start justify-between gap-3 border-b border-zinc-200 pb-3;
   }
 
   .viewer-body {
@@ -555,7 +614,7 @@
 
   .preview-panel,
   .meta-panel {
-    @apply rounded-2xl border border-emerald-900/10 bg-white/90 p-3 shadow-card backdrop-blur;
+    @apply rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm backdrop-blur;
   }
 
   .preview-actions {
@@ -563,19 +622,19 @@
   }
 
   .file-frame {
-    @apply h-[55vh] w-full rounded-xl border border-emerald-900/10 bg-white;
+    @apply h-[55vh] w-full rounded-xl border border-zinc-200 bg-white;
   }
 
   .meta-panel h4 {
-    @apply mb-2 text-sm font-extrabold text-ink;
+    @apply mb-2 text-sm font-semibold text-zinc-900;
   }
 
   .meta-panel ul {
-    @apply mb-3 space-y-1.5 text-xs text-ink/80;
+    @apply mb-3 space-y-1.5 text-xs text-zinc-600;
   }
 
   .no-preview {
-    @apply rounded-xl border border-dashed border-emerald-900/20 bg-emerald-50/40 p-4 text-sm text-ink/70;
+    @apply rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600;
   }
 
   .mono {
@@ -588,7 +647,7 @@
 
   .selected-file-box,
   .selected-document-box {
-    @apply mt-3 rounded-xl border border-unimed-300/45 bg-unimed-50/70 p-3;
+    @apply mt-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3;
   }
 
   .selected-chip-list {
@@ -596,7 +655,7 @@
   }
 
   .selected-chip {
-    @apply inline-flex items-center gap-2 rounded-full border border-emerald-900/15 bg-white px-3 py-1 text-xs;
+    @apply inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs;
   }
 
   .selected-chip button {
@@ -611,7 +670,7 @@
 
   .version-item,
   .sector-group {
-    @apply rounded-xl border border-emerald-900/15 bg-white/90 p-3;
+    @apply rounded-xl border border-zinc-200 bg-white p-3;
   }
 
   .sector-group-head {
@@ -619,7 +678,7 @@
   }
 
   .sector-group-title {
-    @apply text-sm font-bold text-ink;
+    @apply text-sm font-semibold text-zinc-900;
   }
 
   .company-picker-row {
@@ -631,7 +690,7 @@
   }
 
   .admin-field-label {
-    @apply mb-1 text-xs font-semibold text-ink/80;
+    @apply mb-1 text-sm font-medium text-zinc-700;
   }
 
   .workflow-tabs {
@@ -639,7 +698,7 @@
   }
 
   .workflow-tab {
-    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-unimed-500/30 bg-white/80 px-3 py-2 text-xs font-semibold text-unimed-700 transition-all duration-150 hover:border-unimed-500 hover:bg-unimed-50;
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 transition-all duration-150 hover:border-zinc-400 hover:bg-zinc-50;
   }
 
   .workflow-tab.active {
@@ -651,7 +710,7 @@
   }
 
   .table-scrollbar-card {
-    @apply mt-2 overflow-x-auto rounded-xl border border-emerald-900/15 bg-white/90 p-1;
+    @apply mt-2 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1;
   }
 
   .table-scrollbar-card--floating {
@@ -671,11 +730,11 @@
   }
 
   .table-scrollbar-track {
-    @apply h-3 rounded-full bg-unimed-100;
+    @apply h-3 rounded-full bg-zinc-200;
   }
 
   .empty-box {
-    @apply rounded-2xl border border-emerald-900/10 bg-white/90 p-6 text-center text-sm text-ink/70 shadow-card backdrop-blur;
+    @apply rounded-2xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-600 shadow-sm backdrop-blur;
   }
 
   .app-error-dialog-backdrop {
@@ -707,11 +766,11 @@
   }
 
   .login-card h1 {
-    @apply text-2xl font-extrabold text-ink;
+    @apply text-2xl font-semibold text-zinc-900;
   }
 
   .login-description {
-    @apply text-sm text-ink/75;
+    @apply text-sm text-zinc-600;
   }
 
   .login-form {
@@ -719,7 +778,7 @@
   }
 
   .login-form label {
-    @apply text-xs font-semibold text-ink/80;
+    @apply text-sm font-medium text-zinc-700;
   }
 
   .login-form button[type="submit"] {
@@ -847,6 +906,10 @@
 
   .topbar-right {
     @apply w-full justify-between;
+  }
+
+  .topbar-control-label {
+    @apply hidden;
   }
 
   .workflow-summary-grid {

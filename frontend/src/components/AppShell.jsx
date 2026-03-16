@@ -30,7 +30,7 @@ const SEARCH_ITEM = {
 
 const APPROVAL_ITEM = {
   id: "central-aprovacao",
-  label: "Central de Aprovacao",
+  label: "Central de Aprovações",
   isVisible: canAccessCentralAprovacao,
   icon: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -44,7 +44,7 @@ const APPROVAL_ITEM = {
 
 const AUDIT_HISTORY_ITEM = {
   id: "historico-acoes",
-  label: "Historico de Acoes",
+  label: "Histórico de Ações",
   isVisible: canAccessAuditHistory,
   icon: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -68,7 +68,7 @@ const MAINTENANCE_ICON = (
 const NAV_GROUPS = [
   {
     id: "solicitacoes",
-    label: "Solicitacoes",
+    label: "Solicitações",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path
@@ -93,7 +93,7 @@ const NAV_GROUPS = [
       },
       {
         id: "historico-solicitacoes",
-        label: "Historico de Solicitacoes",
+        label: "Histórico de Solicitações",
         isVisible: canAccessHistoricoSolicitacoes,
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -147,7 +147,7 @@ const NAV_GROUPS = [
   },
   {
     id: "gestao-cadastros",
-    label: "Gestao de Cadastros",
+    label: "Gestão de Cadastros",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path
@@ -213,7 +213,19 @@ const NAV_GROUPS = [
   },
 ];
 
-export default function AppShell({ children, activePage, onPageChange, session, onLogout }) {
+export default function AppShell({
+  children,
+  activePage,
+  onPageChange,
+  session,
+  onLogout,
+  themeMode = "light",
+  fontScale = 1,
+  fontScaleLabel,
+  onToggleTheme,
+  onIncreaseFont,
+}) {
+  const resolvedFontScaleLabel = typeof fontScaleLabel === "number" ? fontScaleLabel : Math.round(fontScale * 100);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
@@ -249,11 +261,13 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         aria-label="Navegacao principal"
       >
         <div className="sidebar-head">
-          <div className="brand-mark">DF</div>
+          <div className="brand-mark" aria-label="Logo Unimed">
+            <span className="brand-mark-text">Unimed</span>
+          </div>
           {!collapsed && (
             <div className="brand-block">
-              <p className="brand-title">DocFlow</p>
-              <p className="brand-subtitle">Painel operacional</p>
+              <p className="brand-title">Docflow Unimed</p>
+              <p className="brand-subtitle">Painel de gestão de documentos</p>
             </div>
           )}
         </div>
@@ -383,7 +397,7 @@ export default function AppShell({ children, activePage, onPageChange, session, 
         <div className="sidebar-foot">
           <button
             type="button"
-            className={cn("collapse-btn", buttonVariants({ variant: "ghost", size: "sm" }))}
+            className={cn("collapse-btn", collapsed && "is-collapsed")}
             onClick={() => setCollapsed((prev) => !prev)}
             title={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
           >
@@ -411,16 +425,28 @@ export default function AppShell({ children, activePage, onPageChange, session, 
               type="button"
               className={cn("mobile-toggle", buttonVariants({ variant: "ghost", size: "sm" }))}
               onClick={() => setMobileOpen((prev) => !prev)}
+              aria-label={mobileOpen ? "Fechar menu lateral" : "Abrir menu lateral"}
+              title={mobileOpen ? "Fechar menu lateral" : "Abrir menu lateral"}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4 6h16M4 12h16M4 18h16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              {mobileOpen ? (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 6l12 12M18 6l-12 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              )}
             </button>
             <div>
               <p className="topbar-title">Plataforma de documentos</p>
@@ -431,6 +457,43 @@ export default function AppShell({ children, activePage, onPageChange, session, 
           </div>
 
           <div className="topbar-right">
+            <div className="topbar-accessibility">
+              <button
+                type="button"
+                className={cn("topbar-control-btn", buttonVariants({ variant: "ghost", size: "sm" }))}
+                onClick={onIncreaseFont}
+                title={`Aumentar fonte (${resolvedFontScaleLabel}%)`}
+                aria-label={`Aumentar fonte. Tamanho atual ${resolvedFontScaleLabel} por cento`}
+              >
+                <span className="topbar-control-text">A+</span>
+                <span className="topbar-control-label">{resolvedFontScaleLabel}%</span>
+              </button>
+
+              <button
+                type="button"
+                className={cn("topbar-control-btn", buttonVariants({ variant: "ghost", size: "sm" }))}
+                onClick={onToggleTheme}
+                title={themeMode === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
+                aria-label={themeMode === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
+              >
+                {themeMode === "dark" ? (
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1Zm0 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 3a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM4 11a1 1 0 1 1 0 2H3a1 1 0 1 1 0-2h1Zm17 0a1 1 0 1 1 0 2h-1a1 1 0 1 1 0-2h1ZM6.2 6.2a1 1 0 0 1 1.4 0l.7.7a1 1 0 0 1-1.4 1.4l-.7-.7a1 1 0 0 1 0-1.4Zm10.9 10.9a1 1 0 0 1 1.4 0l.7.7a1 1 0 1 1-1.4 1.4l-.7-.7a1 1 0 0 1 0-1.4ZM6.2 19a1 1 0 0 1 0-1.4l.7-.7a1 1 0 1 1 1.4 1.4l-.7.7a1 1 0 0 1-1.4 0Zm10.9-10.9a1 1 0 0 1 0-1.4l.7-.7a1 1 0 1 1 1.4 1.4l-.7.7a1 1 0 0 1-1.4 0Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M14.8 3.8a1 1 0 0 1 .2 1.1A8 8 0 1 0 19 15a1 1 0 0 1 1.1-.2 1 1 0 0 1 .6.9A10 10 0 1 1 14.1 3a1 1 0 0 1 .7.8Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                )}
+                <span className="topbar-control-label">{themeMode === "dark" ? "Dark" : "Light"}</span>
+              </button>
+            </div>
             <div className="user-chip">
               <p>{session.username || session.email}</p>
             </div>

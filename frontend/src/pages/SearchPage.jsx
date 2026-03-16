@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
-  getDocumentEvents,
   getDocumentFormOptions,
   resolveApiFileUrl,
   searchDocuments,
@@ -46,18 +45,6 @@ function formatDateTime(value) {
   return parsed.toLocaleString("pt-BR");
 }
 
-function buildEventSummary(eventItem) {
-  const actor = eventItem.user_name || (eventItem.user_id ? `Usuario #${eventItem.user_id}` : "Sistema");
-  const entity = eventItem.entity_type || "entidade";
-  if (eventItem.field_name && eventItem.old_value != null && eventItem.new_value != null) {
-    return `${actor} alterou ${entity}.${eventItem.field_name} de "${eventItem.old_value}" para "${eventItem.new_value}"`;
-  }
-  if (eventItem.field_name && eventItem.new_value != null) {
-    return `${actor} registrou ${eventItem.action} em ${entity}.${eventItem.field_name} = "${eventItem.new_value}"`;
-  }
-  return `${actor} executou ${eventItem.action || "acao"} em ${entity}`;
-}
-
 export default function SearchPage({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const [filters, setFilters] = useState({
@@ -77,8 +64,6 @@ export default function SearchPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedResult, setSelectedResult] = useState(null);
-  const [documentEvents, setDocumentEvents] = useState([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
 
   const loadResults = async () => {
     setLoading(true);
@@ -176,46 +161,6 @@ export default function SearchPage({ onUnauthorized }) {
     setSelectedResult(item);
     setViewerOpen(true);
   };
-
-  useEffect(() => {
-    const documentId = selectedResult?.document_id;
-    if (!viewerOpen || !documentId) {
-      setDocumentEvents([]);
-      return;
-    }
-
-    let mounted = true;
-
-    const loadDocumentEvents = async () => {
-      setEventsLoading(true);
-      try {
-        const response = await getDocumentEvents(documentId, { page: 1, page_size: 100 });
-        if (!mounted) {
-          return;
-        }
-        setDocumentEvents(Array.isArray(response?.items) ? response.items : []);
-      } catch (requestError) {
-        if (!mounted) {
-          return;
-        }
-        if (requestError.status === 401) {
-          onUnauthorized?.();
-          return;
-        }
-        showGlobalError(requestError.message || "Nao foi possivel carregar a trilha de auditoria.");
-      } finally {
-        if (mounted) {
-          setEventsLoading(false);
-        }
-      }
-    };
-
-    loadDocumentEvents();
-
-    return () => {
-      mounted = false;
-    };
-  }, [viewerOpen, selectedResult?.document_id]);
 
   const handleDownloadSelected = () => {
     if (!selectedResult) {
@@ -486,19 +431,6 @@ export default function SearchPage({ onUnauthorized }) {
                   {sectorNameById.get(String(selectedResult.sector_id)) || "Setor desconhecido"}
                 </li>
               </ul>
-
-              <h4>Trilha de auditoria</h4>
-              {eventsLoading && <p>Carregando eventos...</p>}
-              {!eventsLoading && (
-                <ul>
-                  {documentEvents.map((eventItem) => (
-                    <li key={eventItem.id}>
-                      <strong>{formatDateTime(eventItem.created_at)}:</strong> {buildEventSummary(eventItem)}
-                    </li>
-                  ))}
-                  {documentEvents.length === 0 && <li>Sem eventos registrados para este documento.</li>}
-                </ul>
-              )}
             </div>
           </div>
         )}

@@ -5,11 +5,11 @@ const BUTTON_BASE =
 
 const BUTTON_VARIANTS = {
   primary:
-    "border-unimed-600 bg-unimed-600 text-white shadow-sm hover:border-unimed-700 hover:bg-unimed-700",
+    "border-emerald-700 bg-emerald-700 text-white shadow-sm hover:border-emerald-800 hover:bg-emerald-800",
   secondary:
-    "border-emerald-900/20 bg-white text-ink-900 hover:border-unimed-500 hover:bg-unimed-50",
+    "border-zinc-300 bg-white text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50",
   ghost:
-    "border-unimed-500/30 bg-white/80 text-unimed-700 hover:border-unimed-500 hover:bg-unimed-50",
+    "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50",
   danger: "border-red-600 bg-red-600 text-white hover:border-red-700 hover:bg-red-700",
 };
 
@@ -20,21 +20,21 @@ const BUTTON_SIZES = {
 };
 
 const CARD_BASE =
-  "ui-card rounded-2xl border border-emerald-900/10 bg-white/90 shadow-card backdrop-blur-sm";
+  "ui-card rounded-2xl border border-zinc-200 bg-white shadow-sm";
 
 const CARD_VARIANTS = {
   default: "",
-  elevated: "shadow-glow",
-  subtle: "border-emerald-900/8 bg-white/80 shadow-sm",
+  elevated: "shadow-md",
+  subtle: "border-zinc-200 bg-zinc-50/70 shadow-sm",
 };
 
 const INPUT_BASE =
-  "ui-input w-full rounded-xl border border-emerald-900/15 bg-white px-3 py-2.5 text-sm text-ink-900 shadow-sm outline-none transition focus:border-unimed-400 focus:ring-2 focus:ring-unimed-300/45";
+  "ui-input w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition hover:border-zinc-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 
 const INPUT_VARIANTS = {
   default: "",
   invalid: "border-red-400 focus:border-red-500 focus:ring-red-300/40",
-  success: "border-unimed-400 focus:border-unimed-500 focus:ring-unimed-300/40",
+  success: "border-emerald-500 focus:border-emerald-600 focus:ring-emerald-100",
 };
 
 const BADGE_BASE = "ui-badge inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold";

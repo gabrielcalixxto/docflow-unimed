@@ -4,9 +4,9 @@
 
 body {
   background:
-    radial-gradient(1100px 520px at 4% -22%, rgba(0, 153, 93, 0.23), transparent 62%),
-    radial-gradient(1020px 520px at 96% -18%, rgba(191, 215, 48, 0.2), transparent 58%),
-    linear-gradient(180deg, #f4f9f6, #edf6f0 52%, #e7f1eb);
+    radial-gradient(1100px 520px at 4% -22%, rgba(113, 118, 129, 0.12), transparent 62%),
+    radial-gradient(1020px 520px at 96% -18%, rgba(161, 167, 179, 0.12), transparent 58%),
+    linear-gradient(180deg, #fafafa, #f5f6f8 52%, #f3f4f6);
 }
 
 .panel-float,
@@ -26,7 +26,7 @@ body {
   bottom: -11px;
   height: 18px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(15, 50, 41, 0.25), rgba(15, 50, 41, 0));
+  background: linear-gradient(90deg, rgba(63, 70, 84, 0.18), rgba(63, 70, 84, 0));
   filter: blur(10px);
   opacity: 0.54;
   pointer-events: none;
@@ -35,21 +35,21 @@ body {
 
 .file-drop-zone {
   margin-top: 12px;
-  border: 1.5px dashed rgba(8, 122, 73, 0.34);
+  border: 1.5px dashed rgba(141, 150, 163, 0.5);
   border-radius: 14px;
-  background: rgba(239, 251, 244, 0.85);
+  background: rgba(255, 255, 255, 0.96);
   padding: 14px;
   transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 }
 
 .file-drop-zone.active {
-  border-color: rgba(0, 153, 93, 0.82);
-  background: rgba(221, 246, 234, 0.9);
+  border-color: rgba(5, 150, 105, 0.7);
+  background: rgba(243, 250, 247, 0.96);
   transform: translateY(-1px);
 }
 
 .file-drop-zone p {
-  color: rgba(16, 50, 41, 0.76);
+  color: rgba(63, 70, 84, 0.82);
   font-size: 0.82rem;
 }
 
@@ -59,7 +59,7 @@ body {
 .viewer-drawer,
 .sidebar-card {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 153, 93, 0.35) transparent;
+  scrollbar-color: rgba(120, 127, 139, 0.4) transparent;
 }
 
 .workflow-list::-webkit-scrollbar,
@@ -77,7 +77,7 @@ body {
 .viewer-drawer::-webkit-scrollbar-thumb,
 .sidebar-card::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(0, 153, 93, 0.38);
+  background: rgba(120, 127, 139, 0.42);
 }
 
 .workflow-list::-webkit-scrollbar-track,
@@ -86,6 +86,110 @@ body {
 .viewer-drawer::-webkit-scrollbar-track,
 .sidebar-card::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Light mode neutrality: dark text + neutral grays, green only for primary actions/highlights */
+body:not(.theme-dark) .content-root {
+  color: #18181b;
+}
+
+body:not(.theme-dark) .content-root .kicker {
+  color: #52525b;
+}
+
+body:not(.theme-dark) .content-root .topbar-title,
+body:not(.theme-dark) .content-root .hero-block h2,
+body:not(.theme-dark) .content-root .workflow-card h3,
+body:not(.theme-dark) .content-root .workflow-list-head h3,
+body:not(.theme-dark) .content-root .result-head-title,
+body:not(.theme-dark) .content-root .meta-panel h4 {
+  color: #18181b;
+}
+
+body:not(.theme-dark) .content-root .topbar-subtitle,
+body:not(.theme-dark) .content-root .hero-block p,
+body:not(.theme-dark) .content-root .workflow-hint,
+body:not(.theme-dark) .content-root .result-code,
+body:not(.theme-dark) .content-root .result-midline,
+body:not(.theme-dark) .content-root .result-head-meta,
+body:not(.theme-dark) .content-root .meta-panel ul,
+body:not(.theme-dark) .content-root .empty-box,
+body:not(.theme-dark) .content-root .workflow-stat p,
+body:not(.theme-dark) .content-root .no-preview {
+  color: #52525b;
+}
+
+body:not(.theme-dark) .content-root label,
+body:not(.theme-dark) .content-root .admin-field-label {
+  color: #3f3f46;
+}
+
+body:not(.theme-dark) .content-root input,
+body:not(.theme-dark) .content-root select,
+body:not(.theme-dark) .content-root textarea {
+  background: #ffffff;
+  border-color: #d4d4d8;
+  color: #18181b;
+}
+
+body:not(.theme-dark) .content-root input::placeholder,
+body:not(.theme-dark) .content-root textarea::placeholder {
+  color: #a1a1aa;
+}
+
+body:not(.theme-dark) .content-root input:hover,
+body:not(.theme-dark) .content-root select:hover,
+body:not(.theme-dark) .content-root textarea:hover {
+  border-color: #a1a1aa;
+}
+
+body:not(.theme-dark) .content-root input:focus,
+body:not(.theme-dark) .content-root select:focus,
+body:not(.theme-dark) .content-root textarea:focus {
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(209, 250, 229, 0.95);
+}
+
+body:not(.theme-dark) .content-root .ghost-btn,
+body:not(.theme-dark) .content-root .mobile-toggle,
+body:not(.theme-dark) .content-root .table-btn,
+body:not(.theme-dark) .content-root .section-clear-btn,
+body:not(.theme-dark) .content-root .file-remove-btn,
+body:not(.theme-dark) .content-root .logout-btn,
+body:not(.theme-dark) .content-root .topbar-control-btn,
+body:not(.theme-dark) .content-root .workflow-tab {
+  background: #ffffff;
+  border-color: #d4d4d8;
+  color: #3f3f46;
+}
+
+body:not(.theme-dark) .content-root .ghost-btn:hover,
+body:not(.theme-dark) .content-root .mobile-toggle:hover,
+body:not(.theme-dark) .content-root .table-btn:hover,
+body:not(.theme-dark) .content-root .section-clear-btn:hover,
+body:not(.theme-dark) .content-root .file-remove-btn:hover,
+body:not(.theme-dark) .content-root .logout-btn:hover,
+body:not(.theme-dark) .content-root .topbar-control-btn:hover,
+body:not(.theme-dark) .content-root .workflow-tab:hover {
+  background: #fafafa;
+  border-color: #a1a1aa;
+}
+
+body:not(.theme-dark) .content-root .compact-submit,
+body:not(.theme-dark) .content-root .company-add-btn,
+body:not(.theme-dark) .content-root .app-error-dialog-btn,
+body:not(.theme-dark) .content-root .workflow-tab.active {
+  background: #047857;
+  border-color: #047857;
+  color: #ffffff;
+}
+
+body:not(.theme-dark) .content-root .compact-submit:hover,
+body:not(.theme-dark) .content-root .company-add-btn:hover,
+body:not(.theme-dark) .content-root .app-error-dialog-btn:hover,
+body:not(.theme-dark) .content-root .workflow-tab.active:hover {
+  background: #065f46;
+  border-color: #065f46;
 }
 
 .table-scrollbar-card--floating {
@@ -129,4 +233,307 @@ body {
   .table-scrollbar-card--floating {
     display: none;
   }
+}
+
+body.theme-dark {
+  color-scheme: dark;
+  background:
+    radial-gradient(1200px 560px at 4% -24%, rgba(96, 105, 120, 0.2), transparent 62%),
+    radial-gradient(980px 520px at 96% -20%, rgba(66, 72, 84, 0.16), transparent 58%),
+    linear-gradient(180deg, #090a0b, #0f1114 52%, #15181d);
+  color: #edf1f7;
+}
+
+body.theme-dark .kicker {
+  color: #c2c8d3;
+}
+
+body.theme-dark .panel-float,
+body.theme-dark .topbar,
+body.theme-dark .hero-block,
+body.theme-dark .workflow-list,
+body.theme-dark .versions-box,
+body.theme-dark .panel-docs-table-wrap,
+body.theme-dark .preview-panel,
+body.theme-dark .meta-panel,
+body.theme-dark .viewer-drawer,
+body.theme-dark .table-scrollbar-card,
+body.theme-dark .empty-box,
+body.theme-dark .result-card,
+body.theme-dark .app-error-dialog,
+body.theme-dark .selected-document-box,
+body.theme-dark .selected-file-box,
+body.theme-dark .version-item,
+body.theme-dark .sector-group,
+body.theme-dark .check-item,
+body.theme-dark .selected-chip {
+  background: rgba(20, 23, 29, 0.94);
+  border-color: rgba(132, 140, 156, 0.22);
+  color: #edf1f7;
+  box-shadow: 0 16px 48px rgba(3, 4, 6, 0.5);
+}
+
+body.theme-dark .hero-block {
+  background: radial-gradient(900px 280px at right center, rgba(104, 112, 128, 0.2), transparent),
+    rgba(20, 23, 29, 0.94);
+}
+
+body.theme-dark .topbar-title,
+body.theme-dark .topbar-subtitle,
+body.theme-dark .hero-block p,
+body.theme-dark .workflow-hint,
+body.theme-dark .result-code,
+body.theme-dark .result-midline,
+body.theme-dark .result-head-meta,
+body.theme-dark .meta-panel ul,
+body.theme-dark .empty-box,
+body.theme-dark .admin-field-label,
+body.theme-dark .workflow-stat p,
+body.theme-dark .no-preview,
+body.theme-dark .login-description,
+body.theme-dark .login-form label {
+  color: #b2bac8;
+}
+
+body.theme-dark .hero-block h2,
+body.theme-dark .workflow-card h3,
+body.theme-dark .workflow-list-head h3,
+body.theme-dark .result-head-title,
+body.theme-dark .topbar-title,
+body.theme-dark .app-error-dialog h3,
+body.theme-dark .login-card h1 {
+  color: #f5f7fb;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea {
+  background: rgba(13, 15, 20, 0.98);
+  border-color: rgba(111, 120, 136, 0.42);
+  color: #edf2f8;
+}
+
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+  color: #8f99aa;
+}
+
+body.theme-dark input:focus,
+body.theme-dark select:focus,
+body.theme-dark textarea:focus {
+  border-color: rgba(158, 168, 184, 0.85);
+  box-shadow: 0 0 0 2px rgba(158, 168, 184, 0.25);
+}
+
+body.theme-dark .ghost-btn,
+body.theme-dark .mobile-toggle,
+body.theme-dark .table-btn,
+body.theme-dark .section-clear-btn,
+body.theme-dark .file-remove-btn,
+body.theme-dark .logout-btn,
+body.theme-dark .topbar-control-btn {
+  background: rgba(23, 26, 33, 0.96);
+  border-color: rgba(121, 130, 145, 0.45);
+  color: #d6dce7;
+}
+
+body.theme-dark .ghost-btn:hover,
+body.theme-dark .mobile-toggle:hover,
+body.theme-dark .table-btn:hover,
+body.theme-dark .section-clear-btn:hover,
+body.theme-dark .file-remove-btn:hover,
+body.theme-dark .logout-btn:hover,
+body.theme-dark .topbar-control-btn:hover {
+  background: rgba(32, 37, 47, 0.98);
+  border-color: rgba(157, 166, 181, 0.62);
+}
+
+body.theme-dark .compact-submit,
+body.theme-dark .company-add-btn,
+body.theme-dark .app-error-dialog-btn,
+body.theme-dark .workflow-tab.active {
+  background: #303746;
+  border-color: #434c5f;
+  color: #eef2f8;
+}
+
+body.theme-dark .compact-submit:hover,
+body.theme-dark .company-add-btn:hover,
+body.theme-dark .app-error-dialog-btn:hover,
+body.theme-dark .workflow-tab.active:hover {
+  background: #3a4356;
+  border-color: #56627c;
+}
+
+body.theme-dark .sidebar-card {
+  background: linear-gradient(180deg, #0a352b 0%, #061f1a 100%);
+  border-right-color: rgba(148, 189, 178, 0.2);
+}
+
+body.theme-dark .brand-mark {
+  background: linear-gradient(135deg, #14463a, #1f5f4f);
+  border-color: rgba(142, 194, 178, 0.28);
+  color: #d4eee6;
+}
+
+body.theme-dark .nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(195, 236, 223, 0.26);
+}
+
+body.theme-dark .nav-item.active {
+  background: rgba(126, 215, 177, 0.2);
+  border-color: rgba(126, 215, 177, 0.45);
+}
+
+body.theme-dark table thead th {
+  background: rgba(18, 22, 29, 0.98);
+  border-color: rgba(112, 122, 140, 0.34);
+  color: #b8c1d0;
+}
+
+body.theme-dark table tbody td {
+  border-color: rgba(93, 104, 124, 0.26);
+  color: #d7deea;
+}
+
+body.theme-dark table tbody tr:hover td {
+  background: rgba(49, 56, 72, 0.4);
+}
+
+body.theme-dark .row-selected td {
+  background: rgba(68, 79, 100, 0.48);
+}
+
+body.theme-dark .result-type-pill {
+  background: rgba(76, 84, 100, 0.56);
+  color: #dee4ef;
+}
+
+body.theme-dark .status-vigente {
+  background: rgba(80, 92, 112, 0.48);
+  color: #dce4f0;
+}
+
+body.theme-dark .status-reprovado {
+  background: rgba(173, 44, 44, 0.32);
+  color: #ffc7c7;
+}
+
+body.theme-dark .status-obsoleto {
+  background: rgba(99, 115, 112, 0.32);
+  color: #d1d8d6;
+}
+
+body.theme-dark .status-rascunho,
+body.theme-dark .status-rascunho_revisado,
+body.theme-dark .status-revisar_rascunho {
+  background: rgba(172, 125, 42, 0.34);
+  color: #ffe3b3;
+}
+
+body.theme-dark .status-pendente_qualidade,
+body.theme-dark .status-pendente_coordenacao,
+body.theme-dark .status-em_revisao {
+  background: rgba(57, 107, 158, 0.34);
+  color: #c9e8ff;
+}
+
+body.theme-dark .feedback.success {
+  border-color: rgba(120, 133, 155, 0.52);
+  background: rgba(38, 46, 60, 0.8);
+  color: #dde5f1;
+}
+
+body.theme-dark .feedback.error,
+body.theme-dark .error-text {
+  border-color: rgba(191, 94, 94, 0.45);
+  background: rgba(72, 30, 30, 0.76);
+  color: #ffc9c9;
+}
+
+body.theme-dark .table-scrollbar-track {
+  background: rgba(75, 84, 104, 0.8);
+}
+
+body.theme-dark .app-error-dialog {
+  border-color: rgba(173, 83, 83, 0.5);
+}
+
+body.theme-dark .app-error-dialog p {
+  color: #d6e5df;
+}
+
+/* Stronger status colors in light mode */
+body:not(.theme-dark) .status-pill {
+  border: 1px solid transparent;
+}
+
+body:not(.theme-dark) .status-vigente {
+  background: #d9f7e8;
+  border-color: #8fd8b3;
+  color: #0b6a47;
+}
+
+body:not(.theme-dark) .status-reprovado {
+  background: #fde2e2;
+  border-color: #f0a8a8;
+  color: #a42828;
+}
+
+body:not(.theme-dark) .status-obsoleto {
+  background: #eceff3;
+  border-color: #c8d0dc;
+  color: #4b5565;
+}
+
+body:not(.theme-dark) .status-rascunho,
+body:not(.theme-dark) .status-rascunho_revisado,
+body:not(.theme-dark) .status-revisar_rascunho {
+  background: #fff1d6;
+  border-color: #f2ce8a;
+  color: #8a5c08;
+}
+
+body:not(.theme-dark) .status-pendente_qualidade,
+body:not(.theme-dark) .status-pendente_coordenacao,
+body:not(.theme-dark) .status-em_revisao {
+  background: #ddeeff;
+  border-color: #a8c9f3;
+  color: #1f4e86;
+}
+
+body:not(.theme-dark) .status-sem_versao {
+  background: #f2f4f7;
+  border-color: #d4d9e1;
+  color: #5c6472;
+}
+
+/* Keep dark mode content text neutral/white while preserving green sidebar */
+body.theme-dark .content-root,
+body.theme-dark .content-root .kicker,
+body.theme-dark .content-root .topbar-title,
+body.theme-dark .content-root .topbar-subtitle,
+body.theme-dark .content-root .hero-block p,
+body.theme-dark .content-root .workflow-hint,
+body.theme-dark .content-root .result-code,
+body.theme-dark .content-root .result-midline,
+body.theme-dark .content-root .result-head-meta,
+body.theme-dark .content-root .meta-panel ul,
+body.theme-dark .content-root .empty-box,
+body.theme-dark .content-root .admin-field-label,
+body.theme-dark .content-root .workflow-stat p,
+body.theme-dark .content-root .no-preview,
+body.theme-dark .content-root .login-description,
+body.theme-dark .content-root .login-form label,
+body.theme-dark .content-root table thead th,
+body.theme-dark .content-root table tbody td,
+body.theme-dark .content-root .ghost-btn,
+body.theme-dark .content-root .mobile-toggle,
+body.theme-dark .content-root .table-btn,
+body.theme-dark .content-root .section-clear-btn,
+body.theme-dark .content-root .file-remove-btn,
+body.theme-dark .content-root .logout-btn,
+body.theme-dark .content-root .topbar-control-btn {
+  color: #f5f7fb;
 }
