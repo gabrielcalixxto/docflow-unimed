@@ -1,8 +1,41 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from app.core.enums import UserRole
+from app.core.enums import DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
+
+
+def _mock_file_token_auth(
+    monkeypatch,
+    *,
+    role: UserRole = UserRole.REVISOR,
+    user_id: int = 7,
+    company_ids: list[int] | None = None,
+    sector_ids: list[int] | None = None,
+) -> None:
+    import app.routers.files as files_router
+
+    def fake_decode(_token: str) -> AuthenticatedUser:
+        return AuthenticatedUser(
+            email="user@example.com",
+            username="user.docflow",
+            role=role,
+            roles=[role],
+            user_id=user_id,
+            company_ids=company_ids or [],
+            sector_ids=sector_ids or [],
+        )
+
+    monkeypatch.setattr(files_router, "get_authenticated_user_from_token", fake_decode)
+
+
+def _mock_file_audit_service(monkeypatch):
+    import app.routers.files as files_router
+
+    audit_service = Mock()
+    monkeypatch.setattr(files_router, "AuditLogRepository", lambda _db: Mock())
+    monkeypatch.setattr(files_router, "AuditService", lambda log_repository: audit_service)
+    return audit_service
 
 
 def test_upload_document_file_returns_storage_path(public_client, monkeypatch) -> None:
@@ -68,52 +101,115 @@ def test_upload_document_file_returns_403_for_reader_role(public_client, monkeyp
     assert response.json() == {"detail": "Only author role can upload files."}
 
 
-def test_get_stored_file_returns_inline_content(authorized_client, monkeypatch) -> None:
+def test_get_stored_file_returns_inline_content(public_client, monkeypatch) -> None:
     import app.routers.files as files_router
 
+    _mock_file_token_auth(monkeypatch)
+    audit_service = _mock_file_audit_service(monkeypatch)
     repository = Mock()
     repository.get_by_storage_key.return_value = SimpleNamespace(
         content=b"abc",
         content_type="application/pdf",
         original_name="manual.pdf",
+        document=SimpleNamespace(id=1, scope=DocumentScope.LOCAL, company_id=1, sector_id=10, created_by=8),
+        version=SimpleNamespace(document_id=1, status=DocumentStatus.VIGENTE, created_by=8),
     )
     monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
 
-    response = authorized_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?token=fake-token")
 
     assert response.status_code == 200
     assert response.content == b"abc"
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["content-disposition"] == 'inline; filename="manual.pdf"'
+    audit_service.create_action_log.assert_called_once()
+    assert audit_service.create_action_log.call_args.kwargs["action"] == "VIEW_FILE"
 
 
 def test_get_stored_file_returns_attachment_when_download_query_is_true(
-    authorized_client, monkeypatch
+    public_client, monkeypatch
 ) -> None:
     import app.routers.files as files_router
 
+    _mock_file_token_auth(monkeypatch)
+    audit_service = _mock_file_audit_service(monkeypatch)
     repository = Mock()
     repository.get_by_storage_key.return_value = SimpleNamespace(
         content=b"abc",
         content_type="application/pdf",
         original_name="manual.pdf",
+        document=SimpleNamespace(id=1, scope=DocumentScope.LOCAL, company_id=1, sector_id=10, created_by=8),
+        version=SimpleNamespace(document_id=1, status=DocumentStatus.VIGENTE, created_by=8),
     )
     monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
 
-    response = authorized_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?download=true")
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?download=true&token=fake-token")
 
     assert response.status_code == 200
     assert response.headers["content-disposition"] == 'attachment; filename="manual.pdf"'
+    audit_service.create_action_log.assert_called_once()
+    assert audit_service.create_action_log.call_args.kwargs["action"] == "DOWNLOAD_FILE"
 
 
-def test_get_stored_file_returns_404_when_missing(authorized_client, monkeypatch) -> None:
+def test_get_stored_file_returns_404_when_missing(public_client, monkeypatch) -> None:
     import app.routers.files as files_router
 
+    _mock_file_token_auth(monkeypatch)
+    _mock_file_audit_service(monkeypatch)
     repository = Mock()
     repository.get_by_storage_key.return_value = None
     monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
 
-    response = authorized_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?token=fake-token")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Arquivo nao encontrado."}
+
+
+def test_get_stored_file_returns_401_without_token(public_client) -> None:
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Could not validate credentials."}
+
+
+def test_get_stored_file_returns_403_when_user_has_no_corporate_scope(public_client, monkeypatch) -> None:
+    import app.routers.files as files_router
+
+    _mock_file_token_auth(monkeypatch, role=UserRole.LEITOR, company_ids=[], sector_ids=[])
+    _mock_file_audit_service(monkeypatch)
+    repository = Mock()
+    repository.get_by_storage_key.return_value = SimpleNamespace(
+        content=b"abc",
+        content_type="application/pdf",
+        original_name="manual.pdf",
+        document=SimpleNamespace(id=1, scope=DocumentScope.CORPORATIVO, company_id=1, sector_id=10, created_by=8),
+        version=SimpleNamespace(document_id=1, status=DocumentStatus.VIGENTE, created_by=8),
+    )
+    monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
+
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?token=fake-token")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "You do not have permission to access this file."}
+
+
+def test_get_stored_file_returns_403_for_non_vigente_without_privilege(public_client, monkeypatch) -> None:
+    import app.routers.files as files_router
+
+    _mock_file_token_auth(monkeypatch, role=UserRole.LEITOR, user_id=77)
+    _mock_file_audit_service(monkeypatch)
+    repository = Mock()
+    repository.get_by_storage_key.return_value = SimpleNamespace(
+        content=b"abc",
+        content_type="application/pdf",
+        original_name="manual.pdf",
+        document=SimpleNamespace(id=1, scope=DocumentScope.LOCAL, company_id=1, sector_id=10, created_by=8),
+        version=SimpleNamespace(document_id=1, status=DocumentStatus.RASCUNHO, created_by=8),
+    )
+    monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
+
+    response = public_client.get("/file-storage/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?token=fake-token")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "You do not have permission to access this file version."}

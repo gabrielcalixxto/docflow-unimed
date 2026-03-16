@@ -83,8 +83,9 @@ def test_create_admin_user_returns_201(admin_authorized_client, monkeypatch) -> 
         "/admin/users",
         json={
             "name": "Autor Teste",
+            "username": "autor.teste",
             "email": "autor.novo@docflow.local",
-            "password": "123456",
+            "password": "Senha@123",
             "roles": ["AUTOR", "REVISOR"],
             "company_ids": [1],
             "sector_ids": [10],
@@ -106,6 +107,7 @@ def test_update_admin_user_returns_200(admin_authorized_client, monkeypatch) -> 
         "/admin/users/7",
         json={
             "name": "Autor Teste",
+            "username": "autor.teste",
             "email": "autor.novo@docflow.local",
             "password": None,
             "roles": ["AUTOR"],
@@ -155,8 +157,9 @@ def test_create_admin_user_returns_409_on_conflict(admin_authorized_client, monk
         "/admin/users",
         json={
             "name": "Autor Teste",
+            "username": "autor.teste",
             "email": "autor.novo@docflow.local",
-            "password": "123456",
+            "password": "Senha@123",
             "roles": ["AUTOR"],
             "company_ids": [1],
             "sector_ids": [10],

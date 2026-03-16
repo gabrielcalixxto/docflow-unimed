@@ -60,7 +60,7 @@ def test_create_document_persists_entity_and_emits_event(document_payload) -> No
     response = service.create_document(document_payload, author)
 
     assert isinstance(response, MessageResponse)
-    assert "created" in response.message.lower()
+    assert response.message == "Novo documento criado com sucesso!"
     repository.create_document.assert_called_once_with(
         payload=document_payload,
         code="PENDING",

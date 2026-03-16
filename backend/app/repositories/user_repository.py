@@ -43,10 +43,10 @@ class UserRepository:
         statement = select(Sector).where(Sector.id == sector_id)
         return self.db.scalar(statement)
 
-    def create_user(self, *, payload: UserAdminCreate, username: str, password_hash: str) -> User:
+    def create_user(self, *, payload: UserAdminCreate, name: str, username: str, password_hash: str) -> User:
         roles = [role.value for role in payload.roles]
         user = User(
-            name=payload.name.strip(),
+            name=name,
             username=username,
             email=str(payload.email).lower(),
             password_hash=password_hash,

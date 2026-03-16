@@ -62,7 +62,7 @@ def test_create_version_persists_draft_and_emits_event(version_payload) -> None:
     response = service.create_version(7, version_payload, author)
 
     assert isinstance(response, MessageResponse)
-    assert "created" in response.message.lower()
+    assert response.message == "Versão 2 do arquivo criado com sucesso!"
     repository.create_version.assert_called_once()
     create_args = repository.create_version.call_args.kwargs
     assert create_args["document_id"] == 7

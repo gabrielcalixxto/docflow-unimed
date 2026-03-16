@@ -1,6 +1,3 @@
-import re
-import unicodedata
-
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.audit import AuditContext
@@ -15,6 +12,8 @@ from app.services.errors import ConflictServiceError, ForbiddenServiceError, Not
 
 
 class UserAdminService:
+    _LOWERCASE_WORDS = {"de", "do", "da"}
+
     def __init__(self, repository: UserRepository, audit_service: AuditService | None = None):
         self.repository = repository
         self.audit_service = audit_service or AuditService()
@@ -41,12 +40,15 @@ class UserAdminService:
         self._ensure_companies_exist(payload.company_ids)
         self._ensure_sectors_exist(payload.sector_ids)
         self._ensure_sector_company_consistency(payload.company_ids, payload.sector_ids)
+        normalized_name = self._normalize_full_name(payload.name)
+        username = str(payload.username).strip().lower()
         self._ensure_email_available(str(payload.email).lower(), excluded_user_id=None)
-        username = self._build_unique_username(payload.name)
+        self._ensure_username_available(username, excluded_user_id=None)
 
         try:
             user = self.repository.create_user(
                 payload=payload,
+                name=normalized_name,
                 username=username,
                 password_hash=hash_password(payload.password),
             )
@@ -56,16 +58,16 @@ class UserAdminService:
                 entity_id=user.id,
                 action="CREATE",
                 context=audit_context,
-                entity_label=self._user_entity_label(user.id, payload.name.strip()),
+                entity_label=self._user_entity_label(user.id, normalized_name),
                 actor_name=self._actor_snapshot(current_user),
                 changes=[
                     {
                         "field_name": "name",
                         "field_label": "Nome",
                         "old_value": None,
-                        "new_value": payload.name.strip(),
+                        "new_value": normalized_name,
                         "old_display_value": None,
-                        "new_display_value": payload.name.strip(),
+                        "new_display_value": normalized_name,
                     },
                     {
                         "field_name": "username",
@@ -132,9 +134,11 @@ class UserAdminService:
         self._ensure_companies_exist(payload.company_ids)
         self._ensure_sectors_exist(payload.sector_ids)
         self._ensure_sector_company_consistency(payload.company_ids, payload.sector_ids)
+        normalized_name = self._normalize_full_name(payload.name)
         email = str(payload.email).lower()
+        username = str(payload.username).strip().lower()
         self._ensure_email_available(email, excluded_user_id=user_id)
-        username = self._build_unique_username(payload.name, excluded_user_id=user_id)
+        self._ensure_username_available(username, excluded_user_id=user_id)
 
         previous_name = user.name
         previous_username = user.username
@@ -143,7 +147,7 @@ class UserAdminService:
         previous_company_ids = list(user.company_ids or [])
         previous_sector_ids = list(user.sector_ids or [])
 
-        user.name = payload.name.strip()
+        user.name = normalized_name
         user.username = username
         user.email = email
         user.role = payload.roles[0]
@@ -276,6 +280,14 @@ class UserAdminService:
             return
         raise ConflictServiceError("Email is already in use by another user.")
 
+    def _ensure_username_available(self, username: str, excluded_user_id: int | None) -> None:
+        existing = self.repository.get_user_by_username(username)
+        if existing is None:
+            return
+        if excluded_user_id is not None and existing.id == excluded_user_id:
+            return
+        raise ConflictServiceError("Username is already in use by another user.")
+
     def _ensure_sectors_exist(self, sector_ids: list[int]) -> None:
         for sector_id in sector_ids:
             sector = self.repository.get_sector_by_id(sector_id)
@@ -303,28 +315,20 @@ class UserAdminService:
                     f"Sector {sector_id} does not belong to selected companies."
                 )
 
-    def _build_unique_username(self, name: str, excluded_user_id: int | None = None) -> str:
-        base_username = self._normalize_username_from_name(name)
-        candidate = base_username
-        suffix = 1
-        while True:
-            existing = self.repository.get_user_by_username(candidate)
-            if existing is None or (excluded_user_id is not None and existing.id == excluded_user_id):
-                return candidate
-            suffix += 1
-            candidate = f"{base_username}.{suffix}"
-
-    @staticmethod
-    def _normalize_username_from_name(name: str) -> str:
-        normalized = unicodedata.normalize("NFKD", (name or "").strip())
-        ascii_only = normalized.encode("ascii", "ignore").decode("ascii").lower()
-        segments = re.findall(r"[a-z0-9]+", ascii_only)
-        if len(segments) < 2:
-            raise ConflictServiceError("Name must include at least nome e sobrenome.")
-        username = ".".join(segments)
-        if len(username) < 3:
-            raise ConflictServiceError("User name must produce a valid login in format nome.sobrenome.")
-        return username
+    @classmethod
+    def _normalize_full_name(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        words = [word for word in normalized.split(" ") if word]
+        if len(words) < 2:
+            raise ConflictServiceError("Full name must include at least first name and last name.")
+        transformed_words: list[str] = []
+        for index, word in enumerate(words):
+            lower_word = word.lower()
+            if index > 0 and lower_word in cls._LOWERCASE_WORDS:
+                transformed_words.append(lower_word)
+                continue
+            transformed_words.append(lower_word.capitalize())
+        return " ".join(transformed_words)
 
     @staticmethod
     def _ensure_admin(current_user: AuthenticatedUser) -> None:

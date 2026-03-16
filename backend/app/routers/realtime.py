@@ -52,15 +52,13 @@ async def ws_events(websocket: WebSocket) -> None:
         )
         while True:
             next_event_task = asyncio.create_task(subscription_queue.get())
-            done, pending = await asyncio.wait(
+            done, _pending = await asyncio.wait(
                 {disconnect_watcher, next_event_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if disconnect_watcher in done:
                 next_event_task.cancel()
                 break
-            for task in pending:
-                task.cancel()
             payload = next_event_task.result()
             await websocket.send_json(payload)
     except WebSocketDisconnect:
@@ -68,4 +66,3 @@ async def ws_events(websocket: WebSocket) -> None:
     finally:
         realtime_broker.unregister(subscription_queue)
         disconnect_watcher.cancel()
-

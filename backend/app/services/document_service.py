@@ -210,9 +210,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not create document with the provided data.") from exc
 
-        return MessageResponse(
-            message=f"Document created successfully (id={document.id}, code={document.code}, version=1)."
-        )
+        return MessageResponse(message="Novo documento criado com sucesso!")
 
     def get_form_options(self) -> DocumentFormOptionsRead:
         companies = self.repository.list_companies()
