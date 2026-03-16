@@ -4,7 +4,7 @@ export default function PainelRncPage() {
       <section className="hero-block">
         <div>
           <p className="kicker">Painel de Indicadores</p>
-          <h2>Painel de RNC</h2>
+          <h2>Painel de RNC (Em breve)</h2>
           <p>Em breve vamos implementar o fluxo de reclamacoes e nao conformidades.</p>
         </div>
       </section>

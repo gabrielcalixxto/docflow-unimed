@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminCompany,
   getAdminCatalogOptions,
+  showGlobalError,
   updateAdminCompany,
 } from "../services/api";
 
@@ -11,16 +16,25 @@ const INITIAL_FORM = {
 };
 
 export default function CadastroEmpresasPage({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [companies, setCompanies] = useState([]);
   const [sectors, setSectors] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [filterTerm, setFilterTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [editingCompanyId, setEditingCompanyId] = useState(null);
   const [editingCompanyName, setEditingCompanyName] = useState("");
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const sectorsByCompany = useMemo(() => {
     const counts = new Map();
@@ -30,6 +44,19 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
     }
     return counts;
   }, [sectors]);
+
+  const filteredCompanies = useMemo(() => {
+    const normalizedTerm = filterTerm.trim().toLowerCase();
+    if (!normalizedTerm) {
+      return companies;
+    }
+    return companies.filter((company) => {
+      const sectorsCount = String(sectorsByCompany.get(Number(company.id)) || 0);
+      const searchable = [company.name || "", sectorsCount].join(" ").toLowerCase();
+      return searchable.includes(normalizedTerm);
+    });
+  }, [companies, filterTerm, sectorsByCompany]);
+  const companiesPagination = usePagination(filteredCompanies);
 
   const loadData = async () => {
     setLoading(true);
@@ -56,6 +83,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["catalog"] });
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -127,12 +155,11 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
           <h2>Cadastro de Empresas</h2>
           <p>Cadastre empresas e gerencie a lista ativa do sistema.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreate}>
@@ -159,6 +186,19 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
         <div className="workflow-list-head">
           <h3>Empresas cadastradas</h3>
         </div>
+        <div className="catalog-filter-row">
+          <label className="catalog-filter">
+            Pesquisa
+            <input
+              type="text"
+              placeholder="Nome da empresa..."
+              value={filterTerm}
+              onChange={(event) =>
+                preserveViewport(() => setFilterTerm(event.target.value))
+              }
+            />
+          </label>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -169,7 +209,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {companies.map((company) => (
+              {companiesPagination.pagedItems.map((company) => (
                 <tr key={company.id}>
                   <td>
                     {editingCompanyId === Number(company.id) ? (
@@ -216,7 +256,7 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
                   </td>
                 </tr>
               ))}
-              {!loading && companies.length === 0 && (
+              {!loading && filteredCompanies.length === 0 && (
                 <tr>
                   <td colSpan={3}>Nenhuma empresa cadastrada.</td>
                 </tr>
@@ -224,6 +264,15 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={companiesPagination.page}
+          pageSize={companiesPagination.pageSize}
+          totalItems={companiesPagination.totalItems}
+          totalPages={companiesPagination.totalPages}
+          pageSizeOptions={companiesPagination.pageSizeOptions}
+          onPageChange={companiesPagination.setPage}
+          onPageSizeChange={companiesPagination.setPageSize}
+        />
       </section>
     </div>
   );

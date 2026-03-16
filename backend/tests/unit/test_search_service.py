@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from app.core.enums import DocumentScope
+from app.core.enums import UserRole
+from app.core.security import AuthenticatedUser
 from app.services.search_service import SearchService
 
 
@@ -24,12 +26,21 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
                 version_number=2,
                 file_path="/tmp/doc-001-v2.pdf",
                 expiration_date=date(2027, 1, 31),
+                approved_by=7,
+                approved_by_name="Coordenador Qualidade",
+                approved_at=None,
             ),
         )
     ]
 
     service = SearchService(repository=repository)
-    response = service.search_documents()
+    current_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        user_id=1,
+        sector_ids=[10],
+    )
+    response = service.search_documents(current_user)
 
     assert len(response.items) == 1
     item = response.items[0]
@@ -38,4 +49,6 @@ def test_search_documents_maps_document_and_active_version_rows() -> None:
     assert item.sector_id == 10
     assert item.active_version_id == 11
     assert item.scope == DocumentScope.LOCAL
-    repository.search_active_documents.assert_called_once_with()
+    assert item.approved_by == 7
+    assert item.approved_by_name == "Coordenador Qualidade"
+    repository.search_active_documents.assert_called_once_with(current_user)

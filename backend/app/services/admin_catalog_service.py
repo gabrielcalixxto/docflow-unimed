@@ -3,6 +3,7 @@ import unicodedata
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.audit import AuditContext
 from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser
 from app.repositories.admin_catalog_repository import AdminCatalogRepository
@@ -16,17 +17,19 @@ from app.schemas.admin_catalog import (
     AdminCompanyUpdate,
 )
 from app.schemas.common import MessageResponse
+from app.services.audit_service import AuditService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
 
 class AdminCatalogService:
     _LOWERCASE_WORDS = {"de", "do", "da"}
 
-    def __init__(self, repository: AdminCatalogRepository):
+    def __init__(self, repository: AdminCatalogRepository, audit_service: AuditService | None = None):
         self.repository = repository
+        self.audit_service = audit_service or AuditService()
 
     def get_options(self, current_user: AuthenticatedUser) -> AdminCatalogOptionsRead:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         return AdminCatalogOptionsRead(
             companies=self.repository.list_companies(),
             sectors=self.repository.list_sectors(),
@@ -37,14 +40,35 @@ class AdminCatalogService:
         self,
         payload: AdminCompanyCreate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         normalized_name = self._normalize_company_name(payload.name)
         if self.repository.get_company_by_name(normalized_name) is not None:
             raise ConflictServiceError("Company already exists.")
 
         try:
             company = self.repository.create_company(normalized_name)
+            company_name = getattr(company, "name", None) or normalized_name
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="company",
+                entity_id=company.id,
+                action="CREATE",
+                context=audit_context,
+                entity_label=self._company_entity_label(company.id, company_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": None,
+                        "new_value": normalized_name,
+                        "old_display_value": None,
+                        "new_display_value": normalized_name,
+                    }
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -52,8 +76,13 @@ class AdminCatalogService:
 
         return MessageResponse(message=f"Company created successfully (id={company.id}).")
 
-    def delete_company(self, company_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+    def delete_company(
+        self,
+        company_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -66,6 +95,22 @@ class AdminCatalogService:
             raise ConflictServiceError("Cannot delete company with linked users.")
 
         try:
+            company_name = getattr(company, "name", None)
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="company",
+                entity_id=company.id,
+                action="DELETE",
+                field_name="record",
+                old_value={"id": company.id, "name": getattr(company, "name", None)},
+                new_value=None,
+                context=audit_context,
+                field_label="Registro",
+                old_display_value=company_name,
+                new_display_value=None,
+                entity_label=self._company_entity_label(company.id, company_name),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.delete_company(company)
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -79,8 +124,9 @@ class AdminCatalogService:
         company_id: int,
         payload: AdminCompanyUpdate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -91,7 +137,27 @@ class AdminCatalogService:
             raise ConflictServiceError("Company already exists.")
 
         try:
+            previous_name = company.name
             self.repository.update_company(company, name=normalized_name)
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="company",
+                entity_id=company.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._company_entity_label(company.id, normalized_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": previous_name,
+                        "new_value": normalized_name,
+                        "old_display_value": previous_name,
+                        "new_display_value": normalized_name,
+                    }
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -103,8 +169,9 @@ class AdminCatalogService:
         self,
         payload: AdminSectorCreate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         company = self.repository.get_company_by_id(payload.company_id)
         if company is None:
             raise NotFoundServiceError("Company not found.")
@@ -122,6 +189,42 @@ class AdminCatalogService:
                 sigla=normalized_sigla,
                 company_id=payload.company_id,
             )
+            sector_name = getattr(sector, "name", None) or normalized_name
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="sector",
+                entity_id=sector.id,
+                action="CREATE",
+                context=audit_context,
+                entity_label=self._sector_entity_label(sector.id, sector_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": None,
+                        "new_value": normalized_name,
+                        "old_display_value": None,
+                        "new_display_value": normalized_name,
+                    },
+                    {
+                        "field_name": "sigla",
+                        "field_label": "Sigla",
+                        "old_value": None,
+                        "new_value": normalized_sigla,
+                        "old_display_value": None,
+                        "new_display_value": normalized_sigla,
+                    },
+                    {
+                        "field_name": "company_id",
+                        "field_label": "Empresa",
+                        "old_value": None,
+                        "new_value": payload.company_id,
+                        "old_display_value": None,
+                        "new_display_value": getattr(company, "name", None) or f"Empresa #{payload.company_id}",
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -129,8 +232,13 @@ class AdminCatalogService:
 
         return MessageResponse(message=f"Sector created successfully (id={sector.id}, sigla={sector.sigla}).")
 
-    def delete_sector(self, sector_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+    def delete_sector(
+        self,
+        sector_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_catalog_manager(current_user)
         sector = self.repository.get_sector_by_id(sector_id)
         if sector is None:
             raise NotFoundServiceError("Sector not found.")
@@ -141,6 +249,27 @@ class AdminCatalogService:
             raise ConflictServiceError("Cannot delete sector with linked documents.")
 
         try:
+            sector_name = getattr(sector, "name", None)
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="sector",
+                entity_id=sector.id,
+                action="DELETE",
+                field_name="record",
+                old_value={
+                    "id": sector.id,
+                    "name": getattr(sector, "name", None),
+                    "sigla": getattr(sector, "sigla", None),
+                    "company_id": getattr(sector, "company_id", None),
+                },
+                new_value=None,
+                context=audit_context,
+                field_label="Registro",
+                old_display_value=f"{sector_name or f'Setor #{sector.id}'} ({getattr(sector, 'sigla', '')})".strip(),
+                new_display_value=None,
+                entity_label=self._sector_entity_label(sector.id, sector_name),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.delete_sector(sector)
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -154,8 +283,9 @@ class AdminCatalogService:
         sector_id: int,
         payload: AdminSectorUpdate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         sector = self.repository.get_sector_by_id(sector_id)
         if sector is None:
             raise NotFoundServiceError("Sector not found.")
@@ -173,8 +303,13 @@ class AdminCatalogService:
         if existing_sigla is not None and existing_sigla.id != sector.id:
             raise ConflictServiceError("Sector acronym already exists for this company.")
 
-        company_changed = sector.company_id != payload.company_id
-        sigla_changed = (sector.sigla or "").upper() != normalized_sigla.upper()
+        previous_name = sector.name
+        previous_sigla = sector.sigla
+        previous_company_id = sector.company_id
+        previous_company = self.repository.get_company_by_id(previous_company_id) if previous_company_id else None
+
+        company_changed = previous_company_id != payload.company_id
+        sigla_changed = (previous_sigla or "").upper() != normalized_sigla.upper()
         moved_documents = 0
         recoded_documents = 0
 
@@ -185,13 +320,78 @@ class AdminCatalogService:
                 sigla=normalized_sigla,
                 company_id=payload.company_id,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="sector",
+                entity_id=sector.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._sector_entity_label(sector.id, normalized_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": previous_name,
+                        "new_value": normalized_name,
+                        "old_display_value": previous_name,
+                        "new_display_value": normalized_name,
+                    },
+                    {
+                        "field_name": "sigla",
+                        "field_label": "Sigla",
+                        "old_value": previous_sigla,
+                        "new_value": normalized_sigla,
+                        "old_display_value": previous_sigla,
+                        "new_display_value": normalized_sigla,
+                    },
+                    {
+                        "field_name": "company_id",
+                        "field_label": "Empresa",
+                        "old_value": previous_company_id,
+                        "new_value": payload.company_id,
+                        "old_display_value": getattr(previous_company, "name", None) if previous_company else None,
+                        "new_display_value": getattr(company, "name", None) or f"Empresa #{payload.company_id}",
+                    },
+                ],
+            )
             if company_changed:
                 moved_documents = self.repository.remap_documents_company_for_sector(
                     sector_id=sector.id,
                     target_company_id=payload.company_id,
                 )
+                self.audit_service.create_action_log(
+                    user_id=current_user.user_id,
+                    entity_type="sector",
+                    entity_id=sector.id,
+                    action="BULK_SYNC",
+                    field_name="moved_documents",
+                    old_value=None,
+                    new_value=moved_documents,
+                    context=audit_context,
+                    field_label="Documentos com empresa atualizada",
+                    old_display_value=None,
+                    new_display_value=str(moved_documents),
+                    entity_label=self._sector_entity_label(sector.id, normalized_name),
+                    actor_name=self._actor_snapshot(current_user),
+                )
             if sigla_changed:
                 recoded_documents = self._sync_document_codes_for_sector(sector.id)
+                self.audit_service.create_action_log(
+                    user_id=current_user.user_id,
+                    entity_type="sector",
+                    entity_id=sector.id,
+                    action="BULK_SYNC",
+                    field_name="updated_codes",
+                    old_value=None,
+                    new_value=recoded_documents,
+                    context=audit_context,
+                    field_label="Codigos de documentos atualizados",
+                    old_display_value=None,
+                    new_display_value=str(recoded_documents),
+                    entity_label=self._sector_entity_label(sector.id, normalized_name),
+                    actor_name=self._actor_snapshot(current_user),
+                )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -215,8 +415,9 @@ class AdminCatalogService:
         self,
         payload: AdminDocumentTypeCreate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         normalized_sigla = self._normalize_document_type_sigla(payload.sigla)
         normalized_name = self._normalize_document_type_name(payload.name)
         if self.repository.get_document_type_by_sigla(normalized_sigla) is not None:
@@ -229,6 +430,34 @@ class AdminCatalogService:
                 sigla=normalized_sigla,
                 name=normalized_name,
             )
+            document_type_name = getattr(document_type, "name", None) or normalized_name
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_type",
+                entity_id=document_type.id,
+                action="CREATE",
+                context=audit_context,
+                entity_label=self._document_type_entity_label(document_type.id, document_type_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "sigla",
+                        "field_label": "Sigla",
+                        "old_value": None,
+                        "new_value": normalized_sigla,
+                        "old_display_value": None,
+                        "new_display_value": normalized_sigla,
+                    },
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": None,
+                        "new_value": normalized_name,
+                        "old_display_value": None,
+                        "new_display_value": normalized_name,
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -238,13 +467,39 @@ class AdminCatalogService:
             message=f"Document type created successfully (id={document_type.id}, sigla={document_type.sigla})."
         )
 
-    def delete_document_type(self, document_type_id: int, current_user: AuthenticatedUser) -> MessageResponse:
-        self._ensure_admin(current_user)
+    def delete_document_type(
+        self,
+        document_type_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
+        self._ensure_catalog_manager(current_user)
         document_type = self.repository.get_document_type_by_id(document_type_id)
         if document_type is None:
             raise NotFoundServiceError("Document type not found.")
 
         try:
+            document_type_name = getattr(document_type, "name", None)
+            document_type_sigla = getattr(document_type, "sigla", None)
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="document_type",
+                entity_id=document_type.id,
+                action="DELETE",
+                field_name="record",
+                old_value={
+                    "id": document_type.id,
+                    "sigla": getattr(document_type, "sigla", None),
+                    "name": getattr(document_type, "name", None),
+                },
+                new_value=None,
+                context=audit_context,
+                field_label="Registro",
+                old_display_value=f"{document_type_name or f'Tipo documental #{document_type.id}'} ({document_type_sigla or ''})".strip(),
+                new_display_value=None,
+                entity_label=self._document_type_entity_label(document_type.id, document_type_name),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.delete_document_type(document_type)
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -258,8 +513,9 @@ class AdminCatalogService:
         document_type_id: int,
         payload: AdminDocumentTypeUpdate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
-        self._ensure_admin(current_user)
+        self._ensure_catalog_manager(current_user)
         document_type = self.repository.get_document_type_by_id(document_type_id)
         if document_type is None:
             raise NotFoundServiceError("Document type not found.")
@@ -276,6 +532,8 @@ class AdminCatalogService:
             raise ConflictServiceError("Document type already exists.")
 
         source_values = {document_type.sigla, document_type.name}
+        previous_sigla = document_type.sigla
+        previous_name = document_type.name
 
         try:
             self.repository.update_document_type(
@@ -283,11 +541,53 @@ class AdminCatalogService:
                 sigla=normalized_sigla,
                 name=normalized_name,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_type",
+                entity_id=document_type.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._document_type_entity_label(document_type.id, normalized_name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "sigla",
+                        "field_label": "Sigla",
+                        "old_value": previous_sigla,
+                        "new_value": normalized_sigla,
+                        "old_display_value": previous_sigla,
+                        "new_display_value": normalized_sigla,
+                    },
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": previous_name,
+                        "new_value": normalized_name,
+                        "old_display_value": previous_name,
+                        "new_display_value": normalized_name,
+                    },
+                ],
+            )
             self.repository.remap_documents_document_type(
                 source_values=source_values,
                 target_sigla=normalized_sigla,
             )
             recoded_documents = self._sync_document_codes_for_document_type(normalized_sigla)
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="document_type",
+                entity_id=document_type.id,
+                action="BULK_SYNC",
+                field_name="updated_codes",
+                old_value=None,
+                new_value=recoded_documents,
+                context=audit_context,
+                field_label="Codigos de documentos atualizados",
+                old_display_value=None,
+                new_display_value=str(recoded_documents),
+                entity_label=self._document_type_entity_label(document_type.id, normalized_name),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -403,6 +703,28 @@ class AdminCatalogService:
         return all(char.isupper() for char in letters)
 
     @staticmethod
-    def _ensure_admin(current_user: AuthenticatedUser) -> None:
+    def _ensure_catalog_manager(current_user: AuthenticatedUser) -> None:
         if not current_user.has_role(UserRole.ADMIN):
             raise ForbiddenServiceError("Only admin users can manage catalog data.")
+
+    @staticmethod
+    def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:
+        return current_user.username or current_user.email
+
+    @staticmethod
+    def _company_entity_label(company_id: int, company_name: str | None) -> str:
+        if company_name:
+            return f"Empresa #{company_id} ({company_name})"
+        return f"Empresa #{company_id}"
+
+    @staticmethod
+    def _sector_entity_label(sector_id: int, sector_name: str | None) -> str:
+        if sector_name:
+            return f"Setor #{sector_id} ({sector_name})"
+        return f"Setor #{sector_id}"
+
+    @staticmethod
+    def _document_type_entity_label(document_type_id: int, document_type_name: str | None) -> str:
+        if document_type_name:
+            return f"Tipo documental #{document_type_id} ({document_type_name})"
+        return f"Tipo documental #{document_type_id}"

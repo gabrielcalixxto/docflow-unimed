@@ -1,38 +1,21 @@
-import { getDocumentFormOptions, getDocumentVersions, getDocuments } from "./api";
+import { getWorkflowDocuments } from "./api";
 
 export async function fetchWorkflowItems() {
-  const [docs, options] = await Promise.all([
-    getDocuments(),
-    getDocumentFormOptions().catch((requestError) => {
-      if (requestError?.status === 401) {
-        throw requestError;
-      }
-      return { companies: [], sectors: [] };
-    }),
-  ]);
+  const response = await getWorkflowDocuments({ page: 1, page_size: 500 });
+  const items = Array.isArray(response?.items) ? response.items : [];
 
-  const companyById = new Map(
-    (options?.companies || []).map((company) => [Number(company.id), company.name]),
-  );
-  const sectorById = new Map(
-    (options?.sectors || []).map((sector) => [Number(sector.id), sector.name]),
-  );
-
-  const items = await Promise.all(
-    (docs || []).map(async (doc) => {
-      const versions = await getDocumentVersions(doc.id);
-      const latestVersion = versions?.[0] ?? null;
-      return {
-        ...doc,
-        companyName: companyById.get(Number(doc.company_id)) || `ID ${doc.company_id}`,
-        sectorName: sectorById.get(Number(doc.sector_id)) || `ID ${doc.sector_id}`,
-        versions: versions || [],
-        latestVersion,
-        latestStatus: latestVersion?.status || "SEM_VERSAO",
-      };
-    }),
-  );
-  return items;
+  return items.map((item) => {
+    const versions = Array.isArray(item.versions) ? item.versions : [];
+    const latestVersion = versions[0] ?? null;
+    return {
+      ...item,
+      companyName: item.company_name || `ID ${item.company_id}`,
+      sectorName: item.sector_name || `ID ${item.sector_id}`,
+      versions,
+      latestVersion,
+      latestStatus: item.latest_status || latestVersion?.status || "SEM_VERSAO",
+    };
+  });
 }
 
 export function summarizeWorkflow(items) {
@@ -40,6 +23,7 @@ export function summarizeWorkflow(items) {
     total: items.length,
     semVersao: 0,
     rascunho: 0,
+    rascunhoRevisado: 0,
     revisarRascunho: 0,
     pendenteCoordenacao: 0,
     emRevisao: 0,
@@ -52,6 +36,9 @@ export function summarizeWorkflow(items) {
     switch (item.latestStatus) {
       case "RASCUNHO":
         summary.rascunho += 1;
+        break;
+      case "RASCUNHO_REVISADO":
+        summary.rascunhoRevisado += 1;
         break;
       case "REVISAR_RASCUNHO":
         summary.revisarRascunho += 1;

@@ -2,19 +2,74 @@ import axios from "axios";
 
 const TOKEN_STORAGE_KEY = "docflow_access_token";
 
+function resolveApiBaseUrl() {
+  const envBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+  if (envBaseUrl) {
+    return envBaseUrl.replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "http://localhost:5173";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
+
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
+
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
+let unauthorizedListener = null;
+let globalErrorListener = null;
+let lastGlobalErrorMessage = "";
+let lastGlobalErrorAt = 0;
+const GLOBAL_ERROR_DEDUP_WINDOW_MS = 700;
+
+function notifyUnauthorized(status) {
+  if (typeof unauthorizedListener === "function") {
+    unauthorizedListener(status);
+  }
+}
+
+function notifyGlobalError(error) {
+  if (typeof globalErrorListener !== "function") {
+    return;
+  }
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  const now = Date.now();
+  if (message && message === lastGlobalErrorMessage && now - lastGlobalErrorAt < GLOBAL_ERROR_DEDUP_WINDOW_MS) {
+    return;
+  }
+  lastGlobalErrorMessage = message;
+  lastGlobalErrorAt = now;
+  if (typeof globalErrorListener === "function") {
+    globalErrorListener(error);
+  }
+}
 
 function normalizeError(error) {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status ?? 0;
     const detail = error.response?.data?.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : error.message || "Falha de comunicacao com o backend.";
+    let message = error.message || "Falha de comunicacao com o backend.";
+    if (typeof detail === "string" && detail.trim()) {
+      message = detail.trim();
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      const firstDetail = detail[0];
+      const detailMessage =
+        typeof firstDetail === "string"
+          ? firstDetail
+          : typeof firstDetail?.msg === "string"
+            ? firstDetail.msg
+            : "";
+      if (detailMessage.trim()) {
+        message = detailMessage.trim();
+      }
+    }
     const normalized = new Error(message);
     normalized.status = status;
     return normalized;
@@ -42,7 +97,12 @@ async function request(config, withAuth = true) {
     });
     return response.data;
   } catch (error) {
-    throw normalizeError(error);
+    const normalizedError = normalizeError(error);
+    if (withAuth && (normalizedError.status === 401 || normalizedError.status === 403)) {
+      notifyUnauthorized(normalizedError.status);
+    }
+    notifyGlobalError(normalizedError);
+    throw normalizedError;
   }
 }
 
@@ -58,6 +118,48 @@ export function clearStoredToken() {
   window.localStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
+export function setUnauthorizedListener(listener) {
+  unauthorizedListener = typeof listener === "function" ? listener : null;
+}
+
+export function setGlobalErrorListener(listener) {
+  globalErrorListener = typeof listener === "function" ? listener : null;
+}
+
+export function showGlobalError(message) {
+  const text = String(message || "").trim() || "Nao foi possivel concluir a operacao.";
+  notifyGlobalError(new Error(text));
+}
+
+export function resolveApiFileUrl(path, { download = false } = {}) {
+  if (!path) {
+    return "";
+  }
+  const value = String(path).trim();
+  if (/^https?:\/\//i.test(value)) {
+    const url = new URL(value);
+    if (download) {
+      url.searchParams.set("download", "1");
+    }
+    return url.toString();
+  }
+  if (!value.startsWith("/")) {
+    return "";
+  }
+
+  const url = new URL(value, `${API_BASE_URL}/`);
+  if (value.startsWith("/file-storage/")) {
+    const token = getStoredToken();
+    if (token) {
+      url.searchParams.set("token", token);
+    }
+  }
+  if (download) {
+    url.searchParams.set("download", "1");
+  }
+  return url.toString();
+}
+
 export async function login(credentials) {
   return request(
     {
@@ -69,10 +171,33 @@ export async function login(credentials) {
   );
 }
 
+export async function changePassword(payload) {
+  return request({
+    method: "post",
+    url: "/auth/change-password",
+    data: payload,
+  });
+}
+
+export async function refreshSession() {
+  return request({
+    method: "post",
+    url: "/auth/refresh",
+  });
+}
+
 export async function searchDocuments() {
   return request({
     method: "get",
     url: "/documents/search",
+  });
+}
+
+export async function getWorkflowDocuments(params = {}) {
+  return request({
+    method: "get",
+    url: "/documents/workflow",
+    params,
   });
 }
 
@@ -87,6 +212,14 @@ export async function getDocument(documentId) {
   return request({
     method: "get",
     url: `/documents/${documentId}`,
+  });
+}
+
+export async function getDocumentEvents(documentId, params = {}) {
+  return request({
+    method: "get",
+    url: `/documents/${documentId}/events`,
+    params,
   });
 }
 
@@ -117,6 +250,16 @@ export async function createVersion(documentId, payload) {
     method: "post",
     url: `/documents/${documentId}/versions`,
     data: payload,
+  });
+}
+
+export async function uploadDocumentFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request({
+    method: "post",
+    url: "/file-storage/upload",
+    data: formData,
   });
 }
 
@@ -157,6 +300,14 @@ export async function rejectDocument(documentId, payload = {}) {
   });
 }
 
+export async function rejectDocumentDefinitive(documentId, payload = {}) {
+  return request({
+    method: "post",
+    url: `/documents/${documentId}/reject-definitive`,
+    data: payload,
+  });
+}
+
 export async function getAdminUsers() {
   return request({
     method: "get",
@@ -187,6 +338,20 @@ export async function updateAdminUser(userId, payload) {
   });
 }
 
+export async function inactivateAdminUser(userId) {
+  return request({
+    method: "patch",
+    url: `/admin/users/${userId}/inactivate`,
+  });
+}
+
+export async function reactivateAdminUser(userId) {
+  return request({
+    method: "patch",
+    url: `/admin/users/${userId}/reactivate`,
+  });
+}
+
 export async function deleteAdminUser(userId) {
   return request({
     method: "delete",
@@ -198,6 +363,14 @@ export async function getAdminCatalogOptions() {
   return request({
     method: "get",
     url: "/admin/catalog/options",
+  });
+}
+
+export async function getAuditEvents(params = {}) {
+  return request({
+    method: "get",
+    url: "/audit/events",
+    params,
   });
 }
 

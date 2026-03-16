@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
+import usePagination from "../hooks/usePagination";
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { getDocument, getDocumentFormOptions, getDocumentVersions, searchDocuments } from "../services/api";
-import { formatStatusLabel } from "../utils/status";
+import {
+  getDocumentFormOptions,
+  resolveApiFileUrl,
+  searchDocuments,
+  showGlobalError,
+} from "../services/api";
 
 function extractFileName(path) {
   if (!path) {
@@ -12,11 +19,27 @@ function extractFileName(path) {
   return parts[parts.length - 1] || path;
 }
 
-function isEmbeddablePath(path) {
-  if (!path) {
-    return false;
+function resolvePreviewSrc(path) {
+  return resolveApiFileUrl(path);
+}
+
+function buildViewerSrc(path) {
+  const src = resolvePreviewSrc(path);
+  if (!src) {
+    return "";
   }
-  return /^https?:\/\//i.test(path);
+  return src;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString("pt-BR");
 }
 
 export default function SearchPage({ onUnauthorized }) {
@@ -36,17 +59,11 @@ export default function SearchPage({ onUnauthorized }) {
   });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState("");
   const [selectedResult, setSelectedResult] = useState(null);
-  const [selectedDocument, setSelectedDocument] = useState(null);
-  const [selectedVersions, setSelectedVersions] = useState([]);
 
   const loadResults = async () => {
     setLoading(true);
-    setError("");
     try {
       const [searchData, formOptions] = await Promise.all([searchDocuments(), getDocumentFormOptions()]);
       setItems(searchData.items || []);
@@ -74,7 +91,7 @@ export default function SearchPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      setError(requestError.message || "Nao foi possivel carregar os documentos.");
+      showGlobalError(requestError.message || "Nao foi possivel carregar os documentos.");
     } finally {
       setLoading(false);
     }
@@ -83,6 +100,7 @@ export default function SearchPage({ onUnauthorized }) {
   useEffect(() => {
     loadResults();
   }, []);
+  useRealtimeEvents(loadResults, { channels: ["workflow", "catalog"] });
 
   const availableSectors = useMemo(() => {
     if (filters.companyId === "ALL") {
@@ -135,30 +153,11 @@ export default function SearchPage({ onUnauthorized }) {
       return true;
     });
   }, [items, filters]);
+  const filteredItemsPagination = usePagination(filteredItems);
 
-  const openViewer = async (item) => {
+  const openViewer = (item) => {
     setSelectedResult(item);
     setViewerOpen(true);
-    setViewerLoading(true);
-    setViewerError("");
-    setSelectedDocument(null);
-    setSelectedVersions([]);
-    try {
-      const [documentData, versionsData] = await Promise.all([
-        getDocument(item.document_id),
-        getDocumentVersions(item.document_id),
-      ]);
-      setSelectedDocument(documentData);
-      setSelectedVersions(versionsData || []);
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        onUnauthorized?.();
-        return;
-      }
-      setViewerError(requestError.message || "Nao foi possivel abrir o documento.");
-    } finally {
-      setViewerLoading(false);
-    }
   };
 
   return (
@@ -169,9 +168,6 @@ export default function SearchPage({ onUnauthorized }) {
           <h2>Documentos vigentes</h2>
           <p>Use filtros combinados por empresa, setor, tipo documental, escopo e termo livre.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadResults} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar lista"}
-        </button>
       </section>
 
       <section className="panel-float painel-filters-grid">
@@ -281,14 +277,17 @@ export default function SearchPage({ onUnauthorized }) {
         </label>
       </section>
 
-      {error && <p className="error-text margin-top">{error}</p>}
-
       <section className="results-grid">
-        {filteredItems.map((item, index) => (
+        {filteredItemsPagination.pagedItems.map((item, index) => (
           <button
             key={`${item.document_id}-${item.active_version_id}`}
             type="button"
-            className="result-card panel-float"
+            className={`result-card panel-float ${
+              selectedResult?.document_id === item.document_id &&
+              selectedResult?.active_version_id === item.active_version_id
+                ? "result-card-selected"
+                : ""
+            }`}
             onClick={() => openViewer(item)}
             style={{ animationDelay: `${index * 40}ms` }}
           >
@@ -312,6 +311,16 @@ export default function SearchPage({ onUnauthorized }) {
         ))}
       </section>
 
+      <PaginationControls
+        page={filteredItemsPagination.page}
+        pageSize={filteredItemsPagination.pageSize}
+        totalItems={filteredItemsPagination.totalItems}
+        totalPages={filteredItemsPagination.totalPages}
+        pageSizeOptions={filteredItemsPagination.pageSizeOptions}
+        onPageChange={filteredItemsPagination.setPage}
+        onPageSizeChange={filteredItemsPagination.setPageSize}
+      />
+
       {!loading && filteredItems.length === 0 && (
         <section className="empty-box panel-float">
           <p>Nenhum documento encontrado com os filtros atuais.</p>
@@ -322,30 +331,30 @@ export default function SearchPage({ onUnauthorized }) {
         <header className="viewer-head">
           <div>
             <p className="kicker">Visualizacao</p>
-            <h3>{selectedResult ? extractFileName(selectedResult.file_path) : "Documento"}</h3>
+            <h3>{selectedResult ? selectedResult.title : "Documento"}</h3>
           </div>
           <button
             type="button"
             className="ghost-btn"
             onClick={() => {
               setViewerOpen(false);
-              setSelectedDocument(null);
-              setSelectedVersions([]);
-              setViewerError("");
+              setSelectedResult(null);
             }}
           >
             Fechar
           </button>
         </header>
 
-        {viewerLoading && <p>Carregando dados do documento...</p>}
-        {viewerError && <p className="error-text">{viewerError}</p>}
-
-        {!viewerLoading && selectedResult && (
+        {selectedResult && (
           <div className="viewer-body">
             <div className="preview-panel panel-float">
-              {isEmbeddablePath(selectedResult.file_path) ? (
-                <iframe title="Visualizacao do arquivo" src={selectedResult.file_path} className="file-frame" />
+              {resolvePreviewSrc(selectedResult.file_path) ? (
+                <iframe
+                  title="Visualizacao do arquivo"
+                  src={buildViewerSrc(selectedResult.file_path)}
+                  className="file-frame"
+                  scrolling="yes"
+                />
               ) : (
                 <div className="no-preview">
                   <p>Pre-visualizacao indisponivel para caminho local.</p>
@@ -372,37 +381,24 @@ export default function SearchPage({ onUnauthorized }) {
                 <li>
                   <strong>Versao ativa:</strong> {selectedResult.active_version_number}
                 </li>
+                <li>
+                  <strong>Criado por:</strong> {selectedResult.created_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado por:</strong> {selectedResult.approved_by_name || "-"}
+                </li>
+                <li>
+                  <strong>Aprovado em:</strong> {formatDateTime(selectedResult.approved_at)}
+                </li>
+                <li>
+                  <strong>Empresa:</strong>{" "}
+                  {companyNameById.get(String(selectedResult.company_id)) || "Empresa desconhecida"}
+                </li>
+                <li>
+                  <strong>Setor:</strong>{" "}
+                  {sectorNameById.get(String(selectedResult.sector_id)) || "Setor desconhecido"}
+                </li>
               </ul>
-
-              {selectedDocument && (
-                <>
-                  <h4>Documento</h4>
-                  <ul>
-                    <li>
-                      <strong>ID:</strong> {selectedDocument.id}
-                    </li>
-                    <li>
-                      <strong>Setor:</strong> {selectedDocument.sector_id}
-                    </li>
-                    <li>
-                      <strong>Empresa:</strong> {selectedDocument.company_id}
-                    </li>
-                  </ul>
-                </>
-              )}
-
-              <h4>Historico de versoes</h4>
-              <div className="versions-list">
-                {selectedVersions.map((version) => (
-                  <div key={version.id} className="version-item">
-                    <span>v{version.version_number}</span>
-                    <span className={`status-pill status-${String(version.status || "").toLowerCase()}`}>
-                      {formatStatusLabel(version.status)}
-                    </span>
-                  </div>
-                ))}
-                {selectedVersions.length === 0 && <p>Sem versoes registradas.</p>}
-              </div>
             </div>
           </div>
         )}

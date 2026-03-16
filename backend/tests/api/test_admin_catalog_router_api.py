@@ -74,6 +74,35 @@ def test_update_company_returns_200(admin_authorized_client, monkeypatch) -> Non
     assert response.json() == {"message": "updated"}
 
 
+def test_delete_company_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.delete_company.return_value = MessageResponse(message="deleted")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.delete("/admin/catalog/companies/5")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "deleted"}
+
+
+def test_create_sector_returns_201(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.create_sector.return_value = MessageResponse(message="created")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.post(
+        "/admin/catalog/sectors",
+        json={"name": "Qualidade", "company_id": 1, "sigla": "QLD"},
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {"message": "created"}
+
+
 def test_delete_sector_returns_200(admin_authorized_client, monkeypatch) -> None:
     import app.routers.admin_catalog as admin_catalog_router
 
@@ -85,6 +114,22 @@ def test_delete_sector_returns_200(admin_authorized_client, monkeypatch) -> None
 
     assert response.status_code == 200
     assert response.json() == {"message": "deleted"}
+
+
+def test_update_sector_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.update_sector.return_value = MessageResponse(message="updated")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.put(
+        "/admin/catalog/sectors/10",
+        json={"name": "Qualidade 2", "company_id": 2, "sigla": "Q2"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "updated"}
 
 
 def test_catalog_routes_return_403_when_service_blocks(admin_authorized_client, monkeypatch) -> None:
@@ -130,3 +175,16 @@ def test_update_document_type_returns_200(admin_authorized_client, monkeypatch) 
 
     assert response.status_code == 200
     assert response.json() == {"message": "updated"}
+
+
+def test_delete_document_type_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_catalog as admin_catalog_router
+
+    service = Mock()
+    service.delete_document_type.return_value = MessageResponse(message="deleted")
+    monkeypatch.setattr(admin_catalog_router, "get_admin_catalog_service", lambda _: service)
+
+    response = admin_authorized_client.delete("/admin/catalog/document-types/7")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "deleted"}

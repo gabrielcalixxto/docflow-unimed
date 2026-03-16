@@ -38,6 +38,7 @@ def test_list_admin_users_returns_items(admin_authorized_client, monkeypatch) ->
         {
             "id": 1,
             "name": "Admin",
+            "job_title": "Administrador",
             "username": "admin.docflow",
             "email": "admin@docflow.local",
             "roles": ["ADMIN"],
@@ -83,8 +84,10 @@ def test_create_admin_user_returns_201(admin_authorized_client, monkeypatch) -> 
         "/admin/users",
         json={
             "name": "Autor Teste",
+            "job_title": "Analista de Qualidade",
+            "username": "autor.teste",
             "email": "autor.novo@docflow.local",
-            "password": "123456",
+            "password": "Senha@123",
             "roles": ["AUTOR", "REVISOR"],
             "company_ids": [1],
             "sector_ids": [10],
@@ -106,6 +109,7 @@ def test_update_admin_user_returns_200(admin_authorized_client, monkeypatch) -> 
         "/admin/users/7",
         json={
             "name": "Autor Teste",
+            "job_title": "Analista de Qualidade",
             "email": "autor.novo@docflow.local",
             "password": None,
             "roles": ["AUTOR"],
@@ -116,6 +120,19 @@ def test_update_admin_user_returns_200(admin_authorized_client, monkeypatch) -> 
 
     assert response.status_code == 200
     assert response.json() == {"message": "updated"}
+
+
+def test_inactivate_admin_user_returns_200(admin_authorized_client, monkeypatch) -> None:
+    import app.routers.admin_users as admin_users_router
+
+    service = Mock()
+    service.inactivate_user.return_value = MessageResponse(message="inactivated")
+    monkeypatch.setattr(admin_users_router, "get_user_admin_service", lambda _: service)
+
+    response = admin_authorized_client.patch("/admin/users/7/inactivate")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "inactivated"}
 
 
 def test_delete_admin_user_returns_200(admin_authorized_client, monkeypatch) -> None:
@@ -155,8 +172,10 @@ def test_create_admin_user_returns_409_on_conflict(admin_authorized_client, monk
         "/admin/users",
         json={
             "name": "Autor Teste",
+            "job_title": "Analista de Qualidade",
+            "username": "autor.teste",
             "email": "autor.novo@docflow.local",
-            "password": "123456",
+            "password": "Senha@123",
             "roles": ["AUTOR"],
             "company_ids": [1],
             "sector_ids": [10],

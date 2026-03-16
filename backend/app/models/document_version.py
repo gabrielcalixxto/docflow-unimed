@@ -30,11 +30,33 @@ class DocumentVersion(Base):
     file_path: Mapped[str] = mapped_column(String(255))
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    invalidated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expiration_date: Mapped[date] = mapped_column(Date)
 
     document = relationship("Document", back_populates="versions")
     creator = relationship("User", back_populates="created_versions", foreign_keys=[created_by])
     approver = relationship("User", back_populates="approved_versions", foreign_keys=[approved_by])
+    invalidator = relationship("User", back_populates="invalidated_versions", foreign_keys=[invalidated_by])
     events = relationship("DocumentEvent", back_populates="version", cascade="all, delete-orphan")
+    stored_file = relationship("StoredFile", back_populates="version", uselist=False)
+
+    @property
+    def approved_by_name(self) -> str | None:
+        if self.approver is None:
+            return None
+        return self.approver.name
+
+    @property
+    def created_by_name(self) -> str | None:
+        if self.creator is None:
+            return None
+        return self.creator.name
+
+    @property
+    def invalidated_by_name(self) -> str | None:
+        if self.invalidator is None:
+            return None
+        return self.invalidator.name

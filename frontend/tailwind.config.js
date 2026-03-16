@@ -3,6 +3,10 @@ export default {
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Manrope", "Segoe UI", "sans-serif"],
+        display: ["Space Grotesk", "Trebuchet MS", "sans-serif"],
+      },
       colors: {
         unimed: {
           50: "#eef9f2",
@@ -18,11 +22,11 @@ export default {
         },
         citrus: "#bfd730",
         ember: "#f2992e",
-        ink: "#103229",
-        mist: "#f3fbf7",
+        ink: "#18181b",
+        mist: "#fafafa",
       },
       boxShadow: {
-        card: "0 22px 60px rgba(4, 71, 44, 0.10)",
+        card: "0 10px 28px rgba(24, 24, 27, 0.08)",
         glow: "0 20px 80px rgba(0, 153, 93, 0.18)",
       },
     },

@@ -1,0 +1,11 @@
+version: "3"
+agent:
+  web_addr: 127.0.0.1:4040
+tunnels:
+  frontend:
+    proto: http
+    addr: 5173
+    domain: perversive-unsceptered-sueann.ngrok-free.dev
+  backend:
+    proto: http
+    addr: 8000

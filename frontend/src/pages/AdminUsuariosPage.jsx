@@ -1,18 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 
+import PasswordField from "../components/PasswordField";
+import PaginationControls from "../components/PaginationControls";
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
+import usePagination from "../hooks/usePagination";
+import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminUser,
-  deleteAdminUser,
   getAdminUserOptions,
   getAdminUsers,
+  inactivateAdminUser,
+  reactivateAdminUser,
+  showGlobalError,
   updateAdminUser,
 } from "../services/api";
 import { displayRole } from "../utils/roles";
 
 const ROLE_DISPLAY_ORDER = ["LEITOR", "AUTOR", "REVISOR", "COORDENADOR", "ADMIN"];
+const LOGIN_PATTERN = /^[a-z]+(?:\.[a-z]+)+$/;
+const PASSWORD_NUMBER_PATTERN = /\d/;
+const PASSWORD_SPECIAL_PATTERN = /[^A-Za-z0-9\s]/;
+const LOWERCASE_NAME_WORDS = new Set(["de", "do", "da"]);
 
 const INITIAL_CREATE_FORM = {
+  username: "",
   name: "",
+  jobTitle: "",
   email: "",
   roles: [],
   companyIds: [],
@@ -23,7 +36,9 @@ const INITIAL_CREATE_FORM = {
 
 const INITIAL_EDIT_FORM = {
   userId: null,
+  username: "",
   name: "",
+  jobTitle: "",
   email: "",
   roles: [],
   companyIds: [],
@@ -37,6 +52,26 @@ function asStringIdList(values) {
     return [];
   }
   return values.map((value) => String(value));
+}
+
+function getUserRoles(user) {
+  return Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [];
+}
+
+function getUserCompanyIds(user) {
+  return Array.isArray(user.company_ids)
+    ? asStringIdList(user.company_ids)
+    : user.company_id != null
+      ? [String(user.company_id)]
+      : [];
+}
+
+function getUserSectorIds(user) {
+  return Array.isArray(user.sector_ids)
+    ? asStringIdList(user.sector_ids)
+    : user.sector_id != null
+      ? [String(user.sector_id)]
+      : [];
 }
 
 function toggleRoleSelection(currentRoles, role) {
@@ -87,12 +122,53 @@ function normalizeSectorPickerByCompany(currentMap, sectorGroups) {
     }
     const availableIds = group.sectors.map((sector) => String(sector.id));
     const currentValue = currentMap[group.companyId];
-    nextMap[group.companyId] = currentValue && availableIds.includes(currentValue) ? currentValue : availableIds[0];
+    nextMap[group.companyId] =
+      currentValue === "ALL" || (currentValue && availableIds.includes(currentValue))
+        ? currentValue
+        : "ALL";
   });
   return nextMap;
 }
 
+function mergeUniqueIds(currentValues, valuesToAdd) {
+  return [...new Set([...(currentValues || []), ...(valuesToAdd || [])])];
+}
+
+function normalizeLoginValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeLoginInput(value) {
+  return normalizeLoginValue(value).replace(/\s+/g, "");
+}
+
+function isPasswordComplexEnough(value) {
+  return (
+    typeof value === "string" &&
+    value.length >= 8 &&
+    PASSWORD_NUMBER_PATTERN.test(value) &&
+    PASSWORD_SPECIAL_PATTERN.test(value)
+  );
+}
+
+function formatPersonName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return normalized
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && LOWERCASE_NAME_WORDS.has(lower)) {
+        return lower;
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 export default function AdminUsuariosPage({ onUnauthorized }) {
+  const { preserveViewport } = useViewportPreserver();
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({ roles: [], companies: [], sectors: [] });
   const [createForm, setCreateForm] = useState(INITIAL_CREATE_FORM);
@@ -104,8 +180,21 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [tableFilters, setTableFilters] = useState({
+    term: "",
+    role: "ALL",
+    company: "ALL",
+    sector: "ALL",
+  });
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const companyNameById = useMemo(
     () => new Map((options.companies || []).map((company) => [String(company.id), company.name])),
@@ -152,7 +241,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         if (prev && companies.some((company) => String(company.id) === prev)) {
           return prev;
         }
-        return companies[0] ? String(companies[0].id) : "";
+        return "";
       });
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -172,6 +261,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["users"] });
 
   useEffect(() => {
     setCreateSectorToAddByCompany((prev) => normalizeSectorPickerByCompany(prev, createSectorGroups));
@@ -185,6 +275,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     if (!createCompanyToAdd) {
       return;
     }
+    if (createCompanyToAdd === "ALL") {
+      const allCompanyIds = options.companies.map((company) => String(company.id));
+      setCreateForm((prev) => ({
+        ...prev,
+        companyIds: mergeUniqueIds(prev.companyIds, allCompanyIds),
+      }));
+      return;
+    }
     setCreateForm((prev) => ({
       ...prev,
       companyIds: prev.companyIds.includes(createCompanyToAdd)
@@ -195,6 +293,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
   const addCompanyToEditForm = () => {
     if (!editCompanyToAdd) {
+      return;
+    }
+    if (editCompanyToAdd === "ALL") {
+      const allCompanyIds = options.companies.map((company) => String(company.id));
+      setEditForm((prev) => ({
+        ...prev,
+        companyIds: mergeUniqueIds(prev.companyIds, allCompanyIds),
+      }));
       return;
     }
     setEditForm((prev) => ({
@@ -210,9 +316,40 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     if (!sectorId) {
       return;
     }
+    if (sectorId === "ALL") {
+      const allSectorIds = options.sectors
+        .filter((sector) => String(sector.company_id) === companyId)
+        .map((sector) => String(sector.id));
+      setCreateForm((prev) => ({
+        ...prev,
+        sectorIds: mergeUniqueIds(prev.sectorIds, allSectorIds),
+      }));
+      return;
+    }
     setCreateForm((prev) => ({
       ...prev,
       sectorIds: prev.sectorIds.includes(sectorId) ? prev.sectorIds : [...prev.sectorIds, sectorId],
+    }));
+  };
+
+  const clearAllCompaniesFromCreateForm = () => {
+    setCreateForm((prev) => ({
+      ...prev,
+      companyIds: [],
+      sectorIds: [],
+    }));
+  };
+
+  const clearAllSectorsFromCreateCompany = (companyId) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      sectorIds: prev.sectorIds.filter((sectorId) => {
+        const sector = options.sectors.find((candidate) => String(candidate.id) === sectorId);
+        if (!sector) {
+          return true;
+        }
+        return String(sector.company_id) !== companyId;
+      }),
     }));
   };
 
@@ -221,16 +358,63 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     if (!sectorId) {
       return;
     }
+    if (sectorId === "ALL") {
+      const allSectorIds = options.sectors
+        .filter((sector) => String(sector.company_id) === companyId)
+        .map((sector) => String(sector.id));
+      setEditForm((prev) => ({
+        ...prev,
+        sectorIds: mergeUniqueIds(prev.sectorIds, allSectorIds),
+      }));
+      return;
+    }
     setEditForm((prev) => ({
       ...prev,
       sectorIds: prev.sectorIds.includes(sectorId) ? prev.sectorIds : [...prev.sectorIds, sectorId],
     }));
   };
 
+  const clearAllCompaniesFromEditForm = () => {
+    setEditForm((prev) => ({
+      ...prev,
+      companyIds: [],
+      sectorIds: [],
+    }));
+  };
+
+  const clearAllSectorsFromEditCompany = (companyId) => {
+    setEditForm((prev) => ({
+      ...prev,
+      sectorIds: prev.sectorIds.filter((sectorId) => {
+        const sector = options.sectors.find((candidate) => String(candidate.id) === sectorId);
+        if (!sector) {
+          return true;
+        }
+        return String(sector.company_id) !== companyId;
+      }),
+    }));
+  };
+
   const handleCreateUser = async (event) => {
     event.preventDefault();
+    const normalizedUsername = normalizeLoginValue(createForm.username);
+    const normalizedName = formatPersonName(createForm.name);
+    const normalizedJobTitle = String(createForm.jobTitle || "").trim();
+
+    if (!LOGIN_PATTERN.test(normalizedUsername)) {
+      showFeedback("error", "Login invalido. Use o formato nome.texto, sem espacos, numeros ou caracteres especiais.");
+      return;
+    }
+    if (!normalizedJobTitle) {
+      showFeedback("error", "Funcao e obrigatoria.");
+      return;
+    }
     if (createForm.roles.length === 0) {
       showFeedback("error", "Selecione pelo menos um papel.");
+      return;
+    }
+    if (!isPasswordComplexEnough(createForm.password)) {
+      showFeedback("error", "Senha invalida. Use no minimo 8 caracteres, com numero e caractere especial.");
       return;
     }
     if (createForm.password !== createForm.passwordConfirm) {
@@ -242,7 +426,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       await createAdminUser({
-        name: createForm.name.trim(),
+        username: normalizedUsername,
+        name: normalizedName,
+        job_title: normalizedJobTitle,
         email: createForm.email.trim().toLowerCase(),
         roles: createForm.roles,
         company_ids: createForm.companyIds.map((value) => Number(value)),
@@ -284,7 +470,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
     setEditForm({
       userId: user.id,
+      username: user.username || "",
       name: user.name || "",
+      jobTitle: user.job_title || "",
       email: user.email || "",
       roles,
       companyIds,
@@ -299,11 +487,22 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
   const handleUpdateUser = async (event) => {
     event.preventDefault();
+    const normalizedName = formatPersonName(editForm.name);
+    const normalizedJobTitle = String(editForm.jobTitle || "").trim();
+
     if (!editForm.userId) {
+      return;
+    }
+    if (!normalizedJobTitle) {
+      showFeedback("error", "Funcao e obrigatoria.");
       return;
     }
     if (editForm.roles.length === 0) {
       showFeedback("error", "Selecione pelo menos um papel.");
+      return;
+    }
+    if (editForm.password && !isPasswordComplexEnough(editForm.password)) {
+      showFeedback("error", "Nova senha invalida. Use no minimo 8 caracteres, com numero e caractere especial.");
       return;
     }
     if (editForm.password && editForm.password !== editForm.passwordConfirm) {
@@ -315,7 +514,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       await updateAdminUser(editForm.userId, {
-        name: editForm.name.trim(),
+        name: normalizedName,
+        job_title: normalizedJobTitle,
         email: editForm.email.trim().toLowerCase(),
         roles: editForm.roles,
         company_ids: editForm.companyIds.map((value) => Number(value)),
@@ -337,16 +537,16 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     }
   };
 
-  const handleDeleteUser = async (userId) => {
-    const confirmed = window.confirm("Confirma exclusao do usuario?");
+  const handleInactivateUser = async (userId) => {
+    const confirmed = window.confirm("Confirma inativacao do usuario?");
     if (!confirmed) {
       return;
     }
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      await deleteAdminUser(userId);
-      showFeedback("success", "Usuario removido.");
+      await inactivateAdminUser(userId);
+      showFeedback("success", "Usuario inativado.");
       if (editForm.userId === userId) {
         setEditForm(INITIAL_EDIT_FORM);
       }
@@ -356,11 +556,85 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      showFeedback("error", requestError.message || "Falha ao excluir usuario.");
+      showFeedback("error", requestError.message || "Falha ao inativar usuario.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleReactivateUser = async (userId) => {
+    const confirmed = window.confirm("Confirma reativacao do usuario?");
+    if (!confirmed) {
+      return;
+    }
+    setSubmitting(true);
+    setFeedback({ type: "", message: "" });
+    try {
+      await reactivateAdminUser(userId);
+      showFeedback("success", "Usuario reativado.");
+      await loadData();
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        onUnauthorized?.();
+        return;
+      }
+      showFeedback("error", requestError.message || "Falha ao reativar usuario.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sectorFilterOptions = useMemo(
+    () =>
+      [...(options.sectors || [])].sort((left, right) =>
+        String(left.name || "").localeCompare(String(right.name || "")),
+      ),
+    [options.sectors],
+  );
+
+  const filteredUsers = useMemo(() => {
+    const normalizedTerm = tableFilters.term.trim().toLowerCase();
+    return users.filter((user) => {
+      const roles = getUserRoles(user);
+      const companyIds = getUserCompanyIds(user);
+      const sectorIds = getUserSectorIds(user);
+      const companiesLabel = companyIds
+        .map((companyId) => companyNameById.get(companyId) || "Empresa nao encontrada")
+        .join(", ");
+      const sectorsLabel = sectorIds
+        .map((sectorId) => sectorNameById.get(sectorId) || "Setor nao encontrado")
+        .join(", ");
+
+      if (tableFilters.role !== "ALL" && !roles.includes(tableFilters.role)) {
+        return false;
+      }
+      if (tableFilters.company !== "ALL" && !companyIds.includes(tableFilters.company)) {
+        return false;
+      }
+      if (tableFilters.sector !== "ALL" && !sectorIds.includes(tableFilters.sector)) {
+        return false;
+      }
+      if (!normalizedTerm) {
+        return true;
+      }
+
+      const searchable = [
+        user.username || "",
+        user.name || "",
+        user.job_title || "",
+        user.email || "",
+        user.is_active === false ? "inativo" : "ativo",
+        displayRole(roles),
+        companiesLabel,
+        sectorsLabel,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedTerm);
+    });
+  }, [users, tableFilters, companyNameById, sectorNameById]);
+  const userPagination = usePagination(filteredUsers);
 
   return (
     <div className="page-animation">
@@ -370,23 +644,41 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
           <h2>Cadastro de usuarios</h2>
           <p>Crie, edite e remova usuarios com multiplos papeis, empresas e setores.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid admin-users-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreateUser}>
           <h3>Criar usuario</h3>
           <div className="form-grid">
             <label>
-              Nome
+              Login
+              <input
+                required
+                value={createForm.username}
+                placeholder="usuario.exemplo"
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, username: normalizeLoginInput(event.target.value) }))
+                }
+              />
+            </label>
+            <label>
+              Nome completo
               <input
                 required
                 value={createForm.name}
                 onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            </label>
+            <label>
+              Funcao
+              <input
+                required
+                value={createForm.jobTitle}
+                onChange={(event) => setCreateForm((prev) => ({ ...prev, jobTitle: event.target.value }))}
               />
             </label>
             <label>
@@ -403,7 +695,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <p className="admin-field-label">Empresas</p>
               <div className="company-picker-row">
                 <select value={createCompanyToAdd} onChange={(event) => setCreateCompanyToAdd(event.target.value)}>
-                  <option value="">Selecione a empresa</option>
+                  <option value="">Selecione a Empresa</option>
+                  <option value="ALL">TODOS</option>
                   {options.companies.map((company) => (
                     <option key={company.id} value={String(company.id)}>
                       {company.name}
@@ -412,6 +705,16 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 </select>
                 <button type="button" className="company-add-btn" onClick={addCompanyToCreateForm}>
                   +
+                </button>
+              </div>
+              <div className="section-clear-row">
+                <button
+                  type="button"
+                  className="section-clear-btn"
+                  onClick={clearAllCompaniesFromCreateForm}
+                  disabled={createForm.companyIds.length === 0}
+                >
+                  Limpar todas empresas
                 </button>
               </div>
               <div className="selected-chip-list">
@@ -470,14 +773,28 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 <div className="sector-groups">
                   {createSectorGroups.map((group) => (
                     <div key={`create-sector-group-${group.companyId}`} className="sector-group">
-                      <p className="sector-group-title">{group.companyName}</p>
+                      <div className="sector-group-head">
+                        <p className="sector-group-title">{group.companyName}</p>
+                        <button
+                          type="button"
+                          className="section-clear-btn"
+                          onClick={() => clearAllSectorsFromCreateCompany(group.companyId)}
+                          disabled={
+                            createForm.sectorIds.filter((sectorId) =>
+                              group.sectors.some((sector) => String(sector.id) === sectorId),
+                            ).length === 0
+                          }
+                        >
+                          Limpar setores desta empresa
+                        </button>
+                      </div>
                       {group.sectors.length === 0 ? (
                         <p className="workflow-hint">Nenhum setor cadastrado para esta empresa.</p>
                       ) : (
                         <>
                           <div className="company-picker-row">
                             <select
-                              value={createSectorToAddByCompany[group.companyId] || String(group.sectors[0].id)}
+                              value={createSectorToAddByCompany[group.companyId] || "ALL"}
                               onChange={(event) =>
                                 setCreateSectorToAddByCompany((prev) => ({
                                   ...prev,
@@ -485,6 +802,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                                 }))
                               }
                             >
+                              <option value="ALL">TODOS</option>
                               {group.sectors.map((sector) => (
                                 <option key={`create-sector-option-${sector.id}`} value={String(sector.id)}>
                                   {sector.name}
@@ -532,28 +850,24 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               )}
             </div>
 
-            <label>
-              Senha
-              <input
-                required
-                type="password"
-                minLength={6}
-                value={createForm.password}
-                onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
-              />
-            </label>
-            <label>
-              Repetir senha
-              <input
-                required
-                type="password"
-                minLength={6}
-                value={createForm.passwordConfirm}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
-                }
-              />
-            </label>
+            <PasswordField
+              label="Senha"
+              required
+              minLength={8}
+              value={createForm.password}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
+              autoComplete="new-password"
+            />
+            <PasswordField
+              label="Repetir senha"
+              required
+              minLength={8}
+              value={createForm.passwordConfirm}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
+              }
+              autoComplete="new-password"
+            />
           </div>
 
           <button type="submit" className="compact-submit" disabled={submitting || loading}>
@@ -566,11 +880,29 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
           {editForm.userId ? (
             <div className="form-grid">
               <label>
-                Nome
+                Login
+                <input
+                  required
+                  value={editForm.username}
+                  placeholder="usuario.exemplo"
+                  disabled
+                  readOnly
+                />
+              </label>
+              <label>
+                Nome completo
                 <input
                   required
                   value={editForm.name}
                   onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+                />
+              </label>
+              <label>
+                Funcao
+                <input
+                  required
+                  value={editForm.jobTitle}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, jobTitle: event.target.value }))}
                 />
               </label>
               <label>
@@ -587,7 +919,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 <p className="admin-field-label">Empresas</p>
                 <div className="company-picker-row">
                   <select value={editCompanyToAdd} onChange={(event) => setEditCompanyToAdd(event.target.value)}>
-                    <option value="">Selecione a empresa</option>
+                    <option value="">Selecione a Empresa</option>
+                    <option value="ALL">TODOS</option>
                     {options.companies.map((company) => (
                       <option key={company.id} value={String(company.id)}>
                         {company.name}
@@ -596,6 +929,16 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   </select>
                   <button type="button" className="company-add-btn" onClick={addCompanyToEditForm}>
                     +
+                  </button>
+                </div>
+                <div className="section-clear-row">
+                  <button
+                    type="button"
+                    className="section-clear-btn"
+                    onClick={clearAllCompaniesFromEditForm}
+                    disabled={editForm.companyIds.length === 0}
+                  >
+                    Limpar todas empresas
                   </button>
                 </div>
                 <div className="selected-chip-list">
@@ -654,14 +997,28 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   <div className="sector-groups">
                     {editSectorGroups.map((group) => (
                       <div key={`edit-sector-group-${group.companyId}`} className="sector-group">
-                        <p className="sector-group-title">{group.companyName}</p>
+                        <div className="sector-group-head">
+                          <p className="sector-group-title">{group.companyName}</p>
+                          <button
+                            type="button"
+                            className="section-clear-btn"
+                            onClick={() => clearAllSectorsFromEditCompany(group.companyId)}
+                            disabled={
+                              editForm.sectorIds.filter((sectorId) =>
+                                group.sectors.some((sector) => String(sector.id) === sectorId),
+                              ).length === 0
+                            }
+                          >
+                            Limpar setores desta empresa
+                          </button>
+                        </div>
                         {group.sectors.length === 0 ? (
                           <p className="workflow-hint">Nenhum setor cadastrado para esta empresa.</p>
                         ) : (
                           <>
                             <div className="company-picker-row">
                               <select
-                                value={editSectorToAddByCompany[group.companyId] || String(group.sectors[0].id)}
+                                value={editSectorToAddByCompany[group.companyId] || "ALL"}
                                 onChange={(event) =>
                                   setEditSectorToAddByCompany((prev) => ({
                                     ...prev,
@@ -669,6 +1026,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                                   }))
                                 }
                               >
+                                <option value="ALL">TODOS</option>
                                 {group.sectors.map((sector) => (
                                   <option key={`edit-sector-option-${sector.id}`} value={String(sector.id)}>
                                     {sector.name}
@@ -716,26 +1074,22 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 )}
               </div>
 
-              <label>
-                Nova senha (opcional)
-                <input
-                  type="password"
-                  minLength={6}
-                  value={editForm.password}
-                  onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
-                />
-              </label>
-              <label>
-                Repetir nova senha
-                <input
-                  type="password"
-                  minLength={6}
-                  value={editForm.passwordConfirm}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
-                  }
-                />
-              </label>
+              <PasswordField
+                label="Nova senha (opcional)"
+                minLength={8}
+                value={editForm.password}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
+                autoComplete="new-password"
+              />
+              <PasswordField
+                label="Repetir nova senha"
+                minLength={8}
+                value={editForm.passwordConfirm}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
+                }
+                autoComplete="new-password"
+              />
             </div>
           ) : (
             <p className="workflow-hint">Selecione um usuario na tabela para editar.</p>
@@ -759,6 +1113,91 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         </form>
       </section>
 
+      <section className="panel-float painel-filters-grid">
+        <label>
+          Pesquisa
+          <input
+            type="text"
+            placeholder="Login, nome, email, papel..."
+            value={tableFilters.term}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  term: event.target.value,
+                })),
+              )
+            }
+          />
+        </label>
+
+        <label>
+          Papel
+          <select
+            value={tableFilters.role}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  role: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {(options.roles || []).map((role) => (
+              <option key={`role-filter-${role}`} value={role}>
+                {displayRole(role)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Empresa
+          <select
+            value={tableFilters.company}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  company: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todas</option>
+            {(options.companies || []).map((company) => (
+              <option key={`company-filter-${company.id}`} value={String(company.id)}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Setor
+          <select
+            value={tableFilters.sector}
+            onChange={(event) =>
+              preserveViewport(() =>
+                setTableFilters((prev) => ({
+                  ...prev,
+                  sector: event.target.value,
+                })),
+              )
+            }
+          >
+            <option value="ALL">Todos</option>
+            {sectorFilterOptions.map((sector) => (
+              <option key={`sector-filter-${sector.id}`} value={String(sector.id)}>
+                {sector.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <section className="panel-float workflow-list">
         <div className="workflow-list-head">
           <h3>Usuarios cadastrados</h3>
@@ -769,7 +1208,9 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <tr>
                 <th>Login</th>
                 <th>Nome</th>
+                <th>Funcao</th>
                 <th>Email</th>
+                <th>Status</th>
                 <th>Papeis</th>
                 <th>Empresas</th>
                 <th>Setores</th>
@@ -777,18 +1218,10 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => {
-                const roles = Array.isArray(user.roles) ? user.roles : user.role ? [user.role] : [];
-                const companyIds = Array.isArray(user.company_ids)
-                  ? asStringIdList(user.company_ids)
-                  : user.company_id != null
-                    ? [String(user.company_id)]
-                    : [];
-                const sectorIds = Array.isArray(user.sector_ids)
-                  ? asStringIdList(user.sector_ids)
-                  : user.sector_id != null
-                    ? [String(user.sector_id)]
-                    : [];
+              {userPagination.pagedItems.map((user) => {
+                const roles = getUserRoles(user);
+                const companyIds = getUserCompanyIds(user);
+                const sectorIds = getUserSectorIds(user);
 
                 const companiesLabel = companyIds
                   .map((companyId) => companyNameById.get(companyId) || "Empresa nao encontrada")
@@ -801,39 +1234,61 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                   <tr key={user.id}>
                     <td>{user.username || "-"}</td>
                     <td>{user.name}</td>
+                    <td>{user.job_title || "-"}</td>
                     <td>{user.email}</td>
+                    <td>{user.is_active === false ? "Inativo" : "Ativo"}</td>
                     <td>{displayRole(roles)}</td>
                     <td>{companiesLabel || "-"}</td>
                     <td>{sectorsLabel || "-"}</td>
                     <td>
                       <button
                         type="button"
-                        className="table-btn"
+                        className="table-btn table-btn-edit"
                         disabled={submitting}
                         onClick={() => handleOpenEdit(user)}
                       >
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        className="table-btn"
-                        disabled={submitting}
-                        onClick={() => handleDeleteUser(user.id)}
-                      >
-                        Excluir
-                      </button>
+                      {user.is_active === false ? (
+                        <button
+                          type="button"
+                          className="table-btn table-btn-reactivate"
+                          disabled={submitting}
+                          onClick={() => handleReactivateUser(user.id)}
+                        >
+                          Reativar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="table-btn table-btn-inactivate"
+                          disabled={submitting}
+                          onClick={() => handleInactivateUser(user.id)}
+                        >
+                          Inativar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
-              {!loading && users.length === 0 && (
+              {!loading && filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={7}>Nenhum usuario encontrado.</td>
+                  <td colSpan={9}>Nenhum usuario encontrado.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={userPagination.page}
+          pageSize={userPagination.pageSize}
+          totalItems={userPagination.totalItems}
+          totalPages={userPagination.totalPages}
+          pageSizeOptions={userPagination.pageSizeOptions}
+          onPageChange={userPagination.setPage}
+          onPageSizeChange={userPagination.setPageSize}
+        />
       </section>
     </div>
   );

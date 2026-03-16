@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 
+import PaginationControls from "../components/PaginationControls";
+import usePagination from "../hooks/usePagination";
+import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import {
   createAdminDocumentType,
   getAdminCatalogOptions,
+  showGlobalError,
   updateAdminDocumentType,
 } from "../services/api";
 
@@ -20,8 +24,16 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   const [editingDocumentTypeId, setEditingDocumentTypeId] = useState(null);
   const [editingSigla, setEditingSigla] = useState("");
   const [editingName, setEditingName] = useState("");
+  const documentTypesPagination = usePagination(documentTypes);
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -47,6 +59,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   useEffect(() => {
     loadData();
   }, []);
+  useRealtimeEvents(loadData, { channels: ["catalog"] });
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -123,12 +136,11 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
           <h2>Cadastro Tipo de Documento</h2>
           <p>Gerencie os tipos documentais exibidos no cadastro de novos documentos.</p>
         </div>
-        <button type="button" className="ghost-btn" onClick={loadData} disabled={loading || submitting}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreate}>
@@ -186,7 +198,7 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
               </tr>
             </thead>
             <tbody>
-              {documentTypes.map((documentType) => (
+              {documentTypesPagination.pagedItems.map((documentType) => (
                 <tr key={documentType.id}>
                   <td>
                     {editingDocumentTypeId === Number(documentType.id) ? (
@@ -254,6 +266,15 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={documentTypesPagination.page}
+          pageSize={documentTypesPagination.pageSize}
+          totalItems={documentTypesPagination.totalItems}
+          totalPages={documentTypesPagination.totalPages}
+          pageSizeOptions={documentTypesPagination.pageSizeOptions}
+          onPageChange={documentTypesPagination.setPage}
+          onPageSizeChange={documentTypesPagination.setPageSize}
+        />
       </section>
     </div>
   );

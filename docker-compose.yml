@@ -2,8 +2,8 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: docflow
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
@@ -16,9 +16,8 @@ services:
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD}@postgres:5432/docflow
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES}"
     ports:
       - "8000:8000"
     volumes:
@@ -29,8 +28,6 @@ services:
       context: ./frontend
     depends_on:
       - backend
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     ports:
       - "5173:5173"
     volumes:

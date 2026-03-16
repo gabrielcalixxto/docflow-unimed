@@ -12,6 +12,10 @@ from app.services.document_service import DocumentService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
 
+def build_author_user() -> AuthenticatedUser:
+    return AuthenticatedUser(email="autor@example.com", role=UserRole.AUTOR, user_id=77)
+
+
 def build_service(
     *,
     repository: Mock | None = None,
@@ -32,7 +36,8 @@ def build_service(
     )
 
 
-def test_create_document_persists_entity_and_emits_event(document_payload, current_user) -> None:
+def test_create_document_persists_entity_and_emits_event(document_payload) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     repository.get_company_by_id.return_value = SimpleNamespace(id=1)
@@ -52,14 +57,14 @@ def test_create_document_persists_entity_and_emits_event(document_payload, curre
         audit_service=audit_service,
     )
 
-    response = service.create_document(document_payload, current_user)
+    response = service.create_document(document_payload, author)
 
     assert isinstance(response, MessageResponse)
-    assert "created" in response.message.lower()
+    assert response.message == "Novo documento criado com sucesso!"
     repository.create_document.assert_called_once_with(
         payload=document_payload,
         code="PENDING",
-        created_by=current_user.user_id,
+        created_by=author.user_id,
     )
     assert repository.create_document.return_value.code == "POP-QUA-12"
     version_repository.create_version.assert_called_once()
@@ -72,30 +77,32 @@ def test_create_document_persists_entity_and_emits_event(document_payload, curre
     audit_service.create_placeholder_event.assert_any_call(
         event_type=DocumentEventType.DOCUMENT_CREATED,
         document_id=12,
-        user_id=current_user.user_id,
+        user_id=author.user_id,
     )
     audit_service.create_placeholder_event.assert_any_call(
         event_type=DocumentEventType.VERSION_CREATED,
         document_id=12,
         version_id=24,
-        user_id=current_user.user_id,
+        user_id=author.user_id,
     )
     repository.db.commit.assert_called_once_with()
 
 
-def test_create_document_raises_not_found_when_company_does_not_exist(document_payload, current_user) -> None:
+def test_create_document_raises_not_found_when_company_does_not_exist(document_payload) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     repository.get_company_by_id.return_value = None
     service = build_service(repository=repository)
 
     with pytest.raises(NotFoundServiceError):
-        service.create_document(document_payload, current_user)
+        service.create_document(document_payload, author)
 
 
 def test_create_document_raises_conflict_when_sector_company_do_not_match(
-    document_payload, current_user
+    document_payload
 ) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     repository.get_company_by_id.return_value = SimpleNamespace(id=1)
@@ -103,7 +110,7 @@ def test_create_document_raises_conflict_when_sector_company_do_not_match(
     service = build_service(repository=repository)
 
     with pytest.raises(ConflictServiceError):
-        service.create_document(document_payload, current_user)
+        service.create_document(document_payload, author)
 
 
 def test_create_document_blocks_reader_role(document_payload) -> None:
@@ -116,7 +123,78 @@ def test_create_document_blocks_reader_role(document_payload) -> None:
         service.create_document(document_payload, reader)
 
 
-def test_submit_for_review_moves_latest_draft_to_coordinator_queue(current_user) -> None:
+def test_create_corporate_document_blocks_reader_role(document_payload) -> None:
+    reader = AuthenticatedUser(email="reader@example.com", role=UserRole.LEITOR, user_id=9)
+    corporate_payload = document_payload.model_copy(
+        update={
+            "scope": DocumentScope.CORPORATIVO,
+            "sector_id": None,
+        }
+    )
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_company_by_id.return_value = SimpleNamespace(id=1)
+    repository.list_sectors.return_value = [
+        SimpleNamespace(id=10, name="Qualidade", sigla="QLD", company_id=1)
+    ]
+    repository.get_sector_by_id.return_value = SimpleNamespace(
+        id=10,
+        name="Qualidade",
+        sigla="QLD",
+        company_id=1,
+    )
+    repository.create_document.return_value = SimpleNamespace(id=12, code="PENDING")
+    version_repository = Mock()
+    version_repository.create_version.return_value = SimpleNamespace(id=24)
+    service = build_service(repository=repository, version_repository=version_repository)
+
+    with pytest.raises(ForbiddenServiceError):
+        service.create_document(corporate_payload, reader)
+
+
+def test_list_documents_local_is_limited_by_user_sector_and_corporate_is_global() -> None:
+    repository = Mock()
+    repository.list_documents.return_value = [
+        SimpleNamespace(id=1, scope=DocumentScope.LOCAL, sector_id=10),
+        SimpleNamespace(id=2, scope=DocumentScope.LOCAL, sector_id=20),
+        SimpleNamespace(id=3, scope=DocumentScope.CORPORATIVO, sector_id=20),
+    ]
+    service = build_service(repository=repository)
+    current_user = AuthenticatedUser(
+        email="coord@example.com",
+        role=UserRole.COORDENADOR,
+        roles=[UserRole.COORDENADOR],
+        user_id=7,
+        sector_ids=[10],
+    )
+
+    result = service.list_documents(current_user)
+
+    assert [item.id for item in result] == [1, 3]
+
+
+def test_list_documents_without_sector_only_returns_corporate() -> None:
+    repository = Mock()
+    repository.list_documents.return_value = [
+        SimpleNamespace(id=1, scope=DocumentScope.LOCAL, sector_id=10),
+        SimpleNamespace(id=2, scope=DocumentScope.CORPORATIVO, sector_id=20),
+    ]
+    service = build_service(repository=repository)
+    current_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=9,
+        sector_ids=[],
+    )
+
+    result = service.list_documents(current_user)
+
+    assert [item.id for item in result] == [2]
+
+
+def test_submit_for_review_moves_latest_draft_to_pending_adjustment() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
     repository.get_document_by_id.return_value = SimpleNamespace(id=12, sector_id=10)
@@ -130,71 +208,74 @@ def test_submit_for_review_moves_latest_draft_to_coordinator_queue(current_user)
         audit_service=audit_service,
     )
 
-    response = service.submit_for_review(12, current_user)
+    response = service.submit_for_review(12, coordinator)
 
     assert isinstance(response, MessageResponse)
-    assert latest_version.status == DocumentStatus.PENDENTE_COORDENACAO
+    assert latest_version.status == DocumentStatus.REVISAR_RASCUNHO
     version_repository.save.assert_called_once_with(latest_version)
     repository.db.commit.assert_called_once_with()
     audit_service.create_placeholder_event.assert_called_once_with(
         event_type=DocumentEventType.SUBMITTED_FOR_REVIEW,
         document_id=12,
         version_id=31,
-        user_id=current_user.user_id,
+        user_id=coordinator.user_id,
     )
-    assert "coordinator" in response.message.lower()
+    assert "adjustment" in response.message.lower()
 
 
-def test_submit_for_review_raises_not_found_when_document_missing(current_user) -> None:
+def test_submit_for_review_raises_not_found_when_document_missing() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
     repository.get_document_by_id.return_value = None
     service = build_service(repository=repository)
 
     with pytest.raises(NotFoundServiceError):
-        service.submit_for_review(999, current_user)
+        service.submit_for_review(999, coordinator)
 
 
-def test_submit_for_review_blocks_non_reviewer_role() -> None:
+def test_submit_for_review_blocks_non_coordinator_role() -> None:
     repository = Mock()
     repository.db = Mock()
     service = build_service(repository=repository)
-    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
+    reviewer = AuthenticatedUser(email="revisor@example.com", role=UserRole.REVISOR, user_id=7)
 
     with pytest.raises(ForbiddenServiceError):
-        service.submit_for_review(10, coordinator)
+        service.submit_for_review(10, reviewer)
 
 
-def test_submit_for_review_raises_conflict_on_invalid_status(current_user) -> None:
+def test_submit_for_review_raises_conflict_on_invalid_status() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
     repository.get_document_by_id.return_value = SimpleNamespace(id=12, sector_id=10)
     version_repository = Mock()
     version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
         id=31,
-        status=DocumentStatus.PENDENTE_COORDENACAO,
+        status=DocumentStatus.VIGENTE,
     )
     service = build_service(repository=repository, version_repository=version_repository)
 
     with pytest.raises(ConflictServiceError):
-        service.submit_for_review(12, current_user)
+        service.submit_for_review(12, coordinator)
 
 
-def test_approve_document_promotes_review_and_obsoletes_previous_active() -> None:
+def test_approve_document_by_coordinator_moves_draft_to_vigente() -> None:
     coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
     repository.get_document_by_id.return_value = SimpleNamespace(id=55, sector_id=10)
     version_repository = Mock()
-    version_in_review = SimpleNamespace(
+    draft_version = SimpleNamespace(
         id=101,
-        status=DocumentStatus.PENDENTE_COORDENACAO,
+        status=DocumentStatus.RASCUNHO,
         approved_by=None,
         approved_at=None,
+        invalidated_at=None,
+        invalidated_by=None,
     )
-    previous_active = SimpleNamespace(id=100, status=DocumentStatus.VIGENTE)
-    version_repository.get_latest_version_for_document.return_value = version_in_review
-    version_repository.get_active_version_for_document.return_value = previous_active
+    version_repository.get_latest_version_for_document.return_value = draft_version
+    version_repository.get_active_version_for_document.return_value = None
     auth_repository = Mock()
     auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=10)
     audit_service = Mock()
@@ -208,20 +289,83 @@ def test_approve_document_promotes_review_and_obsoletes_previous_active() -> Non
     response = service.approve_document(55, coordinator)
 
     assert isinstance(response, MessageResponse)
+    assert draft_version.status == DocumentStatus.VIGENTE
+    assert draft_version.approved_by == 7
+    assert draft_version.approved_at is not None
+    version_repository.save.assert_called_once_with(draft_version)
+    repository.db.commit.assert_called_once_with()
+    assert audit_service.create_placeholder_event.call_count == 2
+    assert "active version" in response.message.lower()
+
+
+def test_approve_document_blocks_reviewer_even_for_revisar_rascunho_status() -> None:
+    reviewer = AuthenticatedUser(email="qualidade@example.com", role=UserRole.REVISOR, user_id=8)
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_by_id.return_value = SimpleNamespace(id=55, sector_id=10)
+    version_repository = Mock()
+    version_in_review = SimpleNamespace(
+        id=101,
+        status=DocumentStatus.REVISAR_RASCUNHO,
+        approved_by=None,
+        approved_at=None,
+        invalidated_at=None,
+        invalidated_by=None,
+    )
+    version_repository.get_latest_version_for_document.return_value = version_in_review
+    service = build_service(
+        repository=repository,
+        version_repository=version_repository,
+    )
+
+    with pytest.raises(ForbiddenServiceError):
+        service.approve_document(55, reviewer)
+
+
+def test_approve_document_by_coordinator_accepts_revisar_rascunho_status() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
+    repository = Mock()
+    repository.db = Mock()
+    repository.get_document_by_id.return_value = SimpleNamespace(id=55, sector_id=10)
+    version_repository = Mock()
+    version_in_review = SimpleNamespace(
+        id=101,
+        status=DocumentStatus.REVISAR_RASCUNHO,
+        approved_by=None,
+        approved_at=None,
+        invalidated_at=None,
+        invalidated_by=None,
+    )
+    previous_active = SimpleNamespace(id=100, status=DocumentStatus.VIGENTE)
+    version_repository.get_latest_version_for_document.return_value = version_in_review
+    version_repository.get_active_version_for_document.return_value = previous_active
+    auth_repository = Mock()
+    auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=10)
+    service = build_service(
+        repository=repository,
+        version_repository=version_repository,
+        auth_repository=auth_repository,
+    )
+
+    response = service.approve_document(55, coordinator)
+
+    assert isinstance(response, MessageResponse)
     assert version_in_review.status == DocumentStatus.VIGENTE
-    assert version_in_review.approved_by == 7
-    assert version_in_review.approved_at is not None
     assert previous_active.status == DocumentStatus.OBSOLETO
     assert version_repository.save.call_count == 2
     repository.db.commit.assert_called_once_with()
-    assert audit_service.create_placeholder_event.call_count == 3
-    assert "approved" in response.message.lower()
 
 
-def test_approve_document_blocks_non_coordinator(current_user) -> None:
+def test_approve_document_blocks_non_coordinator_for_draft(current_user) -> None:
     repository = Mock()
     repository.db = Mock()
-    service = build_service(repository=repository)
+    repository.get_document_by_id.return_value = SimpleNamespace(id=21, sector_id=10)
+    version_repository = Mock()
+    version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
+        id=101,
+        status=DocumentStatus.RASCUNHO,
+    )
+    service = build_service(repository=repository, version_repository=version_repository)
 
     with pytest.raises(ForbiddenServiceError):
         service.approve_document(21, current_user)
@@ -235,7 +379,7 @@ def test_approve_document_blocks_coordinator_from_other_sector() -> None:
     version_repository = Mock()
     version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
         id=101,
-        status=DocumentStatus.PENDENTE_COORDENACAO,
+        status=DocumentStatus.RASCUNHO,
     )
     auth_repository = Mock()
     auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=99)
@@ -257,7 +401,7 @@ def test_approve_document_raises_conflict_when_latest_not_in_review() -> None:
     version_repository = Mock()
     version_repository.get_latest_version_for_document.return_value = SimpleNamespace(
         id=101,
-        status=DocumentStatus.RASCUNHO,
+        status=DocumentStatus.VIGENTE,
     )
     auth_repository = Mock()
     auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=10)
@@ -271,32 +415,41 @@ def test_approve_document_raises_conflict_when_latest_not_in_review() -> None:
         service.approve_document(55, coordinator)
 
 
-def test_reject_document_by_reviewer_moves_status_to_revisar_rascunho() -> None:
-    reviewer = AuthenticatedUser(email="revisor@example.com", role=UserRole.REVISOR, user_id=7)
+def test_reject_document_by_coordinator_moves_status_to_revisar_rascunho() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
+    document = SimpleNamespace(id=55, sector_id=10, adjustment_comment=None)
+    repository.get_document_by_id.return_value = document
     version_repository = Mock()
     version_in_review = SimpleNamespace(
         id=101,
         status=DocumentStatus.RASCUNHO,
         approved_by=None,
         approved_at=None,
+        invalidated_at=None,
+        invalidated_by=None,
     )
     version_repository.get_latest_version_for_document.return_value = version_in_review
+    auth_repository = Mock()
+    auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=10)
     audit_service = Mock()
     service = build_service(
         repository=repository,
         version_repository=version_repository,
+        auth_repository=auth_repository,
         audit_service=audit_service,
     )
 
-    response = service.reject_document(55, reviewer, reason="ajustar texto")
+    response = service.reject_document(55, coordinator, reason="ajustar texto")
 
     assert isinstance(response, MessageResponse)
     assert version_in_review.status == DocumentStatus.REVISAR_RASCUNHO
     assert version_in_review.approved_by is None
     assert version_in_review.approved_at is None
+    assert document.adjustment_comment == "ajustar texto"
     version_repository.save.assert_called_once_with(version_in_review)
+    repository.save.assert_called_once_with(document)
     repository.db.commit.assert_called_once_with()
     audit_service.create_placeholder_event.assert_called_once_with(
         event_type=DocumentEventType.REJECTED,
@@ -304,20 +457,23 @@ def test_reject_document_by_reviewer_moves_status_to_revisar_rascunho() -> None:
         version_id=101,
         user_id=7,
     )
-    assert "rejected" in response.message.lower()
+    assert "adjustment" in response.message.lower()
 
 
-def test_reject_document_by_coordinator_sets_status_to_reprovado() -> None:
+def test_reject_document_by_coordinator_moves_pendente_coordenacao_to_revisar_rascunho() -> None:
     coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
     repository = Mock()
     repository.db = Mock()
-    repository.get_document_by_id.return_value = SimpleNamespace(id=55, sector_id=10)
+    document = SimpleNamespace(id=55, sector_id=10, adjustment_comment="comentario antigo")
+    repository.get_document_by_id.return_value = document
     version_repository = Mock()
     version_in_review = SimpleNamespace(
         id=101,
         status=DocumentStatus.PENDENTE_COORDENACAO,
-        approved_by=7,
+        approved_by=99,
         approved_at=object(),
+        invalidated_at=None,
+        invalidated_by=None,
     )
     version_repository.get_latest_version_for_document.return_value = version_in_review
     auth_repository = Mock()
@@ -331,9 +487,43 @@ def test_reject_document_by_coordinator_sets_status_to_reprovado() -> None:
     response = service.reject_document(55, coordinator)
 
     assert isinstance(response, MessageResponse)
+    assert version_in_review.status == DocumentStatus.REVISAR_RASCUNHO
+    assert version_in_review.approved_by is None
+    assert version_in_review.approved_at is None
+    assert document.adjustment_comment is None
+
+
+def test_reject_document_definitive_sets_status_to_reprovado() -> None:
+    coordinator = AuthenticatedUser(email="coord@example.com", role=UserRole.COORDENADOR, user_id=7)
+    repository = Mock()
+    repository.db = Mock()
+    document = SimpleNamespace(id=55, sector_id=10, adjustment_comment=None)
+    repository.get_document_by_id.return_value = document
+    version_repository = Mock()
+    version_in_review = SimpleNamespace(
+        id=101,
+        status=DocumentStatus.RASCUNHO_REVISADO,
+        approved_by=99,
+        approved_at=object(),
+        invalidated_at=None,
+        invalidated_by=None,
+    )
+    version_repository.get_latest_version_for_document.return_value = version_in_review
+    auth_repository = Mock()
+    auth_repository.get_user_by_id.return_value = SimpleNamespace(id=7, sector_id=10)
+    service = build_service(
+        repository=repository,
+        version_repository=version_repository,
+        auth_repository=auth_repository,
+    )
+
+    response = service.reject_document_definitive(55, coordinator, reason="falha grave")
+
+    assert isinstance(response, MessageResponse)
     assert version_in_review.status == DocumentStatus.REPROVADO
     assert version_in_review.approved_by is None
     assert version_in_review.approved_at is None
+    assert document.adjustment_comment == "falha grave"
 
 
 def test_reject_document_blocks_user_without_reviewer_or_coordinator_role() -> None:
@@ -365,23 +555,37 @@ def test_reject_document_raises_conflict_when_latest_not_rejectable(current_user
         service.reject_document(55, current_user)
 
 
-def test_list_documents_delegates_to_repository(fake_document) -> None:
+def test_list_documents_delegates_to_repository(fake_document, current_user) -> None:
     repository = Mock()
     repository.list_documents.return_value = [fake_document]
     service = build_service(repository=repository)
+    author_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=99,
+        sector_ids=[10],
+    )
 
-    result = service.list_documents()
+    result = service.list_documents(author_user)
 
     assert result == [fake_document]
     repository.list_documents.assert_called_once_with()
 
 
-def test_get_document_delegates_to_repository(fake_document) -> None:
+def test_get_document_delegates_to_repository(fake_document, current_user) -> None:
     repository = Mock()
     repository.get_document_by_id.return_value = fake_document
     service = build_service(repository=repository)
+    author_user = AuthenticatedUser(
+        email="autor@example.com",
+        role=UserRole.AUTOR,
+        roles=[UserRole.AUTOR],
+        user_id=99,
+        sector_ids=[10],
+    )
 
-    result = service.get_document(1)
+    result = service.get_document(1, author_user)
 
     assert result == fake_document
     repository.get_document_by_id.assert_called_once_with(1)
@@ -398,7 +602,15 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     repository.list_distinct_document_types.return_value = ["Pop", "manual", "instrucao"]
     service = build_service(repository=repository)
 
-    options = service.get_form_options()
+    options = service.get_form_options(
+        AuthenticatedUser(
+            email="autor@example.com",
+            role=UserRole.AUTOR,
+            roles=[UserRole.AUTOR],
+            user_id=77,
+            sector_ids=[10],
+        )
+    )
 
     assert options.companies[0].id == 1
     assert options.sectors[0].id == 10
@@ -411,6 +623,34 @@ def test_get_form_options_returns_companies_sectors_types_and_scopes() -> None:
     assert options.scopes == list(DocumentScope)
 
 
+def test_get_form_options_limits_sectors_to_user_access() -> None:
+    repository = Mock()
+    repository.list_companies.return_value = [
+        SimpleNamespace(id=1, name="Hospital A"),
+        SimpleNamespace(id=2, name="Hospital B"),
+    ]
+    repository.list_sectors.return_value = [
+        SimpleNamespace(id=10, name="Qualidade", sigla="QLD", company_id=1),
+        SimpleNamespace(id=20, name="Farmacia", sigla="FAR", company_id=2),
+    ]
+    repository.list_document_types.return_value = [SimpleNamespace(id=1, sigla="POP", name="Procedimento")]
+    repository.list_distinct_document_types.return_value = ["POP"]
+    service = build_service(repository=repository)
+
+    options = service.get_form_options(
+        AuthenticatedUser(
+            email="autor@example.com",
+            role=UserRole.AUTOR,
+            roles=[UserRole.AUTOR],
+            user_id=77,
+            sector_ids=[20],
+        )
+    )
+
+    assert [sector.id for sector in options.sectors] == [20]
+    assert [company.id for company in options.companies] == [2]
+
+
 def test_update_draft_document_updates_document_and_latest_version(current_user) -> None:
     repository = Mock()
     repository.db = Mock()
@@ -418,6 +658,12 @@ def test_update_draft_document_updates_document_and_latest_version(current_user)
         id=12,
         created_by=current_user.user_id,
         title="Titulo antigo",
+        code="DOC-SET-12",
+        company_id=1,
+        sector_id=10,
+        document_type="POP",
+        scope=DocumentScope.LOCAL,
+        adjustment_reply_comment=None,
     )
     version_repository = Mock()
     version_repository.get_latest_version_for_document.return_value = SimpleNamespace(

@@ -16,6 +16,7 @@ class DocumentScope(str, Enum):
 
 class DocumentStatus(str, Enum):
     RASCUNHO = "RASCUNHO"
+    RASCUNHO_REVISADO = "RASCUNHO_REVISADO"
     REVISAR_RASCUNHO = "REVISAR_RASCUNHO"
     PENDENTE_COORDENACAO = "PENDENTE_COORDENACAO"
     EM_REVISAO = "EM_REVISAO"
@@ -33,3 +34,8 @@ class DocumentEventType(str, Enum):
     SET_TO_VIGENTE = "set_to_vigente"
     MARKED_OBSOLETE = "marked_obsolete"
     DOCUMENT_VIEWED = "document_viewed"
+
+
+# Keep REVISOR for backward compatibility in historical data and user records,
+# but treat it as inactive for authorization decisions.
+INACTIVE_USER_ROLES: frozenset[UserRole] = frozenset({UserRole.REVISOR})

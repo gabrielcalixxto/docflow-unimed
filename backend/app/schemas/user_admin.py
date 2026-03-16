@@ -1,15 +1,46 @@
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.enums import UserRole
 from app.schemas.document import CompanyOption, SectorOption
 
+_USERNAME_PATTERN = re.compile(r"^[a-z]+(?:\.[a-z]+)+$")
+_PASSWORD_HAS_DIGIT_PATTERN = re.compile(r"\d")
+_PASSWORD_HAS_SPECIAL_PATTERN = re.compile(r"[^A-Za-z0-9\s]")
+
+
+def _validate_password_complexity(value: str) -> str:
+    if _PASSWORD_HAS_DIGIT_PATTERN.search(value) is None:
+        raise ValueError("Password must include at least one number.")
+    if _PASSWORD_HAS_SPECIAL_PATTERN.search(value) is None:
+        raise ValueError("Password must include at least one special character.")
+    return value
+
 
 class UserAdminBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    job_title: str | None = Field(default=None, max_length=120)
     email: str = Field(min_length=3, max_length=255)
     roles: list[UserRole] = Field(default_factory=list)
     company_ids: list[int] = Field(default_factory=list)
     sector_ids: list[int] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("Name is required.")
+        return normalized
+
+    @field_validator("job_title")
+    @classmethod
+    def normalize_job_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().split())
+        return normalized or None
 
     @field_validator("email")
     @classmethod
@@ -54,11 +85,50 @@ class UserAdminBase(BaseModel):
 
 
 class UserAdminCreate(UserAdminBase):
-    password: str = Field(min_length=6, max_length=255)
+    username: str = Field(min_length=3, max_length=120)
+    job_title: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=8, max_length=255)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if not _USERNAME_PATTERN.fullmatch(normalized):
+            raise ValueError("Username must follow nome.texto format using letters and dots only.")
+        return normalized
+
+    @field_validator("job_title")
+    @classmethod
+    def validate_required_job_title(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("Job title is required.")
+        return normalized
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return _validate_password_complexity(value)
 
 
 class UserAdminUpdate(UserAdminBase):
-    password: str | None = Field(default=None, min_length=6, max_length=255)
+    job_title: str = Field(min_length=1, max_length=120)
+    password: str | None = Field(default=None, min_length=8, max_length=255)
+
+    @field_validator("job_title")
+    @classmethod
+    def validate_required_job_title(cls, value: str) -> str:
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("Job title is required.")
+        return normalized
+
+    @field_validator("password")
+    @classmethod
+    def validate_optional_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_password_complexity(value)
 
 
 class UserAdminRead(UserAdminBase):
@@ -67,6 +137,8 @@ class UserAdminRead(UserAdminBase):
     role: UserRole
     company_id: int | None = None
     sector_id: int | None = None
+    is_active: bool = True
+    must_change_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

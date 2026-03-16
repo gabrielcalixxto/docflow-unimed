@@ -1,18 +1,27 @@
 from contextlib import asynccontextmanager
 import logging
+import mimetypes
+from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import Base, engine
-from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
-from app.models import company, document, document_event, document_type, document_version, sector, user  # noqa: F401
-from app.routers import admin_catalog, admin_users, auth, documents, search, versions
+from app.core.database import Base, SessionLocal, engine
+from app.core.logging_config import configure_logging
+from app.core.realtime import realtime_broker
+from app.models.document_version import DocumentVersion
+from app.models.stored_file import StoredFile
+from app.models import audit_log, audit_log_change, company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
+from app.routers import admin_catalog, admin_users, audit, auth, documents, files, realtime, search, versions
 
-configure_logging(settings.log_level)
+configure_logging("ERROR")
 logger = logging.getLogger(__name__)
 
 
@@ -29,9 +38,60 @@ def ensure_document_status_enum_values() -> None:
         return
 
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'RASCUNHO_REVISADO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REVISAR_RASCUNHO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_COORDENACAO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REPROVADO'"))
+
+
+def migrate_deprecated_quality_status() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET status = 'REVISAR_RASCUNHO' "
+                "WHERE status = 'PENDENTE_QUALIDADE'"
+            )
+        )
+
+
+def ensure_document_versions_audit_columns() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS invalidated_by INTEGER"))
+        connection.execute(text("ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMPTZ"))
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE document_versions "
+                "ADD CONSTRAINT fk_document_versions_invalidated_by "
+                "FOREIGN KEY (invalidated_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET invalidated_at = COALESCE(approved_at, created_at) "
+                "WHERE status IN ('OBSOLETO', 'REPROVADO') AND invalidated_at IS NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE document_versions "
+                "SET invalidated_by = approved_by "
+                "WHERE status = 'REPROVADO' AND invalidated_by IS NULL AND approved_by IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_document_versions_invalidated_at ON document_versions (invalidated_at)")
+        )
 
 
 def ensure_users_table_supports_multi_access() -> None:
@@ -39,7 +99,10 @@ def ensure_users_table_supports_multi_access() -> None:
         return
 
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(120)"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(120)"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN"))
+        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS roles JSONB"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER"))
         connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_ids JSONB"))
@@ -59,10 +122,33 @@ def ensure_users_table_supports_multi_access() -> None:
         connection.execute(
             text(
                 "UPDATE users "
+                "SET job_title = 'Nao informado' "
+                "WHERE job_title IS NULL OR btrim(job_title) = ''"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE users "
                 "SET username = split_part(email, '@', 1) "
                 "WHERE username IS NULL OR btrim(username) = ''"
             )
         )
+        connection.execute(
+            text(
+                "UPDATE users "
+                "SET is_active = TRUE "
+                "WHERE is_active IS NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE users "
+                "SET must_change_password = FALSE "
+                "WHERE must_change_password IS NULL"
+            )
+        )
+        connection.execute(text("ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE"))
+        connection.execute(text("ALTER TABLE users ALTER COLUMN must_change_password SET DEFAULT FALSE"))
         connection.execute(
             text(
                 "UPDATE users "
@@ -124,6 +210,37 @@ def ensure_document_types_table_supports_sigla() -> None:
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_document_types_sigla ON document_types (sigla)"))
 
 
+def ensure_documents_table_supports_adjustment_comment() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_comment VARCHAR(500)"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_reply_comment VARCHAR(500)"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_comment_by INTEGER"))
+        connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS adjustment_reply_comment_by INTEGER"))
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE documents "
+                "ADD CONSTRAINT fk_documents_adjustment_comment_by "
+                "FOREIGN KEY (adjustment_comment_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
+        connection.execute(
+            text(
+                "DO $$ BEGIN "
+                "ALTER TABLE documents "
+                "ADD CONSTRAINT fk_documents_adjustment_reply_comment_by "
+                "FOREIGN KEY (adjustment_reply_comment_by) REFERENCES users(id); "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;"
+            )
+        )
+
+
 def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
     if engine.dialect.name != "postgresql":
         return
@@ -169,36 +286,174 @@ def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
         )
 
 
+def ensure_audit_log_structure() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS actor_name_snapshot VARCHAR(120)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_label VARCHAR(180)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_type VARCHAR(80)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_url VARCHAR(255)"))
+        connection.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS audit_log_changes ("
+                "id SERIAL PRIMARY KEY, "
+                "audit_log_id INTEGER NOT NULL REFERENCES audit_logs(id), "
+                "field_name VARCHAR(120) NOT NULL, "
+                "field_label VARCHAR(180), "
+                "old_value TEXT, "
+                "new_value TEXT, "
+                "old_display_value TEXT, "
+                "new_display_value TEXT"
+                ")"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_audit_log_changes_audit_log_id "
+                "ON audit_log_changes (audit_log_id)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_audit_log_changes_field_name "
+                "ON audit_log_changes (field_name)"
+            )
+        )
+
+
+def migrate_legacy_uploaded_files_to_database(legacy_root: Path) -> None:
+    if not legacy_root.exists():
+        return
+
+    with SessionLocal() as db:
+        session: Session = db
+        try:
+            versions = list(session.scalars(select(DocumentVersion)).all())
+            changed = False
+
+            for version in versions:
+                current_path = (version.file_path or "").strip()
+                if not current_path:
+                    continue
+                if current_path.startswith("/file-storage/"):
+                    continue
+
+                if current_path.startswith("/files/"):
+                    candidate_name = current_path.removeprefix("/files/")
+                elif "/" not in current_path and "\\" not in current_path:
+                    candidate_name = current_path
+                else:
+                    continue
+
+                if not candidate_name:
+                    continue
+
+                existing = session.scalar(select(StoredFile).where(StoredFile.version_id == version.id))
+                if existing is not None:
+                    version.file_path = f"/file-storage/{existing.storage_key}"
+                    changed = True
+                    continue
+
+                source_path = legacy_root / candidate_name
+                if not source_path.exists() or not source_path.is_file():
+                    continue
+
+                content = source_path.read_bytes()
+                if not content:
+                    continue
+
+                storage_key = uuid4().hex
+                guessed_type, _ = mimetypes.guess_type(source_path.name)
+                stored = StoredFile(
+                    storage_key=storage_key,
+                    original_name=source_path.name,
+                    content_type=guessed_type,
+                    size_bytes=len(content),
+                    content=content,
+                    uploaded_by=version.created_by,
+                    document_id=version.document_id,
+                    version_id=version.id,
+                )
+                session.add(stored)
+                version.file_path = f"/file-storage/{storage_key}"
+                changed = True
+
+            if changed:
+                session.commit()
+        except SQLAlchemyError as exc:
+            session.rollback()
+            logger.error("Legacy file migration failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         ensure_user_role_enum_values()
         ensure_document_status_enum_values()
+        migrate_deprecated_quality_status()
+        ensure_document_versions_audit_columns()
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
+        ensure_documents_table_supports_adjustment_comment()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()
+        ensure_audit_log_structure()
+        migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)
     except SQLAlchemyError as exc:
-        logger.warning("Database initialization skipped: %s", exc)
+        logger.error("Database initialization failed: %s", exc)
+    realtime_broker.start()
     yield
+    realtime_broker.stop()
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+APP_DESCRIPTION = """
+API para gestão documental com autenticação, cadastro de catálogos, fluxo de aprovação,
+versionamento, anexos e trilha de auditoria.
+
+Como usar:
+- Autentique em `POST /auth/login` para obter Bearer token.
+- Use `POST /auth/refresh` para atualizar permissões sem novo login manual.
+- Consulte os `responses` de cada rota para entender status de falha e exemplos.
+"""
+
+OPENAPI_TAGS = [
+    {"name": "Auth", "description": "Autenticação e renovação de sessão."},
+    {"name": "Search", "description": "Busca de documentos vigentes para leitura."},
+    {"name": "Documents", "description": "Criação e gestão do fluxo documental."},
+    {"name": "Document Versions", "description": "Operações de versionamento."},
+    {"name": "Users", "description": "Gestão de usuários e permissões administrativas."},
+    {"name": "Catalog", "description": "Gestão de empresas, setores e tipos documentais."},
+    {"name": "Attachments", "description": "Upload e download de arquivos."},
+    {"name": "Audit Logs", "description": "Histórico de ações para compliance e rastreabilidade."},
+    {"name": "health", "description": "Verificação de saúde da API."},
+]
+
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app = FastAPI(
+    title=settings.app_name,
+    version="1.0.0",
+    description=APP_DESCRIPTION.strip(),
+    openapi_tags=OPENAPI_TAGS,
+    lifespan=lifespan,
+)
+
+LEGACY_UPLOAD_ROOT = Path(__file__).resolve().parent / "uploads"
+LEGACY_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/files", StaticFiles(directory=LEGACY_UPLOAD_ROOT), name="legacy-uploaded-files")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=DEFAULT_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-if settings.log_requests:
-    app.add_middleware(
-        RequestResponseLoggingMiddleware,
-        log_response_body=settings.log_response_body,
-        max_body_chars=settings.log_response_body_max_chars,
-    )
 
 
 @app.get("/health", tags=["health"])
@@ -210,5 +465,8 @@ app.include_router(auth.router)
 app.include_router(search.router)
 app.include_router(documents.router)
 app.include_router(versions.router)
+app.include_router(files.router)
+app.include_router(realtime.router)
 app.include_router(admin_users.router)
 app.include_router(admin_catalog.router)
+app.include_router(audit.router)
