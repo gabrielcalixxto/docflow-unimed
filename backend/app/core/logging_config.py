@@ -50,6 +50,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         request_id = uuid4().hex[:8]
+        request.state.request_id = request_id
         method = request.method
         path = request.url.path
         query = str(request.url.query)
@@ -79,6 +80,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         elapsed_ms = (perf_counter() - started_at) * 1000
         status_code = response.status_code
         content_type = response.headers.get("content-type", "")
+        response.headers["X-Request-ID"] = request_id
 
         if self.log_response_body and "application/json" in content_type:
             body_text = self._build_body_text(response)

@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   canAccessAdminCatalog,
   canAccessAdminUsers,
+  canAccessAuditHistory,
   canAccessCentralAprovacao,
   canAccessHistoricoSolicitacoes,
   canAccessNovoDocumento,
@@ -33,6 +34,20 @@ const APPROVAL_ITEM = {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M7 3a4 4 0 0 1 3.9 5H13a4 4 0 1 1 0 2h-2.1A4 4 0 1 1 7 3Zm10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+};
+
+const AUDIT_HISTORY_ITEM = {
+  id: "historico-acoes",
+  label: "Historico de Acoes",
+  isVisible: canAccessAuditHistory,
+  icon: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3a9 9 0 1 1-6.4 2.6L4.3 4.3A1 1 0 1 1 5.7 2.9L7 4.2A9 9 0 0 1 12 3Zm0 2a7 7 0 1 0 7 7 7 7 0 0 0-7-7Zm-1 3a1 1 0 0 1 2 0v3.6l2.1 1.4a1 1 0 1 1-1.1 1.7l-2.6-1.7a1 1 0 0 1-.4-.8V8Z"
         fill="currentColor"
       />
     </svg>
@@ -345,6 +360,22 @@ export default function AppShell({ children, activePage, onPageChange, session, 
               </div>
             );
           })}
+
+          {(!AUDIT_HISTORY_ITEM.isVisible || AUDIT_HISTORY_ITEM.isVisible(sessionRoles)) && (
+            <button
+              key={AUDIT_HISTORY_ITEM.id}
+              type="button"
+              className={`nav-item ${activePage === AUDIT_HISTORY_ITEM.id ? "active" : ""}`}
+              onClick={() => {
+                onPageChange(AUDIT_HISTORY_ITEM.id);
+                setMobileOpen(false);
+              }}
+              title={AUDIT_HISTORY_ITEM.label}
+            >
+              <span className="nav-icon">{AUDIT_HISTORY_ITEM.icon}</span>
+              {!collapsed && <span className="nav-label">{AUDIT_HISTORY_ITEM.label}</span>}
+            </button>
+          )}
         </nav>
 
         <div className="sidebar-foot">

@@ -5,6 +5,7 @@ import AdminUsuariosPage from "./pages/AdminUsuariosPage";
 import CadastroEmpresasPage from "./pages/CadastroEmpresasPage";
 import CadastroSetoresPage from "./pages/CadastroSetoresPage";
 import CadastroTipoDocumentoPage from "./pages/CadastroTipoDocumentoPage";
+import HistoricoAcoesPage from "./pages/HistoricoAcoesPage";
 import HistoricoSolicitacoesPage from "./pages/HistoricoSolicitacoesPage";
 import LoginPage from "./pages/LoginPage";
 import NovoDocumentoPage from "./pages/NovoDocumentoPage";
@@ -37,6 +38,7 @@ const PAGE_ACCESS_RULES = {
   "cadastro-setores": canAccessAdminCatalog,
   "cadastro-empresas": canAccessAdminCatalog,
   "cadastro-tipo-documento": canAccessAdminCatalog,
+  "historico-acoes": canAccessAdminUsers,
 };
 
 const PAGE_FALLBACK_ORDER = [
@@ -51,6 +53,7 @@ const PAGE_FALLBACK_ORDER = [
   "cadastro-setores",
   "cadastro-empresas",
   "cadastro-tipo-documento",
+  "historico-acoes",
 ];
 
 function resolveFallbackPage(roles) {
@@ -179,6 +182,9 @@ export default function App() {
         <CadastroTipoDocumentoPage
           onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")}
         />
+      )}
+      {resolvedPage === "historico-acoes" && (
+        <HistoricoAcoesPage onUnauthorized={() => handleLogout("Sessao expirada. Faca login novamente.")} />
       )}
     </AppShell>
   );

@@ -3,18 +3,21 @@ import unicodedata
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.audit import AuditContext
 from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser, hash_password
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.common import MessageResponse
 from app.schemas.user_admin import UserAdminCreate, UserAdminOptionsRead, UserAdminUpdate
+from app.services.audit_service import AuditService
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
 
 
 class UserAdminService:
-    def __init__(self, repository: UserRepository):
+    def __init__(self, repository: UserRepository, audit_service: AuditService | None = None):
         self.repository = repository
+        self.audit_service = audit_service or AuditService()
 
     def list_users(self, current_user: AuthenticatedUser) -> list[User]:
         self._ensure_admin(current_user)
@@ -28,7 +31,12 @@ class UserAdminService:
             sectors=self.repository.list_sectors(),
         )
 
-    def create_user(self, payload: UserAdminCreate, current_user: AuthenticatedUser) -> MessageResponse:
+    def create_user(
+        self,
+        payload: UserAdminCreate,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_admin(current_user)
         self._ensure_companies_exist(payload.company_ids)
         self._ensure_sectors_exist(payload.sector_ids)
@@ -42,6 +50,65 @@ class UserAdminService:
                 username=username,
                 password_hash=hash_password(payload.password),
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                action="CREATE",
+                context=audit_context,
+                entity_label=self._user_entity_label(user.id, payload.name.strip()),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": None,
+                        "new_value": payload.name.strip(),
+                        "old_display_value": None,
+                        "new_display_value": payload.name.strip(),
+                    },
+                    {
+                        "field_name": "username",
+                        "field_label": "Login",
+                        "old_value": None,
+                        "new_value": username,
+                        "old_display_value": None,
+                        "new_display_value": username,
+                    },
+                    {
+                        "field_name": "email",
+                        "field_label": "E-mail",
+                        "old_value": None,
+                        "new_value": str(payload.email).lower(),
+                        "old_display_value": None,
+                        "new_display_value": str(payload.email).lower(),
+                    },
+                    {
+                        "field_name": "roles",
+                        "field_label": "Papeis",
+                        "old_value": None,
+                        "new_value": [role.value for role in payload.roles],
+                        "old_display_value": None,
+                        "new_display_value": [role.value for role in payload.roles],
+                    },
+                    {
+                        "field_name": "company_ids",
+                        "field_label": "Empresas",
+                        "old_value": None,
+                        "new_value": payload.company_ids,
+                        "old_display_value": None,
+                        "new_display_value": self._company_names(payload.company_ids),
+                    },
+                    {
+                        "field_name": "sector_ids",
+                        "field_label": "Setores",
+                        "old_value": None,
+                        "new_value": payload.sector_ids,
+                        "old_display_value": None,
+                        "new_display_value": self._sector_names(payload.sector_ids),
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -54,6 +121,7 @@ class UserAdminService:
         user_id: int,
         payload: UserAdminUpdate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_admin(current_user)
 
@@ -67,6 +135,13 @@ class UserAdminService:
         email = str(payload.email).lower()
         self._ensure_email_available(email, excluded_user_id=user_id)
         username = self._build_unique_username(payload.name, excluded_user_id=user_id)
+
+        previous_name = user.name
+        previous_username = user.username
+        previous_email = user.email
+        previous_roles = list(user.roles or [])
+        previous_company_ids = list(user.company_ids or [])
+        previous_sector_ids = list(user.sector_ids or [])
 
         user.name = payload.name.strip()
         user.username = username
@@ -82,6 +157,65 @@ class UserAdminService:
 
         try:
             self.repository.save(user)
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                action="UPDATE",
+                context=audit_context,
+                entity_label=self._user_entity_label(user.id, user.name),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "name",
+                        "field_label": "Nome",
+                        "old_value": previous_name,
+                        "new_value": user.name,
+                        "old_display_value": previous_name,
+                        "new_display_value": user.name,
+                    },
+                    {
+                        "field_name": "username",
+                        "field_label": "Login",
+                        "old_value": previous_username,
+                        "new_value": user.username,
+                        "old_display_value": previous_username,
+                        "new_display_value": user.username,
+                    },
+                    {
+                        "field_name": "email",
+                        "field_label": "E-mail",
+                        "old_value": previous_email,
+                        "new_value": user.email,
+                        "old_display_value": previous_email,
+                        "new_display_value": user.email,
+                    },
+                    {
+                        "field_name": "roles",
+                        "field_label": "Papeis",
+                        "old_value": previous_roles,
+                        "new_value": user.roles,
+                        "old_display_value": previous_roles,
+                        "new_display_value": user.roles,
+                    },
+                    {
+                        "field_name": "company_ids",
+                        "field_label": "Empresas",
+                        "old_value": previous_company_ids,
+                        "new_value": user.company_ids,
+                        "old_display_value": self._company_names(previous_company_ids),
+                        "new_display_value": self._company_names(user.company_ids or []),
+                    },
+                    {
+                        "field_name": "sector_ids",
+                        "field_label": "Setores",
+                        "old_value": previous_sector_ids,
+                        "new_value": user.sector_ids,
+                        "old_display_value": self._sector_names(previous_sector_ids),
+                        "new_display_value": self._sector_names(user.sector_ids or []),
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -89,7 +223,12 @@ class UserAdminService:
 
         return MessageResponse(message="User updated successfully.")
 
-    def delete_user(self, user_id: int, current_user: AuthenticatedUser) -> MessageResponse:
+    def delete_user(
+        self,
+        user_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_admin(current_user)
         if current_user.user_id == user_id:
             raise ConflictServiceError("Admin user cannot delete itself.")
@@ -99,6 +238,28 @@ class UserAdminService:
             raise NotFoundServiceError("User not found.")
 
         try:
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="user",
+                entity_id=user.id,
+                action="DELETE",
+                field_name="record",
+                old_value={
+                    "name": user.name,
+                    "username": user.username,
+                    "email": user.email,
+                    "roles": user.roles,
+                    "company_ids": user.company_ids,
+                    "sector_ids": user.sector_ids,
+                },
+                new_value=None,
+                context=audit_context,
+                field_label="Registro",
+                old_display_value=f"{user.name} ({user.username})",
+                new_display_value=None,
+                entity_label=self._user_entity_label(user.id, user.name),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.delete(user)
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -169,3 +330,33 @@ class UserAdminService:
     def _ensure_admin(current_user: AuthenticatedUser) -> None:
         if not current_user.has_role(UserRole.ADMIN):
             raise ForbiddenServiceError("Only admin users can manage users.")
+
+    def _company_names(self, company_ids: list[int]) -> list[str]:
+        names: list[str] = []
+        for company_id in company_ids:
+            company = self.repository.get_company_by_id(company_id)
+            if company is not None:
+                names.append(getattr(company, "name", None) or f"Empresa #{company_id}")
+            else:
+                names.append(f"Empresa #{company_id}")
+        return names
+
+    def _sector_names(self, sector_ids: list[int]) -> list[str]:
+        names: list[str] = []
+        for sector_id in sector_ids:
+            sector = self.repository.get_sector_by_id(sector_id)
+            if sector is not None:
+                names.append(getattr(sector, "name", None) or f"Setor #{sector_id}")
+            else:
+                names.append(f"Setor #{sector_id}")
+        return names
+
+    @staticmethod
+    def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:
+        return current_user.username or current_user.email
+
+    @staticmethod
+    def _user_entity_label(user_id: int, user_name: str | None) -> str:
+        if user_name:
+            return f"Usuario #{user_id} ({user_name})"
+        return f"Usuario #{user_id}"

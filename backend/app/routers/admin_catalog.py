@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.admin_catalog_repository import AdminCatalogRepository
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.schemas.admin_catalog import (
     AdminCatalogOptionsRead,
     AdminCompanyCreate,
@@ -14,6 +16,7 @@ from app.schemas.admin_catalog import (
     AdminSectorUpdate,
 )
 from app.schemas.common import MessageResponse
+from app.services.audit_service import AuditService
 from app.services.admin_catalog_service import AdminCatalogService
 from app.services.errors import ServiceError
 
@@ -21,7 +24,10 @@ router = APIRouter(prefix="/admin/catalog", tags=["admin-catalog"])
 
 
 def get_admin_catalog_service(db: Session = Depends(get_db)) -> AdminCatalogService:
-    return AdminCatalogService(repository=AdminCatalogRepository(db))
+    return AdminCatalogService(
+        repository=AdminCatalogRepository(db),
+        audit_service=AuditService(log_repository=AuditLogRepository(db)),
+    )
 
 
 @router.get("/options", response_model=AdminCatalogOptionsRead)
@@ -40,11 +46,12 @@ def get_catalog_options(
 def create_company(
     payload: AdminCompanyCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_company(payload, current_user)
+        return service.create_company(payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -53,11 +60,12 @@ def create_company(
 def delete_company(
     company_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_company(company_id, current_user)
+        return service.delete_company(company_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -67,11 +75,12 @@ def update_company(
     company_id: int,
     payload: AdminCompanyUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_company(company_id, payload, current_user)
+        return service.update_company(company_id, payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -80,11 +89,12 @@ def update_company(
 def create_sector(
     payload: AdminSectorCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_sector(payload, current_user)
+        return service.create_sector(payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -93,11 +103,12 @@ def create_sector(
 def delete_sector(
     sector_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_sector(sector_id, current_user)
+        return service.delete_sector(sector_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -107,11 +118,12 @@ def update_sector(
     sector_id: int,
     payload: AdminSectorUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_sector(sector_id, payload, current_user)
+        return service.update_sector(sector_id, payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -120,11 +132,12 @@ def update_sector(
 def create_document_type(
     payload: AdminDocumentTypeCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.create_document_type(payload, current_user)
+        return service.create_document_type(payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -133,11 +146,12 @@ def create_document_type(
 def delete_document_type(
     document_type_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.delete_document_type(document_type_id, current_user)
+        return service.delete_document_type(document_type_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -147,10 +161,16 @@ def update_document_type(
     document_type_id: int,
     payload: AdminDocumentTypeUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_admin_catalog_service(db)
     try:
-        return service.update_document_type(document_type_id, payload, current_user)
+        return service.update_document_type(
+            document_type_id,
+            payload,
+            current_user,
+            audit_context=audit_context,
+        )
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

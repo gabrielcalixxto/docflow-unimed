@@ -98,6 +98,14 @@ export async function getDocument(documentId) {
   });
 }
 
+export async function getDocumentEvents(documentId, params = {}) {
+  return request({
+    method: "get",
+    url: `/documents/${documentId}/events`,
+    params,
+  });
+}
+
 export async function getDocumentVersions(documentId) {
   return request({
     method: "get",
@@ -216,6 +224,14 @@ export async function getAdminCatalogOptions() {
   return request({
     method: "get",
     url: "/admin/catalog/options",
+  });
+}
+
+export async function getAuditEvents(params = {}) {
+  return request({
+    method: "get",
+    url: "/audit/events",
+    params,
   });
 }
 

@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from unittest.mock import Mock
 
+from app.schemas.audit import AuditLogListResponse
 from app.schemas.common import MessageResponse
 from app.schemas.workflow import WorkflowDocumentListResponse
 from app.services.errors import ConflictServiceError, ForbiddenServiceError, NotFoundServiceError
@@ -185,6 +186,56 @@ def test_get_workflow_documents_returns_items(authorized_client, current_user, m
     assert kwargs["page_size"] == 50
 
 
+def test_get_document_events_returns_items(authorized_client, monkeypatch) -> None:
+    import app.routers.documents as documents_router
+
+    service = Mock()
+    service.list_document_events.return_value = AuditLogListResponse(
+        items=[
+            {
+                "id": 1,
+                "created_at": datetime(2026, 3, 15, 12, 0, tzinfo=UTC),
+                "user_id": 99,
+                "user_name": "Revisor",
+                "document_id": 10,
+                "version_id": 22,
+                "entity_type": "document_version",
+                "entity_id": "22",
+                "entity_label": "Versao v1 de Documento #10",
+                "action": "STATUS_CHANGE",
+                "changes": [
+                    {
+                        "id": 1,
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": "RASCUNHO",
+                        "new_value": "PENDENTE_COORDENACAO",
+                        "old_display_value": "Rascunho",
+                        "new_display_value": "Pendente coordenacao",
+                    }
+                ],
+                "request_id": "a1b2c3d4",
+                "ip_address": "127.0.0.1",
+                "source_type": "FRONTEND_WEB",
+                "source_url": "http://localhost:5173",
+                "request_path": "/documents/10/submit-review",
+                "request_method": "POST",
+            }
+        ],
+        total=1,
+        page=1,
+        page_size=100,
+    )
+    monkeypatch.setattr(documents_router, "get_document_service", lambda _: service)
+
+    response = authorized_client.get("/documents/10/events", params={"page": 1, "page_size": 50})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["action"] == "STATUS_CHANGE"
+
+
 def test_update_draft_document_calls_service_and_returns_message(
     authorized_client, current_user, monkeypatch
 ) -> None:
@@ -321,7 +372,9 @@ def test_reject_document_calls_service_and_returns_message(
 
     assert response.status_code == 200
     assert response.json() == {"message": "rejected"}
-    service.reject_document.assert_called_once_with(10, current_user, reason="ajustar titulo")
+    service.reject_document.assert_called_once()
+    assert service.reject_document.call_args.args[:2] == (10, current_user)
+    assert service.reject_document.call_args.kwargs.get("reason") == "ajustar titulo"
 
 
 def test_reject_document_returns_409_on_invalid_transition(authorized_client, monkeypatch) -> None:

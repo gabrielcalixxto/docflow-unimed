@@ -4,6 +4,7 @@ import unicodedata
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.audit import AuditContext
 from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.models.document import Document
@@ -11,6 +12,7 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
+from app.schemas.audit import AuditLogListResponse
 from app.schemas.common import MessageResponse
 from app.schemas.document import DocumentCreate, DocumentDraftUpdate, DocumentFormOptionsRead
 from app.schemas.workflow import WorkflowDocumentListResponse, WorkflowDocumentRead, WorkflowVersionRead
@@ -34,7 +36,12 @@ class DocumentService:
         self.audit_service = audit_service
         self.file_repository = file_repository
 
-    def create_document(self, payload: DocumentCreate, current_user: AuthenticatedUser) -> MessageResponse:
+    def create_document(
+        self,
+        payload: DocumentCreate,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
         self._ensure_can_write(current_user)
 
@@ -87,6 +94,111 @@ class DocumentService:
                 document_id=document.id,
                 version_id=initial_version.id,
                 user_id=current_user.user_id,
+            )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document",
+                entity_id=document.id,
+                action="CREATE",
+                document_id=document.id,
+                context=audit_context,
+                entity_label=self._document_entity_label(document),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "code",
+                        "field_label": "Codigo",
+                        "old_value": None,
+                        "new_value": document.code,
+                        "old_display_value": None,
+                        "new_display_value": document.code,
+                    },
+                    {
+                        "field_name": "title",
+                        "field_label": "Titulo",
+                        "old_value": None,
+                        "new_value": payload.title,
+                        "old_display_value": None,
+                        "new_display_value": payload.title,
+                    },
+                    {
+                        "field_name": "company_id",
+                        "field_label": "Empresa",
+                        "old_value": None,
+                        "new_value": payload.company_id,
+                        "old_display_value": None,
+                        "new_display_value": getattr(company, "name", None) or f"Empresa #{payload.company_id}",
+                    },
+                    {
+                        "field_name": "sector_id",
+                        "field_label": "Setor",
+                        "old_value": None,
+                        "new_value": payload.sector_id,
+                        "old_display_value": None,
+                        "new_display_value": getattr(sector, "name", None) or f"Setor #{payload.sector_id}",
+                    },
+                    {
+                        "field_name": "document_type",
+                        "field_label": "Tipo documental",
+                        "old_value": None,
+                        "new_value": payload.document_type,
+                        "old_display_value": None,
+                        "new_display_value": self._resolve_document_type_display(payload.document_type),
+                    },
+                    {
+                        "field_name": "scope",
+                        "field_label": "Escopo",
+                        "old_value": None,
+                        "new_value": payload.scope.value if payload.scope else None,
+                        "old_display_value": None,
+                        "new_display_value": payload.scope.value if payload.scope else None,
+                    },
+                ],
+            )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=initial_version.id,
+                action="CREATE",
+                document_id=document.id,
+                version_id=initial_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(document, initial_version.id, 1),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "version_number",
+                        "field_label": "Versao",
+                        "old_value": None,
+                        "new_value": 1,
+                        "old_display_value": None,
+                        "new_display_value": "1",
+                    },
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": None,
+                        "new_value": DocumentStatus.RASCUNHO.value,
+                        "old_display_value": None,
+                        "new_display_value": self._status_label(DocumentStatus.RASCUNHO.value),
+                    },
+                    {
+                        "field_name": "file_path",
+                        "field_label": "Arquivo",
+                        "old_value": None,
+                        "new_value": payload.file_path,
+                        "old_display_value": None,
+                        "new_display_value": payload.file_path,
+                    },
+                    {
+                        "field_name": "expiration_date",
+                        "field_label": "Data de vencimento",
+                        "old_value": None,
+                        "new_value": payload.expiration_date,
+                        "old_display_value": None,
+                        "new_display_value": payload.expiration_date,
+                    },
+                ],
             )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -247,14 +359,44 @@ class DocumentService:
             page_size=normalized_page_size,
         )
 
+    def list_document_events(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+        *,
+        term: str | None = None,
+        action: str | None = None,
+        user_id: int | None = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> AuditLogListResponse:
+        self._ensure_can_access_document_registry(current_user)
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
+        if not self._can_access_document(current_user, document):
+            raise ForbiddenServiceError("You do not have permission to access this document.")
+        return self.audit_service.list_document_logs(
+            document_id=document_id,
+            term=term,
+            action=action,
+            user_id=user_id,
+            page=page,
+            page_size=page_size,
+        )
+
     def update_draft_document(
         self,
         document_id: int,
         payload: DocumentDraftUpdate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
         document, latest_version = self._get_editable_draft(document_id, current_user)
+        original_title = document.title
+        original_file_path = latest_version.file_path
+        original_expiration_date = latest_version.expiration_date
 
         document_changed = False
         version_changed = False
@@ -285,6 +427,59 @@ class DocumentService:
                 self.repository.save(document)
             if version_changed:
                 self.version_repository.save(latest_version)
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document",
+                entity_id=document.id,
+                action="UPDATE",
+                document_id=document.id,
+                context=audit_context,
+                entity_label=self._document_entity_label(document),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "title",
+                        "field_label": "Titulo",
+                        "old_value": original_title,
+                        "new_value": document.title,
+                        "old_display_value": original_title,
+                        "new_display_value": document.title,
+                    }
+                ],
+            )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=latest_version.id,
+                action="UPDATE",
+                document_id=document.id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document,
+                    latest_version.id,
+                    getattr(latest_version, "version_number", None),
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "file_path",
+                        "field_label": "Arquivo",
+                        "old_value": original_file_path,
+                        "new_value": latest_version.file_path,
+                        "old_display_value": original_file_path,
+                        "new_display_value": latest_version.file_path,
+                    },
+                    {
+                        "field_name": "expiration_date",
+                        "field_label": "Data de vencimento",
+                        "old_value": original_expiration_date,
+                        "new_value": latest_version.expiration_date,
+                        "old_display_value": original_expiration_date,
+                        "new_display_value": latest_version.expiration_date,
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -292,11 +487,41 @@ class DocumentService:
 
         return MessageResponse(message="Draft document updated successfully.")
 
-    def delete_draft_document(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
+    def delete_draft_document(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        document, _ = self._get_editable_draft(document_id, current_user)
+        document, latest_version = self._get_editable_draft(document_id, current_user)
 
         try:
+            self.audit_service.create_action_log(
+                user_id=current_user.user_id,
+                entity_type="document",
+                entity_id=document.id,
+                action="DELETE",
+                field_name="record",
+                field_label="Registro",
+                old_value={
+                    "code": getattr(document, "code", None),
+                    "title": getattr(document, "title", None),
+                    "company_id": getattr(document, "company_id", None),
+                    "sector_id": getattr(document, "sector_id", None),
+                    "document_type": getattr(document, "document_type", None),
+                    "latest_version_id": latest_version.id,
+                    "latest_status": latest_version.status.value if latest_version.status else None,
+                },
+                new_value=None,
+                old_display_value=f"{getattr(document, 'title', '')} ({getattr(document, 'code', '')})".strip(),
+                new_display_value=None,
+                document_id=document.id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._document_entity_label(document),
+                actor_name=self._actor_snapshot(current_user),
+            )
             self.repository.delete(document)
             self.repository.db.commit()
         except SQLAlchemyError as exc:
@@ -305,7 +530,12 @@ class DocumentService:
 
         return MessageResponse(message="Draft document deleted successfully.")
 
-    def submit_for_review(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
+    def submit_for_review(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
         self._ensure_can_submit_for_review(current_user)
 
@@ -323,6 +553,7 @@ class DocumentService:
             )
 
         try:
+            previous_status = latest_version.status
             latest_version.status = DocumentStatus.PENDENTE_COORDENACAO
             latest_version.invalidated_at = None
             latest_version.invalidated_by = None
@@ -333,6 +564,31 @@ class DocumentService:
                 version_id=latest_version.id,
                 user_id=current_user.user_id,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=latest_version.id,
+                action="STATUS_CHANGE",
+                document_id=document_id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document,
+                    latest_version.id,
+                    getattr(latest_version, "version_number", None),
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": previous_status.value if previous_status else None,
+                        "new_value": DocumentStatus.PENDENTE_COORDENACAO.value,
+                        "old_display_value": self._status_label(previous_status.value if previous_status else None),
+                        "new_display_value": self._status_label(DocumentStatus.PENDENTE_COORDENACAO.value),
+                    }
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -340,13 +596,21 @@ class DocumentService:
 
         return MessageResponse(message="Document moved to coordinator approval queue.")
 
-    def approve_document(self, document_id: int, current_user: AuthenticatedUser) -> MessageResponse:
+    def approve_document(
+        self,
+        document_id: int,
+        current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
+    ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
         self._ensure_can_approve(current_user, document_id=document_id)
 
         latest_version = self.version_repository.get_latest_version_for_document(document_id)
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to approve.")
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
 
         if latest_version.status not in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
             raise ConflictServiceError(
@@ -358,6 +622,7 @@ class DocumentService:
         try:
             approval_time = datetime.now(UTC)
             if active_version is not None and active_version.id != latest_version.id:
+                previous_active_status = active_version.status
                 active_version.status = DocumentStatus.OBSOLETO
                 active_version.invalidated_at = approval_time
                 active_version.invalidated_by = current_user.user_id
@@ -368,7 +633,49 @@ class DocumentService:
                     version_id=active_version.id,
                     user_id=current_user.user_id,
                 )
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document_version",
+                    entity_id=active_version.id,
+                    action="STATUS_CHANGE",
+                    document_id=document_id,
+                    version_id=active_version.id,
+                    context=audit_context,
+                    entity_label=self._version_entity_label(
+                        document,
+                        active_version.id,
+                        getattr(active_version, "version_number", None),
+                    ),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=[
+                        {
+                            "field_name": "status",
+                            "field_label": "Status",
+                            "old_value": previous_active_status.value if previous_active_status else None,
+                            "new_value": DocumentStatus.OBSOLETO.value,
+                            "old_display_value": self._status_label(previous_active_status.value if previous_active_status else None),
+                            "new_display_value": self._status_label(DocumentStatus.OBSOLETO.value),
+                        },
+                        {
+                            "field_name": "invalidated_by",
+                            "field_label": "Invalidado por",
+                            "old_value": None,
+                            "new_value": current_user.user_id,
+                            "old_display_value": None,
+                            "new_display_value": self._resolve_user_name(current_user.user_id),
+                        },
+                        {
+                            "field_name": "invalidated_at",
+                            "field_label": "Invalidado em",
+                            "old_value": None,
+                            "new_value": approval_time,
+                            "old_display_value": None,
+                            "new_display_value": approval_time,
+                        },
+                    ],
+                )
 
+            previous_status = latest_version.status
             latest_version.status = DocumentStatus.VIGENTE
             latest_version.approved_by = current_user.user_id
             latest_version.approved_at = approval_time
@@ -388,6 +695,47 @@ class DocumentService:
                 version_id=latest_version.id,
                 user_id=current_user.user_id,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=latest_version.id,
+                action="STATUS_CHANGE",
+                document_id=document_id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document,
+                    latest_version.id,
+                    getattr(latest_version, "version_number", None),
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": previous_status.value if previous_status else None,
+                        "new_value": DocumentStatus.VIGENTE.value,
+                        "old_display_value": self._status_label(previous_status.value if previous_status else None),
+                        "new_display_value": self._status_label(DocumentStatus.VIGENTE.value),
+                    },
+                    {
+                        "field_name": "approved_by",
+                        "field_label": "Aprovado por",
+                        "old_value": None,
+                        "new_value": current_user.user_id,
+                        "old_display_value": None,
+                        "new_display_value": self._resolve_user_name(current_user.user_id),
+                    },
+                    {
+                        "field_name": "approved_at",
+                        "field_label": "Aprovado em",
+                        "old_value": None,
+                        "new_value": approval_time,
+                        "old_display_value": None,
+                        "new_display_value": approval_time,
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -401,14 +749,19 @@ class DocumentService:
         current_user: AuthenticatedUser,
         *,
         reason: str | None = None,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
 
         latest_version = self.version_repository.get_latest_version_for_document(document_id)
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to reject.")
+        document = self.repository.get_document_by_id(document_id)
+        if document is None:
+            raise NotFoundServiceError("Document not found.")
 
         try:
+            previous_status = latest_version.status
             if latest_version.status in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
                 if not current_user.has_role(UserRole.REVISOR):
                     raise ForbiddenServiceError("Only reviewer role can reject drafts.")
@@ -433,6 +786,53 @@ class DocumentService:
                 version_id=latest_version.id,
                 user_id=current_user.user_id,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=latest_version.id,
+                action="STATUS_CHANGE",
+                document_id=document_id,
+                version_id=latest_version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document,
+                    latest_version.id,
+                    getattr(latest_version, "version_number", None),
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": previous_status.value if previous_status else None,
+                        "new_value": latest_version.status.value,
+                        "old_display_value": self._status_label(previous_status.value if previous_status else None),
+                        "new_display_value": self._status_label(latest_version.status.value),
+                    }
+                ],
+            )
+            if reason and reason.strip():
+                self.audit_service.create_action_log(
+                    user_id=current_user.user_id,
+                    entity_type="document_version",
+                    entity_id=latest_version.id,
+                    action="REJECT_REASON",
+                    field_name="reason",
+                    field_label="Motivo",
+                    old_value=None,
+                    new_value=reason.strip(),
+                    old_display_value=None,
+                    new_display_value=reason.strip(),
+                    document_id=document_id,
+                    version_id=latest_version.id,
+                    context=audit_context,
+                    entity_label=self._version_entity_label(
+                        document,
+                        latest_version.id,
+                        getattr(latest_version, "version_number", None),
+                    ),
+                    actor_name=self._actor_snapshot(current_user),
+                )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -444,6 +844,73 @@ class DocumentService:
             )
 
         return MessageResponse(message="Document rejected successfully.")
+
+    @staticmethod
+    def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:
+        return current_user.username or current_user.email
+
+    @staticmethod
+    def _status_label(status_value: str | None) -> str | None:
+        if not status_value:
+            return None
+        labels = {
+            DocumentStatus.RASCUNHO.value: "Rascunho",
+            DocumentStatus.REVISAR_RASCUNHO.value: "Revisar rascunho",
+            DocumentStatus.PENDENTE_COORDENACAO.value: "Pendente coordenacao",
+            DocumentStatus.EM_REVISAO.value: "Em revisao",
+            DocumentStatus.REPROVADO.value: "Reprovado",
+            DocumentStatus.VIGENTE.value: "Vigente",
+            DocumentStatus.OBSOLETO.value: "Obsoleto",
+        }
+        return labels.get(status_value, status_value)
+
+    def _resolve_user_name(self, user_id: int | None) -> str | None:
+        if user_id is None:
+            return None
+        user = self.auth_repository.get_user_by_id(user_id)
+        if user is None:
+            return f"Usuario #{user_id}"
+        return getattr(user, "name", None) or getattr(user, "username", None) or f"Usuario #{user_id}"
+
+    def _resolve_document_type_display(self, document_type_sigla: str | None) -> str | None:
+        normalized = (document_type_sigla or "").strip().upper()
+        if not normalized:
+            return None
+        document_types = self.repository.list_document_types()
+        if not isinstance(document_types, list):
+            return normalized
+        for item in document_types:
+            sigla = str(getattr(item, "sigla", "") or "").strip().upper()
+            if sigla != normalized:
+                continue
+            name = str(getattr(item, "name", "") or "").strip()
+            if not name:
+                return sigla
+            return f"{name} ({sigla})"
+        return normalized
+
+    @staticmethod
+    def _document_entity_label(document: Document) -> str:
+        title = (getattr(document, "title", None) or "").strip()
+        code = (getattr(document, "code", None) or "").strip()
+        if title and code:
+            return f"Documento #{document.id} ({title} - {code})"
+        if title:
+            return f"Documento #{document.id} ({title})"
+        if code:
+            return f"Documento #{document.id} ({code})"
+        return f"Documento #{document.id}"
+
+    @staticmethod
+    def _version_entity_label(document: Document, version_id: int, version_number: int | None) -> str:
+        title = (getattr(document, "title", None) or "").strip()
+        code = (getattr(document, "code", None) or "").strip()
+        version_label = f"v{version_number}" if version_number is not None else f"#{version_id}"
+        if title and code:
+            return f"Versao {version_label} de Documento #{document.id} ({title} - {code})"
+        if title:
+            return f"Versao {version_label} de Documento #{document.id} ({title})"
+        return f"Versao {version_label} de Documento #{document.id}"
 
     @staticmethod
     def _ensure_authenticated_user_id(current_user: AuthenticatedUser) -> None:

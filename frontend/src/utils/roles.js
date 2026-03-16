@@ -77,6 +77,10 @@ export function canAccessAdminCatalog(roleOrRoles) {
   return isReviewer(roleOrRoles) || isAdmin(roleOrRoles);
 }
 
+export function canAccessAuditHistory(roleOrRoles) {
+  return isAdmin(roleOrRoles);
+}
+
 export function canAccessSolicitacoesSection(roleOrRoles) {
   return canAccessNovoDocumento(roleOrRoles) || canAccessHistoricoSolicitacoes(roleOrRoles);
 }

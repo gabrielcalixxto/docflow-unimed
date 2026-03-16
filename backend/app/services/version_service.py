@@ -2,6 +2,7 @@ import re
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.audit import AuditContext
 from app.core.enums import DocumentEventType, DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.models.document import Document
@@ -33,6 +34,7 @@ class VersionService:
         document_id: int,
         payload: DocumentVersionCreate,
         current_user: AuthenticatedUser,
+        audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
         self._ensure_can_write(current_user)
@@ -81,6 +83,56 @@ class VersionService:
                 version_id=version.id,
                 user_id=current_user.user_id,
             )
+            self.audit_service.create_field_change_logs(
+                user_id=current_user.user_id,
+                entity_type="document_version",
+                entity_id=version.id,
+                action="CREATE",
+                document_id=document_id,
+                version_id=version.id,
+                context=audit_context,
+                entity_label=self._version_entity_label(
+                    document_id=document.id,
+                    document_title=getattr(document, "title", None),
+                    document_code=getattr(document, "code", None),
+                    version_number=next_version_number,
+                ),
+                actor_name=self._actor_snapshot(current_user),
+                changes=[
+                    {
+                        "field_name": "version_number",
+                        "field_label": "Versao",
+                        "old_value": None,
+                        "new_value": next_version_number,
+                        "old_display_value": None,
+                        "new_display_value": str(next_version_number),
+                    },
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": None,
+                        "new_value": DocumentStatus.RASCUNHO.value,
+                        "old_display_value": None,
+                        "new_display_value": "Rascunho",
+                    },
+                    {
+                        "field_name": "file_path",
+                        "field_label": "Arquivo",
+                        "old_value": None,
+                        "new_value": payload.file_path,
+                        "old_display_value": None,
+                        "new_display_value": payload.file_path,
+                    },
+                    {
+                        "field_name": "expiration_date",
+                        "field_label": "Data de vencimento",
+                        "old_value": None,
+                        "new_value": payload.expiration_date,
+                        "old_display_value": None,
+                        "new_display_value": payload.expiration_date,
+                    },
+                ],
+            )
             self.repository.db.commit()
         except SQLAlchemyError as exc:
             self.repository.db.rollback()
@@ -95,6 +147,27 @@ class VersionService:
             raise NotFoundServiceError("Document not found.")
         self._ensure_can_access_document(current_user, document)
         return self.repository.list_versions_for_document(document_id)
+
+    @staticmethod
+    def _actor_snapshot(current_user: AuthenticatedUser) -> str | None:
+        return current_user.username or current_user.email
+
+    @staticmethod
+    def _version_entity_label(
+        *,
+        document_id: int,
+        document_title: str | None,
+        document_code: str | None,
+        version_number: int | None,
+    ) -> str:
+        normalized_title = (document_title or "").strip()
+        normalized_code = (document_code or "").strip()
+        version_tag = f"v{version_number}" if version_number is not None else "versao"
+        if normalized_title and normalized_code:
+            return f"Versao {version_tag} de Documento #{document_id} ({normalized_title} - {normalized_code})"
+        if normalized_title:
+            return f"Versao {version_tag} de Documento #{document_id} ({normalized_title})"
+        return f"Versao {version_tag} de Documento #{document_id}"
 
     @staticmethod
     def _ensure_authenticated_user_id(current_user: AuthenticatedUser) -> None:

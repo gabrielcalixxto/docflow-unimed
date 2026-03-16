@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.enums import DocumentScope, DocumentStatus
 from app.core.security import AuthenticatedUser, get_current_user
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.document_event_repository import DocumentEventRepository
 from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
+from app.schemas.audit import AuditLogListResponse
 from app.schemas.common import MessageResponse
 from app.schemas.document import (
     DocumentCreate,
@@ -31,7 +34,10 @@ def get_document_service(db: Session) -> DocumentService:
         version_repository=VersionRepository(db),
         file_repository=StoredFileRepository(db),
         auth_repository=AuthRepository(db),
-        audit_service=AuditService(repository=DocumentEventRepository(db)),
+        audit_service=AuditService(
+            repository=DocumentEventRepository(db),
+            log_repository=AuditLogRepository(db),
+        ),
     )
 
 
@@ -39,11 +45,12 @@ def get_document_service(db: Session) -> DocumentService:
 def create_document(
     payload: DocumentCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.create_document(payload, current_user)
+        return service.create_document(payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -99,6 +106,32 @@ def list_workflow_documents(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.get("/{document_id}/events", response_model=AuditLogListResponse)
+def get_document_events(
+    document_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    term: str | None = Query(default=None),
+    action: str | None = Query(default=None),
+    user_id: int | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=500),
+) -> AuditLogListResponse:
+    service = get_document_service(db)
+    try:
+        return service.list_document_events(
+            document_id,
+            current_user,
+            term=term,
+            action=action,
+            user_id=user_id,
+            page=page,
+            page_size=page_size,
+        )
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.get("/{document_id}", response_model=DocumentRead)
 def get_document(
     document_id: int,
@@ -120,11 +153,12 @@ def update_draft_document(
     document_id: int,
     payload: DocumentDraftUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.update_draft_document(document_id, payload, current_user)
+        return service.update_draft_document(document_id, payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -133,11 +167,12 @@ def update_draft_document(
 def delete_draft_document(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.delete_draft_document(document_id, current_user)
+        return service.delete_draft_document(document_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -146,11 +181,12 @@ def delete_draft_document(
 def submit_review(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.submit_for_review(document_id, current_user)
+        return service.submit_for_review(document_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -159,11 +195,12 @@ def submit_review(
 def approve_document(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
-        return service.approve_document(document_id, current_user)
+        return service.approve_document(document_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -173,11 +210,12 @@ def reject_document(
     document_id: int,
     payload: DocumentRejectRequest | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_document_service(db)
     try:
         reason = payload.reason if payload is not None else None
-        return service.reject_document(document_id, current_user, reason=reason)
+        return service.reject_document(document_id, current_user, reason=reason, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

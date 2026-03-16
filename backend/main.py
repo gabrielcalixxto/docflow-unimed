@@ -17,8 +17,8 @@ from app.core.database import Base, SessionLocal, engine
 from app.core.logging_config import RequestResponseLoggingMiddleware, configure_logging
 from app.models.document_version import DocumentVersion
 from app.models.stored_file import StoredFile
-from app.models import company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
-from app.routers import admin_catalog, admin_users, auth, documents, files, search, versions
+from app.models import audit_log, audit_log_change, company, document, document_event, document_type, document_version, sector, stored_file, user  # noqa: F401
+from app.routers import admin_catalog, admin_users, audit, auth, documents, files, search, versions
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -213,6 +213,43 @@ def ensure_sectors_table_supports_sigla_and_sync_document_codes() -> None:
         )
 
 
+def ensure_audit_log_structure() -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS actor_name_snapshot VARCHAR(120)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_label VARCHAR(180)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_type VARCHAR(80)"))
+        connection.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS source_url VARCHAR(255)"))
+        connection.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS audit_log_changes ("
+                "id SERIAL PRIMARY KEY, "
+                "audit_log_id INTEGER NOT NULL REFERENCES audit_logs(id), "
+                "field_name VARCHAR(120) NOT NULL, "
+                "field_label VARCHAR(180), "
+                "old_value TEXT, "
+                "new_value TEXT, "
+                "old_display_value TEXT, "
+                "new_display_value TEXT"
+                ")"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_audit_log_changes_audit_log_id "
+                "ON audit_log_changes (audit_log_id)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_audit_log_changes_field_name "
+                "ON audit_log_changes (field_name)"
+            )
+        )
+
+
 def migrate_legacy_uploaded_files_to_database(legacy_root: Path) -> None:
     if not legacy_root.exists():
         return
@@ -287,6 +324,7 @@ async def lifespan(_: FastAPI):
         ensure_users_table_supports_multi_access()
         ensure_document_types_table_supports_sigla()
         ensure_sectors_table_supports_sigla_and_sync_document_codes()
+        ensure_audit_log_structure()
         migrate_legacy_uploaded_files_to_database(LEGACY_UPLOAD_ROOT)
     except SQLAlchemyError as exc:
         logger.warning("Database initialization skipped: %s", exc)
@@ -327,3 +365,4 @@ app.include_router(versions.router)
 app.include_router(files.router)
 app.include_router(admin_users.router)
 app.include_router(admin_catalog.router)
+app.include_router(audit.router)

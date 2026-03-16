@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.document_event_repository import DocumentEventRepository
 from app.repositories.stored_file_repository import StoredFileRepository
@@ -21,7 +23,10 @@ def get_version_service(db: Session) -> VersionService:
         repository=VersionRepository(db),
         document_repository=DocumentRepository(db),
         file_repository=StoredFileRepository(db),
-        audit_service=AuditService(repository=DocumentEventRepository(db)),
+        audit_service=AuditService(
+            repository=DocumentEventRepository(db),
+            log_repository=AuditLogRepository(db),
+        ),
     )
 
 
@@ -30,11 +35,12 @@ def create_version(
     document_id: int,
     payload: DocumentVersionCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_version_service(db)
     try:
-        return service.create_version(document_id, payload, current_user)
+        return service.create_version(document_id, payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

@@ -42,3 +42,4 @@ class User(Base):
     )
     uploaded_files = relationship("StoredFile", back_populates="uploader", foreign_keys="StoredFile.uploaded_by")
     events = relationship("DocumentEvent", back_populates="user")
+    audit_logs = relationship("AuditLog", back_populates="user")

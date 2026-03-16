@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.audit import AuditContext, get_audit_context
 from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.common import MessageResponse
 from app.schemas.user_admin import UserAdminCreate, UserAdminOptionsRead, UserAdminRead, UserAdminUpdate
+from app.services.audit_service import AuditService
 from app.services.errors import ServiceError
 from app.services.user_admin_service import UserAdminService
 
@@ -13,7 +16,10 @@ router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
 def get_user_admin_service(db: Session = Depends(get_db)) -> UserAdminService:
-    return UserAdminService(repository=UserRepository(db))
+    return UserAdminService(
+        repository=UserRepository(db),
+        audit_service=AuditService(log_repository=AuditLogRepository(db)),
+    )
 
 
 @router.get("", response_model=list[UserAdminRead])
@@ -44,11 +50,12 @@ def get_user_options(
 def create_user(
     payload: UserAdminCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.create_user(payload, current_user)
+        return service.create_user(payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -58,11 +65,12 @@ def update_user(
     user_id: int,
     payload: UserAdminUpdate,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.update_user(user_id, payload, current_user)
+        return service.update_user(user_id, payload, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -71,10 +79,11 @@ def update_user(
 def delete_user(
     user_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     service = get_user_admin_service(db)
     try:
-        return service.delete_user(user_id, current_user)
+        return service.delete_user(user_id, current_user, audit_context=audit_context)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
