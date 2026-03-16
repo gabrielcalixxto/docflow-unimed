@@ -16,11 +16,14 @@ from app.schemas.admin_catalog import (
     AdminSectorUpdate,
 )
 from app.schemas.common import MessageResponse
+from app.schemas.errors import build_standard_error_responses
 from app.services.audit_service import AuditService
 from app.services.admin_catalog_service import AdminCatalogService
 from app.services.errors import ServiceError
 
-router = APIRouter(prefix="/admin/catalog", tags=["admin-catalog"])
+router = APIRouter(prefix="/admin/catalog", tags=["Catalog"])
+
+ADMIN_CATALOG_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
 
 
 def get_admin_catalog_service(db: Session = Depends(get_db)) -> AdminCatalogService:
@@ -30,7 +33,13 @@ def get_admin_catalog_service(db: Session = Depends(get_db)) -> AdminCatalogServ
     )
 
 
-@router.get("/options", response_model=AdminCatalogOptionsRead)
+@router.get(
+    "/options",
+    response_model=AdminCatalogOptionsRead,
+    summary="Listar opções de catálogos",
+    description="Retorna empresas, setores e tipos documentais cadastrados.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def get_catalog_options(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -42,7 +51,14 @@ def get_catalog_options(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/companies", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/companies",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar empresa",
+    description="Cria uma nova empresa para vinculação de documentos e usuários.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def create_company(
     payload: AdminCompanyCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -56,7 +72,13 @@ def create_company(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.delete("/companies/{company_id}", response_model=MessageResponse)
+@router.delete(
+    "/companies/{company_id}",
+    response_model=MessageResponse,
+    summary="Excluir empresa",
+    description="Exclui empresa sem vínculos ativos.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def delete_company(
     company_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -70,7 +92,13 @@ def delete_company(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.put("/companies/{company_id}", response_model=MessageResponse)
+@router.put(
+    "/companies/{company_id}",
+    response_model=MessageResponse,
+    summary="Atualizar empresa",
+    description="Atualiza nome da empresa.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def update_company(
     company_id: int,
     payload: AdminCompanyUpdate,
@@ -85,7 +113,14 @@ def update_company(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/sectors", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sectors",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar setor",
+    description="Cria setor vinculado a uma empresa com sigla única por empresa.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def create_sector(
     payload: AdminSectorCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -99,7 +134,13 @@ def create_sector(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.delete("/sectors/{sector_id}", response_model=MessageResponse)
+@router.delete(
+    "/sectors/{sector_id}",
+    response_model=MessageResponse,
+    summary="Excluir setor",
+    description="Exclui setor sem vínculos ativos.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def delete_sector(
     sector_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -113,7 +154,13 @@ def delete_sector(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.put("/sectors/{sector_id}", response_model=MessageResponse)
+@router.put(
+    "/sectors/{sector_id}",
+    response_model=MessageResponse,
+    summary="Atualizar setor",
+    description="Atualiza nome, sigla e empresa do setor com sincronização de documentos vinculados.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def update_sector(
     sector_id: int,
     payload: AdminSectorUpdate,
@@ -128,7 +175,14 @@ def update_sector(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/document-types", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/document-types",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar tipo documental",
+    description="Cria novo tipo documental com sigla e nome.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def create_document_type(
     payload: AdminDocumentTypeCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -142,7 +196,13 @@ def create_document_type(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.delete("/document-types/{document_type_id}", response_model=MessageResponse)
+@router.delete(
+    "/document-types/{document_type_id}",
+    response_model=MessageResponse,
+    summary="Excluir tipo documental",
+    description="Exclui tipo documental sem vínculos ativos.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def delete_document_type(
     document_type_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -156,7 +216,13 @@ def delete_document_type(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.put("/document-types/{document_type_id}", response_model=MessageResponse)
+@router.put(
+    "/document-types/{document_type_id}",
+    response_model=MessageResponse,
+    summary="Atualizar tipo documental",
+    description="Atualiza sigla e nome com sincronização dos documentos vinculados.",
+    responses=ADMIN_CATALOG_ERRORS,
+)
 def update_document_type(
     document_type_id: int,
     payload: AdminDocumentTypeUpdate,

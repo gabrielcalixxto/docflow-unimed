@@ -10,12 +10,16 @@ from app.repositories.document_event_repository import DocumentEventRepository
 from app.repositories.stored_file_repository import StoredFileRepository
 from app.repositories.version_repository import VersionRepository
 from app.schemas.common import MessageResponse
+from app.schemas.errors import build_standard_error_responses
 from app.schemas.version import DocumentVersionCreate, DocumentVersionRead
 from app.services.audit_service import AuditService
 from app.services.errors import ServiceError
 from app.services.version_service import VersionService
 
-router = APIRouter(prefix="/documents", tags=["versions"])
+router = APIRouter(prefix="/documents", tags=["Document Versions"])
+
+VERSION_MUTATION_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
+VERSION_QUERY_ERRORS = build_standard_error_responses(401, 403, 404, 422, 500)
 
 
 def get_version_service(db: Session) -> VersionService:
@@ -30,7 +34,14 @@ def get_version_service(db: Session) -> VersionService:
     )
 
 
-@router.post("/{document_id}/versions", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{document_id}/versions",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar nova versão de documento",
+    description="Cria nova versão em rascunho para o documento informado.",
+    responses=VERSION_MUTATION_ERRORS,
+)
 def create_version(
     document_id: int,
     payload: DocumentVersionCreate,
@@ -45,7 +56,13 @@ def create_version(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.get("/{document_id}/versions", response_model=list[DocumentVersionRead])
+@router.get(
+    "/{document_id}/versions",
+    response_model=list[DocumentVersionRead],
+    summary="Listar versões de documento",
+    description="Retorna histórico de versões do documento com metadados de aprovação e invalidação.",
+    responses=VERSION_QUERY_ERRORS,
+)
 def list_versions(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),

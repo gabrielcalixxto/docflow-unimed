@@ -10,9 +10,10 @@ from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.stored_file_repository import StoredFileRepository
+from app.schemas.errors import build_standard_error_responses
 from app.services.audit_service import AuditService
 
-router = APIRouter(prefix="/file-storage", tags=["files"])
+router = APIRouter(prefix="/file-storage", tags=["Attachments"])
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
@@ -23,17 +24,22 @@ def _build_content_disposition(filename: str, *, as_attachment: bool) -> str:
     return f'{disposition}; filename="{safe}"'
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    summary="Enviar arquivo para armazenamento",
+    description="Faz upload do arquivo do documento e retorna caminho lógico para vincular no fluxo.",
+    responses=build_standard_error_responses(400, 401, 403, 413, 422, 500),
+)
 async def upload_document_file(
     file: UploadFile = File(...),
     current_user: AuthenticatedUser = Depends(get_current_user),
     audit_context: AuditContext = Depends(get_audit_context),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+    if not current_user.has_role(UserRole.AUTOR):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only non-reader roles can upload files.",
+            detail="Only author role can upload files.",
         )
 
     repository = StoredFileRepository(db)
@@ -115,7 +121,12 @@ async def upload_document_file(
     }
 
 
-@router.get("/{storage_key}")
+@router.get(
+    "/{storage_key}",
+    summary="Baixar ou visualizar arquivo armazenado",
+    description="Retorna conteúdo binário por chave de armazenamento.",
+    responses=build_standard_error_responses(404, 422, 500),
+)
 def get_stored_file(
     storage_key: str = Path(pattern=r"^[A-Fa-f0-9]{32}$"),
     download: bool = Query(default=False),

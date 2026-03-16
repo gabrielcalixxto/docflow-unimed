@@ -1,7 +1,9 @@
 const STATUS_LABELS = {
   RASCUNHO: "Rascunho",
+  RASCUNHO_REVISADO: "Rascunho revisado",
   REVISAR_RASCUNHO: "Revisar rascunho",
   PENDENTE_COORDENACAO: "Pendente coordenacao",
+  PENDENTE_QUALIDADE: "Pendente qualidade",
   EM_REVISAO: "Em revisao",
   REPROVADO: "Reprovado",
   VIGENTE: "Vigente",
@@ -16,4 +18,3 @@ export function formatStatusLabel(status) {
   }
   return STATUS_LABELS[normalized] || normalized.replaceAll("_", " ");
 }
-

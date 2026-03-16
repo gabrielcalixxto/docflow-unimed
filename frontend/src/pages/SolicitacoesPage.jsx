@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { approveDocument, rejectDocument, submitForReview } from "../services/api";
+import { approveDocument, rejectDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
 import { canAccessCentralAprovacao, isCoordinator, isReviewer } from "../utils/roles";
 import { formatStatusLabel } from "../utils/status";
@@ -34,8 +34,8 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
   });
 
   const showFeedback = (type, message) => setFeedback({ type, message });
-  const reviewerStatuses = ["RASCUNHO", "REVISAR_RASCUNHO"];
-  const coordinatorStatuses = ["PENDENTE_COORDENACAO", "EM_REVISAO"];
+  const coordinatorStatuses = ["RASCUNHO", "RASCUNHO_REVISADO", "REVISAR_RASCUNHO"];
+  const qualityStatuses = ["PENDENTE_QUALIDADE", "PENDENTE_COORDENACAO", "EM_REVISAO"];
 
   const loadItems = async () => {
     setLoading(true);
@@ -58,7 +58,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
   }, []);
 
   const sessionRoles = session?.roles || session?.role;
-  const reviewerRole = isReviewer(sessionRoles);
+  const qualityRole = isReviewer(sessionRoles);
   const coordinatorRole = isCoordinator(sessionRoles);
   const canOpenSolicitacoes = canAccessCentralAprovacao(sessionRoles);
 
@@ -193,16 +193,12 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
     setSubmitting(true);
     setFeedback({ type: "", message: "" });
     try {
-      let response;
-      if (action === "submit") {
-        response = await submitForReview(documentId);
-      } else if (action === "approve") {
-        response = await approveDocument(documentId);
-      } else {
-        response = await rejectDocument(documentId, {
-          reason: rejectReasons[documentId] || "",
-        });
-      }
+      const response =
+        action === "approve"
+          ? await approveDocument(documentId)
+          : await rejectDocument(documentId, {
+              reason: rejectReasons[documentId] || "",
+            });
       showFeedback("success", response.message || "Acao executada.");
       await loadItems();
     } catch (requestError) {
@@ -223,8 +219,8 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
           <p className="kicker">Fila operacional</p>
           <h2>Central de Aprovacao</h2>
           <p>
-            Revisor: aprova ou desaprova rascunho. Coordenacao: aprova ou reprova pendencias para
-            publicar como vigente.
+            Coordenador/Aprovador revisa rascunhos e envia para qualidade. Qualidade realiza
+            aprovacao final para vigencia.
           </p>
         </div>
         <button type="button" className="ghost-btn" onClick={loadItems} disabled={loading}>
@@ -394,20 +390,12 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                   <td>{item.latestVersion?.expiration_date || "-"}</td>
                   <td>
                     <div className="request-actions">
-                      {reviewerStatuses.includes(item.latestStatus) && reviewerRole && (
+                      {coordinatorStatuses.includes(item.latestStatus) && coordinatorRole && (
                         <>
-                          <button
-                            type="button"
-                            className="table-btn"
-                            disabled={submitting}
-                            onClick={() => runAction(item.id, "submit")}
-                          >
-                            Aprovar para coordenacao
-                          </button>
                           <input
                             className="reject-reason"
                             type="text"
-                            placeholder="Motivo da desaprovacao (opcional)"
+                            placeholder="Motivo da devolucao (opcional)"
                             value={rejectReasons[item.id] || ""}
                             onChange={(event) =>
                               setRejectReasons((prev) => ({
@@ -420,14 +408,22 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                             type="button"
                             className="table-btn"
                             disabled={submitting}
+                            onClick={() => runAction(item.id, "approve")}
+                          >
+                            Aprovar e enviar para qualidade
+                          </button>
+                          <button
+                            type="button"
+                            className="table-btn"
+                            disabled={submitting}
                             onClick={() => runAction(item.id, "reject")}
                           >
-                            Desaprovar
+                            Devolver para revisao
                           </button>
                         </>
                       )}
 
-                      {coordinatorStatuses.includes(item.latestStatus) && coordinatorRole && (
+                      {qualityStatuses.includes(item.latestStatus) && qualityRole && (
                         <>
                           <input
                             className="reject-reason"
@@ -447,7 +443,7 @@ export default function SolicitacoesPage({ session, onUnauthorized }) {
                             disabled={submitting}
                             onClick={() => runAction(item.id, "approve")}
                           >
-                            Aprovar
+                            Aprovar e tornar vigente
                           </button>
                           <button
                             type="button"

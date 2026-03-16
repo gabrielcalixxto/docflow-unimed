@@ -1,7 +1,7 @@
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, false, or_, select, true
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.enums import DocumentScope, DocumentStatus
+from app.core.enums import DocumentScope, DocumentStatus, UserRole
 from app.core.security import AuthenticatedUser
 from app.models.document import Document
 from app.models.document_version import DocumentVersion
@@ -16,16 +16,25 @@ class SearchRepository:
         current_user: AuthenticatedUser,
     ) -> list[tuple[Document, DocumentVersion]]:
         user_sector_ids = current_user.normalized_sector_ids()
-        if user_sector_ids:
-            visibility_filter = or_(
-                Document.scope == DocumentScope.CORPORATIVO,
-                and_(
-                    Document.scope == DocumentScope.LOCAL,
-                    Document.sector_id.in_(user_sector_ids),
-                ),
-            )
+        user_company_ids = current_user.normalized_company_ids()
+
+        if current_user.has_role(UserRole.ADMIN):
+            corporate_visibility_filter = true()
         else:
-            visibility_filter = Document.scope == DocumentScope.CORPORATIVO
+            corporate_filters = []
+            if user_company_ids:
+                corporate_filters.append(Document.company_id.in_(user_company_ids))
+            if user_sector_ids:
+                corporate_filters.append(Document.sector_id.in_(user_sector_ids))
+            corporate_visibility_filter = or_(*corporate_filters) if corporate_filters else false()
+
+        visibility_filter = or_(
+            Document.scope == DocumentScope.LOCAL,
+            and_(
+                Document.scope == DocumentScope.CORPORATIVO,
+                corporate_visibility_filter,
+            ),
+        )
 
         statement = (
             select(Document, DocumentVersion)

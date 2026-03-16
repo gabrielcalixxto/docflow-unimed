@@ -5,18 +5,25 @@ from app.core.database import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.schemas.audit import AuditLogListResponse
+from app.schemas.errors import build_standard_error_responses
 from app.services.audit_log_service import AuditLogService
 from app.services.audit_service import AuditService
 from app.services.errors import ServiceError
 
-router = APIRouter(prefix="/audit", tags=["audit"])
+router = APIRouter(prefix="/audit", tags=["Audit Logs"])
 
 
 def get_audit_log_service(db: Session = Depends(get_db)) -> AuditLogService:
     return AuditLogService(audit_service=AuditService(log_repository=AuditLogRepository(db)))
 
 
-@router.get("/events", response_model=AuditLogListResponse)
+@router.get(
+    "/events",
+    response_model=AuditLogListResponse,
+    summary="Listar eventos de auditoria",
+    description="Retorna histórico geral de ações com filtros por usuário, entidade, ação e request id.",
+    responses=build_standard_error_responses(401, 403, 422, 500),
+)
 def list_audit_events(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),

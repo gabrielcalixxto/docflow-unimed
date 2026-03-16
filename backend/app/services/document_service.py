@@ -56,6 +56,11 @@ class DocumentService:
         if sector.company_id != company.id:
             raise ConflictServiceError("Selected sector does not belong to selected company.")
 
+        if not self._can_access_company_and_sector(current_user, company.id, sector.id):
+            raise ForbiddenServiceError(
+                "You do not have permission for the selected company and sector."
+            )
+
         try:
             document = self.repository.create_document(
                 payload=payload,
@@ -397,6 +402,7 @@ class DocumentService:
         original_title = document.title
         original_file_path = latest_version.file_path
         original_expiration_date = latest_version.expiration_date
+        original_status = latest_version.status
 
         document_changed = False
         version_changed = False
@@ -417,6 +423,10 @@ class DocumentService:
 
         if payload.expiration_date is not None:
             latest_version.expiration_date = payload.expiration_date
+            version_changed = True
+
+        if original_status == DocumentStatus.REVISAR_RASCUNHO:
+            latest_version.status = DocumentStatus.RASCUNHO_REVISADO
             version_changed = True
 
         if not document_changed and not version_changed:
@@ -477,6 +487,14 @@ class DocumentService:
                         "new_value": latest_version.expiration_date,
                         "old_display_value": original_expiration_date,
                         "new_display_value": latest_version.expiration_date,
+                    },
+                    {
+                        "field_name": "status",
+                        "field_label": "Status",
+                        "old_value": original_status.value if original_status else None,
+                        "new_value": latest_version.status.value if latest_version.status else None,
+                        "old_display_value": self._status_label(original_status.value if original_status else None),
+                        "new_display_value": self._status_label(latest_version.status.value if latest_version.status else None),
                     },
                 ],
             )
@@ -547,14 +565,18 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to submit.")
 
-        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+        if latest_version.status not in {
+            DocumentStatus.RASCUNHO,
+            DocumentStatus.REVISAR_RASCUNHO,
+            DocumentStatus.RASCUNHO_REVISADO,
+        }:
             raise ConflictServiceError(
-                "Only draft versions (RASCUNHO or REVISAR_RASCUNHO) can be submitted for coordinator approval."
+                "Only draft versions can be sent to quality validation."
             )
 
         try:
             previous_status = latest_version.status
-            latest_version.status = DocumentStatus.PENDENTE_COORDENACAO
+            latest_version.status = DocumentStatus.PENDENTE_QUALIDADE
             latest_version.invalidated_at = None
             latest_version.invalidated_by = None
             self.version_repository.save(latest_version)
@@ -583,9 +605,9 @@ class DocumentService:
                         "field_name": "status",
                         "field_label": "Status",
                         "old_value": previous_status.value if previous_status else None,
-                        "new_value": DocumentStatus.PENDENTE_COORDENACAO.value,
+                        "new_value": DocumentStatus.PENDENTE_QUALIDADE.value,
                         "old_display_value": self._status_label(previous_status.value if previous_status else None),
-                        "new_display_value": self._status_label(DocumentStatus.PENDENTE_COORDENACAO.value),
+                        "new_display_value": self._status_label(DocumentStatus.PENDENTE_QUALIDADE.value),
                     }
                 ],
             )
@@ -594,7 +616,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not submit document for review.") from exc
 
-        return MessageResponse(message="Document moved to coordinator approval queue.")
+        return MessageResponse(message="Document moved to quality validation queue.")
 
     def approve_document(
         self,
@@ -603,8 +625,6 @@ class DocumentService:
         audit_context: AuditContext | None = None,
     ) -> MessageResponse:
         self._ensure_authenticated_user_id(current_user)
-        self._ensure_can_approve(current_user, document_id=document_id)
-
         latest_version = self.version_repository.get_latest_version_for_document(document_id)
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions to approve.")
@@ -612,10 +632,67 @@ class DocumentService:
         if document is None:
             raise NotFoundServiceError("Document not found.")
 
-        if latest_version.status not in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
-            raise ConflictServiceError(
-                "Only versions pending coordinator approval can be approved."
-            )
+        self._ensure_can_approve(current_user, document_id=document_id, latest_status=latest_version.status)
+
+        coordinator_pending_statuses = {
+            DocumentStatus.RASCUNHO,
+            DocumentStatus.REVISAR_RASCUNHO,
+            DocumentStatus.RASCUNHO_REVISADO,
+        }
+        quality_pending_statuses = {
+            DocumentStatus.PENDENTE_QUALIDADE,
+            DocumentStatus.PENDENTE_COORDENACAO,
+            DocumentStatus.EM_REVISAO,
+        }
+
+        if latest_version.status in coordinator_pending_statuses:
+            try:
+                previous_status = latest_version.status
+                latest_version.status = DocumentStatus.PENDENTE_QUALIDADE
+                latest_version.invalidated_at = None
+                latest_version.invalidated_by = None
+                self.version_repository.save(latest_version)
+
+                self.audit_service.create_placeholder_event(
+                    event_type=DocumentEventType.APPROVED,
+                    document_id=document_id,
+                    version_id=latest_version.id,
+                    user_id=current_user.user_id,
+                )
+                self.audit_service.create_field_change_logs(
+                    user_id=current_user.user_id,
+                    entity_type="document_version",
+                    entity_id=latest_version.id,
+                    action="STATUS_CHANGE",
+                    document_id=document_id,
+                    version_id=latest_version.id,
+                    context=audit_context,
+                    entity_label=self._version_entity_label(
+                        document,
+                        latest_version.id,
+                        getattr(latest_version, "version_number", None),
+                    ),
+                    actor_name=self._actor_snapshot(current_user),
+                    changes=[
+                        {
+                            "field_name": "status",
+                            "field_label": "Status",
+                            "old_value": previous_status.value if previous_status else None,
+                            "new_value": DocumentStatus.PENDENTE_QUALIDADE.value,
+                            "old_display_value": self._status_label(previous_status.value if previous_status else None),
+                            "new_display_value": self._status_label(DocumentStatus.PENDENTE_QUALIDADE.value),
+                        }
+                    ],
+                )
+                self.repository.db.commit()
+            except SQLAlchemyError as exc:
+                self.repository.db.rollback()
+                raise ConflictServiceError("Could not move document to quality queue.") from exc
+
+            return MessageResponse(message="Document approved by coordinator and sent to quality.")
+
+        if latest_version.status not in quality_pending_statuses:
+            raise ConflictServiceError("Only versions pending quality approval can be approved.")
 
         active_version = self.version_repository.get_active_version_for_document(document_id)
 
@@ -741,7 +818,7 @@ class DocumentService:
             self.repository.db.rollback()
             raise ConflictServiceError("Could not approve document version.") from exc
 
-        return MessageResponse(message="Document approved and set as active version.")
+        return MessageResponse(message="Document approved by quality and set as active version.")
 
     def reject_document(
         self,
@@ -762,19 +839,26 @@ class DocumentService:
 
         try:
             previous_status = latest_version.status
-            if latest_version.status in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
-                if not current_user.has_role(UserRole.REVISOR):
-                    raise ForbiddenServiceError("Only reviewer role can reject drafts.")
+            if latest_version.status in {
+                DocumentStatus.RASCUNHO,
+                DocumentStatus.RASCUNHO_REVISADO,
+                DocumentStatus.REVISAR_RASCUNHO,
+            }:
+                self._ensure_can_coordinator_review(current_user, document_id=document_id)
                 latest_version.status = DocumentStatus.REVISAR_RASCUNHO
                 latest_version.invalidated_at = None
                 latest_version.invalidated_by = None
-            elif latest_version.status in {DocumentStatus.PENDENTE_COORDENACAO, DocumentStatus.EM_REVISAO}:
-                self._ensure_can_approve(current_user, document_id=document_id)
+            elif latest_version.status in {
+                DocumentStatus.PENDENTE_QUALIDADE,
+                DocumentStatus.PENDENTE_COORDENACAO,
+                DocumentStatus.EM_REVISAO,
+            }:
+                self._ensure_can_quality_approve(current_user)
                 latest_version.status = DocumentStatus.REPROVADO
                 latest_version.invalidated_at = datetime.now(UTC)
                 latest_version.invalidated_by = current_user.user_id
             else:
-                raise ConflictServiceError("Only draft or pending coordinator versions can be rejected.")
+                raise ConflictServiceError("Only draft or pending quality versions can be rejected.")
 
             latest_version.approved_by = None
             latest_version.approved_at = None
@@ -855,8 +939,10 @@ class DocumentService:
             return None
         labels = {
             DocumentStatus.RASCUNHO.value: "Rascunho",
+            DocumentStatus.RASCUNHO_REVISADO.value: "Rascunho revisado",
             DocumentStatus.REVISAR_RASCUNHO.value: "Revisar rascunho",
             DocumentStatus.PENDENTE_COORDENACAO.value: "Pendente coordenacao",
+            DocumentStatus.PENDENTE_QUALIDADE.value: "Pendente qualidade",
             DocumentStatus.EM_REVISAO.value: "Em revisao",
             DocumentStatus.REPROVADO.value: "Reprovado",
             DocumentStatus.VIGENTE.value: "Vigente",
@@ -919,35 +1005,81 @@ class DocumentService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
-            raise ForbiddenServiceError("Only author, reviewer, or coordinator can modify documents.")
+        if not current_user.has_role(UserRole.AUTOR):
+            raise ForbiddenServiceError("Only author role can modify documents.")
 
     @staticmethod
     def _ensure_can_submit_for_review(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_role(UserRole.REVISOR):
-            raise ForbiddenServiceError("Only reviewer role can submit documents for review.")
+        if not current_user.has_role(UserRole.COORDENADOR):
+            raise ForbiddenServiceError("Only coordinator role can send documents to quality.")
 
     @staticmethod
     def _ensure_can_access_document_registry(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only non-reader roles can access document registry endpoints.")
 
     @staticmethod
     def _can_access_document(current_user: AuthenticatedUser, document: Document) -> bool:
-        if document.scope == DocumentScope.CORPORATIVO:
-            return True
         if document.scope == DocumentScope.LOCAL:
-            return document.sector_id in current_user.normalized_sector_ids()
+            return True
+        if document.scope == DocumentScope.CORPORATIVO:
+            if current_user.has_role(UserRole.ADMIN):
+                return True
+            user_company_ids = current_user.normalized_company_ids()
+            user_sector_ids = current_user.normalized_sector_ids()
+            if not user_company_ids and not user_sector_ids:
+                return False
+            return (
+                getattr(document, "company_id", None) in user_company_ids
+                or getattr(document, "sector_id", None) in user_sector_ids
+            )
         return False
+
+    @staticmethod
+    def _can_access_company_and_sector(
+        current_user: AuthenticatedUser,
+        company_id: int | None,
+        sector_id: int | None,
+    ) -> bool:
+        user_company_ids = current_user.normalized_company_ids()
+        user_sector_ids = current_user.normalized_sector_ids()
+        company_allowed = not user_company_ids or (company_id in user_company_ids)
+        sector_allowed = not user_sector_ids or (sector_id in user_sector_ids)
+        return company_allowed and sector_allowed
 
     @staticmethod
     def _ordered_versions(document: Document):
         versions = getattr(document, "versions", None) or []
         return sorted(versions, key=lambda version: int(version.version_number or 0), reverse=True)
 
-    def _ensure_can_approve(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
+    def _ensure_can_approve(
+        self,
+        current_user: AuthenticatedUser,
+        *,
+        document_id: int,
+        latest_status: DocumentStatus,
+    ) -> None:
+        if latest_status in {
+            DocumentStatus.RASCUNHO,
+            DocumentStatus.RASCUNHO_REVISADO,
+            DocumentStatus.REVISAR_RASCUNHO,
+        }:
+            self._ensure_can_coordinator_review(current_user, document_id=document_id)
+            return
+
+        if latest_status in {
+            DocumentStatus.PENDENTE_QUALIDADE,
+            DocumentStatus.PENDENTE_COORDENACAO,
+            DocumentStatus.EM_REVISAO,
+        }:
+            self._ensure_can_quality_approve(current_user)
+            return
+
+        raise ConflictServiceError("Current version status does not allow approval action.")
+
+    def _ensure_can_coordinator_review(self, current_user: AuthenticatedUser, *, document_id: int) -> None:
         if not current_user.has_role(UserRole.COORDENADOR):
-            raise ForbiddenServiceError("Only coordinator role can approve documents.")
+            raise ForbiddenServiceError("Only coordinator role can review drafts.")
 
         document = self.repository.get_document_by_id(document_id)
         if document is None:
@@ -968,6 +1100,11 @@ class DocumentService:
         if user_sector_ids and document.sector_id not in user_sector_ids:
             raise ForbiddenServiceError("Coordinator can only approve documents from the same sector.")
 
+    @staticmethod
+    def _ensure_can_quality_approve(current_user: AuthenticatedUser) -> None:
+        if not current_user.has_role(UserRole.REVISOR):
+            raise ForbiddenServiceError("Only quality role can approve pending quality documents.")
+
     def _get_editable_draft(
         self,
         document_id: int,
@@ -984,7 +1121,11 @@ class DocumentService:
         if latest_version is None:
             raise NotFoundServiceError("Document has no versions.")
 
-        if latest_version.status not in {DocumentStatus.RASCUNHO, DocumentStatus.REVISAR_RASCUNHO}:
+        if latest_version.status not in {
+            DocumentStatus.RASCUNHO,
+            DocumentStatus.REVISAR_RASCUNHO,
+            DocumentStatus.RASCUNHO_REVISADO,
+        }:
             raise ConflictServiceError("Only draft documents can be edited or deleted.")
 
         return document, latest_version

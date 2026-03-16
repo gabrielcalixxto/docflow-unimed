@@ -10,8 +10,10 @@ const FLOATING_BAR_HEIGHT = 15;
 
 const STATUS_ORDER = [
   "VIGENTE",
+  "PENDENTE_QUALIDADE",
   "PENDENTE_COORDENACAO",
   "RASCUNHO",
+  "RASCUNHO_REVISADO",
   "REVISAR_RASCUNHO",
   "REPROVADO",
   "OBSOLETO",
@@ -71,7 +73,16 @@ function resolveFileDownloadUrl(path) {
   return `${base}${base.includes("?") ? "&" : "?"}download=1`;
 }
 
-export default function PainelDocumentos({ onUnauthorized }) {
+function normalizeNumericIds(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values
+    .map((value) => Number(value))
+    .filter((value, index, list) => Number.isInteger(value) && list.indexOf(value) === index);
+}
+
+export default function PainelDocumentos({ session, onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const tableWrapRef = useRef(null);
   const tableAreaRef = useRef(null);
@@ -147,50 +158,65 @@ export default function PainelDocumentos({ onUnauthorized }) {
     [items],
   );
 
+  const allowedCompanyIds = useMemo(() => normalizeNumericIds(session?.companyIds), [session?.companyIds]);
+  const allowedSectorIds = useMemo(() => normalizeNumericIds(session?.sectorIds), [session?.sectorIds]);
+
+  const scopedVersionRows = useMemo(
+    () =>
+      versionRows.filter((item) => {
+        const companyAllowed =
+          allowedCompanyIds.length === 0 || allowedCompanyIds.includes(Number(item.company_id));
+        const sectorAllowed =
+          allowedSectorIds.length === 0 || allowedSectorIds.includes(Number(item.sector_id));
+        return companyAllowed && sectorAllowed;
+      }),
+    [versionRows, allowedCompanyIds, allowedSectorIds],
+  );
+
   const companies = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.companyName).filter(Boolean))].sort((a, b) =>
+      [...new Set(scopedVersionRows.map((item) => item.companyName).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const sectors = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.sectorName).filter(Boolean))].sort((a, b) =>
+      [...new Set(scopedVersionRows.map((item) => item.sectorName).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const documentTypes = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.document_type).filter(Boolean))].sort((a, b) =>
+      [...new Set(scopedVersionRows.map((item) => item.document_type).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const scopes = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.scope).filter(Boolean))].sort((a, b) =>
+      [...new Set(scopedVersionRows.map((item) => item.scope).filter(Boolean))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const statuses = useMemo(() => {
-    const availableStatuses = new Set(versionRows.map((item) => item.latestStatus).filter(Boolean));
+    const availableStatuses = new Set(scopedVersionRows.map((item) => item.latestStatus).filter(Boolean));
     const extraStatuses = [...availableStatuses]
       .filter((status) => !STATUS_ORDER.includes(status))
       .sort((a, b) => String(a).localeCompare(String(b)));
     return [...STATUS_ORDER, ...extraStatuses];
-  }, [versionRows]);
+  }, [scopedVersionRows]);
 
   const versions = useMemo(
     () =>
       [...new Set(
-        versionRows
+        scopedVersionRows
           .map((item) =>
             item.latestVersion?.version_number != null
               ? String(item.latestVersion.version_number)
@@ -206,12 +232,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
         }
         return Number(a) - Number(b);
       }),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const expirations = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.latestVersion?.expiration_date || "SEM_VENCIMENTO"))].sort(
+      [...new Set(scopedVersionRows.map((item) => item.latestVersion?.expiration_date || "SEM_VENCIMENTO"))].sort(
         (a, b) => {
           if (a === "SEM_VENCIMENTO") {
             return 1;
@@ -222,37 +248,37 @@ export default function PainelDocumentos({ onUnauthorized }) {
           return String(a).localeCompare(String(b));
         },
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const approvers = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.latestVersion?.approved_by_name || "SEM_APROVADOR"))].sort(
+      [...new Set(scopedVersionRows.map((item) => item.latestVersion?.approved_by_name || "SEM_APROVADOR"))].sort(
         (a, b) => String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const requesters = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.created_by_name || "SEM_SOLICITANTE"))].sort((a, b) =>
+      [...new Set(scopedVersionRows.map((item) => item.created_by_name || "SEM_SOLICITANTE"))].sort((a, b) =>
         String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const invalidators = useMemo(
     () =>
-      [...new Set(versionRows.map((item) => item.latestVersion?.invalidated_by_name || "SEM_INVALIDADOR"))].sort(
+      [...new Set(scopedVersionRows.map((item) => item.latestVersion?.invalidated_by_name || "SEM_INVALIDADOR"))].sort(
         (a, b) => String(a).localeCompare(String(b)),
       ),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const invalidatedDates = useMemo(
     () =>
       [...new Set(
-        versionRows.map((item) => {
+        scopedVersionRows.map((item) => {
           if (!item.latestVersion?.invalidated_at) {
             return "SEM_INVALIDACAO";
           }
@@ -271,12 +297,12 @@ export default function PainelDocumentos({ onUnauthorized }) {
         }
         return String(a).localeCompare(String(b));
       }),
-    [versionRows],
+    [scopedVersionRows],
   );
 
   const filteredItems = useMemo(() => {
     const normalizedTerm = filters.term.trim().toLowerCase();
-    return versionRows.filter((item) => {
+    return scopedVersionRows.filter((item) => {
       const versionValue =
         item.latestVersion?.version_number != null
           ? String(item.latestVersion.version_number)
@@ -359,7 +385,7 @@ export default function PainelDocumentos({ onUnauthorized }) {
 
       return searchable.includes(normalizedTerm);
     });
-  }, [versionRows, filters]);
+  }, [scopedVersionRows, filters]);
 
   const stats = useMemo(() => summarizeWorkflow(filteredItems), [filteredItems]);
 
@@ -523,8 +549,16 @@ export default function PainelDocumentos({ onUnauthorized }) {
           <strong>{stats.rascunho}</strong>
         </article>
         <article className="panel-float workflow-stat">
+          <p>Rascunho revisado</p>
+          <strong>{stats.rascunhoRevisado}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
           <p>Revisar rascunho</p>
           <strong>{stats.revisarRascunho}</strong>
+        </article>
+        <article className="panel-float workflow-stat">
+          <p>Pendente qualidade</p>
+          <strong>{stats.pendenteQualidade}</strong>
         </article>
         <article className="panel-float workflow-stat">
           <p>Pendente coordenacao</p>

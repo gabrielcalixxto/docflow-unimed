@@ -58,6 +58,47 @@ function formatDate(value) {
   return parsed.toLocaleDateString("pt-BR");
 }
 
+function resolveDefaultCompanyAndSector(companies, sectors, preferredCompanyId = "") {
+  const normalizedPreferred = String(preferredCompanyId || "");
+  const safeCompanies = Array.isArray(companies) ? companies : [];
+  const safeSectors = Array.isArray(sectors) ? sectors : [];
+
+  if (safeSectors.length > 0) {
+    const sectorFromPreferredCompany = normalizedPreferred
+      ? safeSectors.find((sector) => String(sector.company_id) === normalizedPreferred) || null
+      : null;
+    const selectedSector = sectorFromPreferredCompany || safeSectors[0];
+    if (sectorFromPreferredCompany) {
+      return {
+        companyId: String(selectedSector.company_id),
+        sectorId: String(selectedSector.id),
+      };
+    }
+    if (normalizedPreferred && safeCompanies.some((company) => String(company.id) === normalizedPreferred)) {
+      return {
+        companyId: normalizedPreferred,
+        sectorId: "",
+      };
+    }
+    return {
+      companyId: String(selectedSector.company_id),
+      sectorId: String(selectedSector.id),
+    };
+  }
+
+  if (safeCompanies.length > 0) {
+    return {
+      companyId: String(safeCompanies[0].id),
+      sectorId: "",
+    };
+  }
+
+  return {
+    companyId: "",
+    sectorId: "",
+  };
+}
+
 export default function NovoDocumentoPage({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const minExpirationDate = getCurrentLocalDateISO();
@@ -150,20 +191,32 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         setOptions({ companies, sectors, documentTypes, scopes });
         setActiveDocuments(mappedActiveDocuments);
         setDocumentForm((prev) => {
-          const fallbackCompanyId =
-            prev.companyId || (companies[0] ? String(companies[0].id) : "");
-          const sectorsForCompany = sectors.filter(
-            (sector) => String(sector.company_id) === fallbackCompanyId,
+          const resolvedScope = scopes.includes(prev.scope) ? prev.scope : scopes[0] || "LOCAL";
+          const currentCompanyId = prev.companyId !== "ALL" ? prev.companyId : "";
+          const defaults = resolveDefaultCompanyAndSector(companies, sectors, currentCompanyId);
+          const selectedCompanyId =
+            currentCompanyId && companies.some((company) => String(company.id) === currentCompanyId)
+              ? currentCompanyId
+              : defaults.companyId;
+          const sectorForCompany = sectors.find(
+            (sector) =>
+              String(sector.id) === prev.sectorId && String(sector.company_id) === selectedCompanyId,
           );
-          const fallbackSectorId =
-            sectorsForCompany.find((sector) => String(sector.id) === prev.sectorId)?.id ??
-            sectorsForCompany[0]?.id;
+          const fallbackForSelectedCompany = resolveDefaultCompanyAndSector(
+            companies,
+            sectors,
+            selectedCompanyId,
+          );
+          const selectedSectorId = sectorForCompany
+            ? String(sectorForCompany.id)
+            : fallbackForSelectedCompany.sectorId;
+          const documentTypeExists = documentTypes.some((item) => item.sigla === prev.documentType);
           return {
             ...prev,
-            companyId: fallbackCompanyId,
-            sectorId: fallbackSectorId ? String(fallbackSectorId) : "",
-            documentType: prev.documentType || documentTypes[0]?.sigla || "",
-            scope: scopes.includes(prev.scope) ? prev.scope : scopes[0] || "LOCAL",
+            companyId: resolvedScope === "LOCAL" ? "ALL" : selectedCompanyId,
+            sectorId: resolvedScope === "LOCAL" ? "ALL" : selectedSectorId,
+            documentType: documentTypeExists ? prev.documentType : documentTypes[0]?.sigla || "",
+            scope: resolvedScope,
             expirationDate: prev.expirationDate || suggestedExpirationDate,
           };
         });
@@ -254,7 +307,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const availableSectors = useMemo(
     () =>
       options.sectors.filter((sector) => {
-        if (!documentForm.companyId) {
+        if (!documentForm.companyId || documentForm.companyId === "ALL") {
           return true;
         }
         return String(sector.company_id) === documentForm.companyId;
@@ -346,8 +399,24 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
 
   const handleCreateDocument = async (event) => {
     event.preventDefault();
-    if (!documentForm.companyId || !documentForm.sectorId || !documentForm.documentType) {
-      showFeedback("error", "Selecione empresa, setor e tipo documental.");
+    const scopeIsLocal = documentForm.scope === "LOCAL";
+    const fallbackTarget = resolveDefaultCompanyAndSector(options.companies, options.sectors);
+    const resolvedCompanyId = scopeIsLocal ? fallbackTarget.companyId : documentForm.companyId;
+    const resolvedSectorId = scopeIsLocal ? fallbackTarget.sectorId : documentForm.sectorId;
+
+    if (!documentForm.documentType) {
+      showFeedback("error", "Selecione o tipo documental.");
+      return;
+    }
+    if (!resolvedCompanyId || !resolvedSectorId) {
+      showFeedback(
+        "error",
+        "E necessario ter empresa e setor cadastrados para criar o documento.",
+      );
+      return;
+    }
+    if (!scopeIsLocal && (!documentForm.companyId || !documentForm.sectorId)) {
+      showFeedback("error", "Selecione empresa e setor para escopo corporativo.");
       return;
     }
     if (!documentFile) {
@@ -360,8 +429,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
       const uploadResponse = await uploadDocumentFile(documentFile);
       const response = await createDocument({
         title: documentForm.title.trim(),
-        company_id: Number(documentForm.companyId),
-        sector_id: Number(documentForm.sectorId),
+        company_id: Number(resolvedCompanyId),
+        sector_id: Number(resolvedSectorId),
         document_type: documentForm.documentType.trim(),
         scope: documentForm.scope,
         file_path: uploadResponse?.file_path || documentFile.name,
@@ -480,7 +549,30 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
               <select
                 value={documentForm.scope}
                 disabled={loadingOptions}
-                onChange={(event) => setDocumentForm((prev) => ({ ...prev, scope: event.target.value }))}
+                onChange={(event) => {
+                  const nextScope = event.target.value;
+                  setDocumentForm((prev) => {
+                    if (nextScope === "LOCAL") {
+                      return {
+                        ...prev,
+                        scope: nextScope,
+                        companyId: "ALL",
+                        sectorId: "ALL",
+                      };
+                    }
+                    const defaults = resolveDefaultCompanyAndSector(
+                      options.companies,
+                      options.sectors,
+                      prev.companyId !== "ALL" ? prev.companyId : "",
+                    );
+                    return {
+                      ...prev,
+                      scope: nextScope,
+                      companyId: defaults.companyId,
+                      sectorId: defaults.sectorId,
+                    };
+                  });
+                }}
               >
                 {options.scopes.map((scopeOption) => (
                   <option key={scopeOption} value={scopeOption}>
@@ -492,49 +584,67 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
             <label>
               Empresa
               <select
-                required
-                value={documentForm.companyId}
-                disabled={loadingOptions || options.companies.length === 0}
+                required={documentForm.scope !== "LOCAL"}
+                value={documentForm.scope === "LOCAL" ? "ALL" : documentForm.companyId}
+                disabled={
+                  documentForm.scope === "LOCAL" || loadingOptions || options.companies.length === 0
+                }
                 onChange={(event) => {
                   const companyId = event.target.value;
-                  const sectorsForCompany = options.sectors.filter(
-                    (sector) => String(sector.company_id) === companyId,
+                  const defaults = resolveDefaultCompanyAndSector(
+                    options.companies,
+                    options.sectors,
+                    companyId,
                   );
                   setDocumentForm((prev) => ({
                     ...prev,
                     companyId,
-                    sectorId: sectorsForCompany[0] ? String(sectorsForCompany[0].id) : "",
+                    sectorId: defaults.sectorId,
                   }));
                 }}
               >
-                <option value="" disabled>
-                  {loadingOptions ? "Carregando..." : "Selecione"}
-                </option>
-                {options.companies.map((company) => (
-                  <option key={company.id} value={String(company.id)}>
-                    {company.name}
-                  </option>
-                ))}
+                {documentForm.scope === "LOCAL" ? (
+                  <option value="ALL">TODOS</option>
+                ) : (
+                  <>
+                    <option value="" disabled>
+                      {loadingOptions ? "Carregando..." : "Selecione"}
+                    </option>
+                    {options.companies.map((company) => (
+                      <option key={company.id} value={String(company.id)}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </label>
             <label>
               Setor
               <select
-                required
-                value={documentForm.sectorId}
-                disabled={loadingOptions || availableSectors.length === 0}
+                required={documentForm.scope !== "LOCAL"}
+                value={documentForm.scope === "LOCAL" ? "ALL" : documentForm.sectorId}
+                disabled={
+                  documentForm.scope === "LOCAL" || loadingOptions || availableSectors.length === 0
+                }
                 onChange={(event) =>
                   setDocumentForm((prev) => ({ ...prev, sectorId: event.target.value }))
                 }
               >
-                <option value="" disabled>
-                  {loadingOptions ? "Carregando..." : "Selecione"}
-                </option>
-                {availableSectors.map((sector) => (
-                  <option key={sector.id} value={String(sector.id)}>
-                    {sector.name}
-                  </option>
-                ))}
+                {documentForm.scope === "LOCAL" ? (
+                  <option value="ALL">TODOS</option>
+                ) : (
+                  <>
+                    <option value="" disabled>
+                      {loadingOptions ? "Carregando..." : "Selecione"}
+                    </option>
+                    {availableSectors.map((sector) => (
+                      <option key={sector.id} value={String(sector.id)}>
+                        {sector.name}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </label>
             <label>

@@ -1,8 +1,9 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.audit_log import AuditLog
 from app.models.audit_log_change import AuditLogChange
+from app.models.document import Document
 
 
 class AuditLogRepository:
@@ -117,6 +118,7 @@ class AuditLogRepository:
         action: str | None = None,
         user_id: int | None = None,
         document_id: int | None = None,
+        sector_ids: list[int] | None = None,
         request_id: str | None = None,
         page: int = 1,
         page_size: int = 100,
@@ -130,6 +132,20 @@ class AuditLogRepository:
         if document_id is not None:
             statement = statement.where(AuditLog.document_id == document_id)
             count_statement = count_statement.where(AuditLog.document_id == document_id)
+
+        if sector_ids is not None:
+            normalized_sector_ids = [
+                int(sector_id)
+                for sector_id in sector_ids
+                if isinstance(sector_id, int)
+            ]
+            if not normalized_sector_ids:
+                statement = statement.where(false())
+                count_statement = count_statement.where(false())
+            else:
+                document_ids_for_sector = select(Document.id).where(Document.sector_id.in_(normalized_sector_ids))
+                statement = statement.where(AuditLog.document_id.in_(document_ids_for_sector))
+                count_statement = count_statement.where(AuditLog.document_id.in_(document_ids_for_sector))
 
         statement, count_statement = self._apply_common_filters(
             statement=statement,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 export default function LoginPage({ onLogin, errorMessage }) {
-  const [username, setUsername] = useState("revisor.docflow");
+  const [username, setUsername] = useState("qualidade.docflow");
   const [password, setPassword] = useState("123");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState("");

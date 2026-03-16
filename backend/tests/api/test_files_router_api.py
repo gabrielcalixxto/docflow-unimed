@@ -5,17 +5,32 @@ from app.core.enums import UserRole
 from app.core.security import AuthenticatedUser
 
 
-def test_upload_document_file_returns_storage_path(authorized_client, monkeypatch) -> None:
+def test_upload_document_file_returns_storage_path(public_client, monkeypatch) -> None:
     import app.routers.files as files_router
+    from app.core.database import get_db
+    from app.core.security import get_current_user
+    from main import app
 
     repository = Mock()
     monkeypatch.setattr(files_router, "StoredFileRepository", lambda _: repository)
     monkeypatch.setattr(files_router, "uuid4", lambda: SimpleNamespace(hex="a" * 32))
 
-    response = authorized_client.post(
-        "/file-storage/upload",
-        files={"file": ("manual.pdf", b"conteudo", "application/pdf")},
-    )
+    def override_get_current_user() -> AuthenticatedUser:
+        return AuthenticatedUser(email="autor@example.com", role=UserRole.AUTOR, user_id=7)
+
+    def override_get_db():
+        yield Mock()
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        response = public_client.post(
+            "/file-storage/upload",
+            files={"file": ("manual.pdf", b"conteudo", "application/pdf")},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json() == {
@@ -50,7 +65,7 @@ def test_upload_document_file_returns_403_for_reader_role(public_client, monkeyp
         app.dependency_overrides.clear()
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Only non-reader roles can upload files."}
+    assert response.json() == {"detail": "Only author role can upload files."}
 
 
 def test_get_stored_file_returns_inline_content(authorized_client, monkeypatch) -> None:

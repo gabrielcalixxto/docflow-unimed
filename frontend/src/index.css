@@ -1149,6 +1149,11 @@ th {
   color: #7a4c00;
 }
 
+.status-rascunho_revisado {
+  background: rgba(255, 193, 7, 0.28);
+  color: #6d4700;
+}
+
 .status-em_revisao {
   background: rgba(51, 94, 234, 0.16);
   color: #2441a0;
@@ -1162,6 +1167,11 @@ th {
 .status-pendente_coordenacao {
   background: rgba(51, 94, 234, 0.16);
   color: #2441a0;
+}
+
+.status-pendente_qualidade {
+  background: rgba(106, 76, 147, 0.2);
+  color: #51337d;
 }
 
 .status-reprovado {

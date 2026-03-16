@@ -23,8 +23,10 @@ export function summarizeWorkflow(items) {
     total: items.length,
     semVersao: 0,
     rascunho: 0,
+    rascunhoRevisado: 0,
     revisarRascunho: 0,
     pendenteCoordenacao: 0,
+    pendenteQualidade: 0,
     emRevisao: 0,
     reprovado: 0,
     vigente: 0,
@@ -36,11 +38,17 @@ export function summarizeWorkflow(items) {
       case "RASCUNHO":
         summary.rascunho += 1;
         break;
+      case "RASCUNHO_REVISADO":
+        summary.rascunhoRevisado += 1;
+        break;
       case "REVISAR_RASCUNHO":
         summary.revisarRascunho += 1;
         break;
       case "PENDENTE_COORDENACAO":
         summary.pendenteCoordenacao += 1;
+        break;
+      case "PENDENTE_QUALIDADE":
+        summary.pendenteQualidade += 1;
         break;
       case "EM_REVISAO":
         summary.emRevisao += 1;

@@ -6,6 +6,13 @@ const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
   timeout: 15000,
 });
+let unauthorizedListener = null;
+
+function notifyUnauthorized(status) {
+  if (typeof unauthorizedListener === "function") {
+    unauthorizedListener(status);
+  }
+}
 
 function normalizeError(error) {
   if (axios.isAxiosError(error)) {
@@ -42,7 +49,11 @@ async function request(config, withAuth = true) {
     });
     return response.data;
   } catch (error) {
-    throw normalizeError(error);
+    const normalizedError = normalizeError(error);
+    if (withAuth && (normalizedError.status === 401 || normalizedError.status === 403)) {
+      notifyUnauthorized(normalizedError.status);
+    }
+    throw normalizedError;
   }
 }
 
@@ -56,6 +67,10 @@ export function storeToken(token) {
 
 export function clearStoredToken() {
   window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function setUnauthorizedListener(listener) {
+  unauthorizedListener = typeof listener === "function" ? listener : null;
 }
 
 export async function login(credentials) {

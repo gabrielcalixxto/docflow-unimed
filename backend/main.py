@@ -37,8 +37,10 @@ def ensure_document_status_enum_values() -> None:
         return
 
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'RASCUNHO_REVISADO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REVISAR_RASCUNHO'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_COORDENACAO'"))
+        connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'PENDENTE_QUALIDADE'"))
         connection.execute(text("ALTER TYPE document_status ADD VALUE IF NOT EXISTS 'REPROVADO'"))
 
 
@@ -331,7 +333,35 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
+APP_DESCRIPTION = """
+API para gestão documental com autenticação, cadastro de catálogos, fluxo de aprovação,
+versionamento, anexos e trilha de auditoria.
+
+Como usar:
+- Autentique em `POST /auth/login` para obter Bearer token.
+- Use `POST /auth/refresh` para atualizar permissões sem novo login manual.
+- Consulte os `responses` de cada rota para entender status de falha e exemplos.
+"""
+
+OPENAPI_TAGS = [
+    {"name": "Auth", "description": "Autenticação e renovação de sessão."},
+    {"name": "Search", "description": "Busca de documentos vigentes para leitura."},
+    {"name": "Documents", "description": "Criação e gestão do fluxo documental."},
+    {"name": "Document Versions", "description": "Operações de versionamento."},
+    {"name": "Users", "description": "Gestão de usuários e permissões administrativas."},
+    {"name": "Catalog", "description": "Gestão de empresas, setores e tipos documentais."},
+    {"name": "Attachments", "description": "Upload e download de arquivos."},
+    {"name": "Audit Logs", "description": "Histórico de ações para compliance e rastreabilidade."},
+    {"name": "health", "description": "Verificação de saúde da API."},
+]
+
+app = FastAPI(
+    title=settings.app_name,
+    version="1.0.0",
+    description=APP_DESCRIPTION.strip(),
+    openapi_tags=OPENAPI_TAGS,
+    lifespan=lifespan,
+)
 
 LEGACY_UPLOAD_ROOT = Path(__file__).resolve().parent / "uploads"
 LEGACY_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)

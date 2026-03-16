@@ -37,8 +37,8 @@ export function displayRole(roleOrRoles) {
     (role) =>
       ({
         ADMIN: "ADMIN",
-        COORDENADOR: "COORDENADOR",
-        REVISOR: "REVISOR",
+        COORDENADOR: "COORDENADOR/APROVADOR",
+        REVISOR: "QUALIDADE",
         AUTOR: "AUTOR",
         LEITOR: "LEITOR",
       }[role] || role),
@@ -54,11 +54,11 @@ export function canAccessSearch(roleOrRoles) {
 }
 
 export function canAccessNovoDocumento(roleOrRoles) {
-  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+  return isAuthor(roleOrRoles);
 }
 
 export function canAccessHistoricoSolicitacoes(roleOrRoles) {
-  return isAuthor(roleOrRoles) || isReviewer(roleOrRoles) || isCoordinator(roleOrRoles);
+  return isAuthor(roleOrRoles);
 }
 
 export function canAccessCentralAprovacao(roleOrRoles) {
@@ -78,7 +78,7 @@ export function canAccessAdminCatalog(roleOrRoles) {
 }
 
 export function canAccessAuditHistory(roleOrRoles) {
-  return isAdmin(roleOrRoles);
+  return isAdmin(roleOrRoles) || isCoordinator(roleOrRoles) || isReviewer(roleOrRoles);
 }
 
 export function canAccessSolicitacoesSection(roleOrRoles) {

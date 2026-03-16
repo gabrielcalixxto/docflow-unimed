@@ -10,6 +10,10 @@ from app.services.errors import ConflictServiceError, ForbiddenServiceError, Not
 from app.services.version_service import VersionService
 
 
+def build_author_user() -> AuthenticatedUser:
+    return AuthenticatedUser(email="autor@example.com", role=UserRole.AUTOR, user_id=77, sector_id=10, sector_ids=[10])
+
+
 def build_service(
     *,
     repository: Mock | None = None,
@@ -35,7 +39,8 @@ def build_document(document_id: int = 7) -> SimpleNamespace:
     )
 
 
-def test_create_version_persists_draft_and_emits_event(version_payload, current_user) -> None:
+def test_create_version_persists_draft_and_emits_event(version_payload) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     created_version = SimpleNamespace(id=44)
@@ -54,14 +59,14 @@ def test_create_version_persists_draft_and_emits_event(version_payload, current_
         audit_service=audit_service,
     )
 
-    response = service.create_version(7, version_payload, current_user)
+    response = service.create_version(7, version_payload, author)
 
     assert isinstance(response, MessageResponse)
     assert "created" in response.message.lower()
     repository.create_version.assert_called_once()
     create_args = repository.create_version.call_args.kwargs
     assert create_args["document_id"] == 7
-    assert create_args["created_by"] == current_user.user_id
+    assert create_args["created_by"] == author.user_id
     created_payload = create_args["payload"]
     assert created_payload.version_number == 2
     assert created_payload.status == DocumentStatus.RASCUNHO
@@ -72,11 +77,12 @@ def test_create_version_persists_draft_and_emits_event(version_payload, current_
         event_type=DocumentEventType.VERSION_CREATED,
         document_id=7,
         version_id=44,
-        user_id=current_user.user_id,
+        user_id=author.user_id,
     )
 
 
-def test_create_version_raises_not_found_when_document_missing(version_payload, current_user) -> None:
+def test_create_version_raises_not_found_when_document_missing(version_payload) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     document_repository = Mock()
@@ -84,10 +90,11 @@ def test_create_version_raises_not_found_when_document_missing(version_payload, 
     service = build_service(repository=repository, document_repository=document_repository)
 
     with pytest.raises(NotFoundServiceError):
-        service.create_version(999, version_payload, current_user)
+        service.create_version(999, version_payload, author)
 
 
-def test_create_version_rejects_non_draft_status(version_payload, current_user) -> None:
+def test_create_version_rejects_non_draft_status(version_payload) -> None:
+    author = build_author_user()
     payload = version_payload.model_copy(update={"status": DocumentStatus.VIGENTE})
     repository = Mock()
     repository.db = Mock()
@@ -96,10 +103,11 @@ def test_create_version_rejects_non_draft_status(version_payload, current_user) 
     service = build_service(repository=repository, document_repository=document_repository)
 
     with pytest.raises(ConflictServiceError):
-        service.create_version(7, payload, current_user)
+        service.create_version(7, payload, author)
 
 
-def test_create_version_raises_conflict_when_latest_version_is_in_progress(version_payload, current_user) -> None:
+def test_create_version_raises_conflict_when_latest_version_is_in_progress(version_payload) -> None:
+    author = build_author_user()
     repository = Mock()
     repository.db = Mock()
     repository.get_latest_version_for_document.return_value = SimpleNamespace(
@@ -112,7 +120,7 @@ def test_create_version_raises_conflict_when_latest_version_is_in_progress(versi
     service = build_service(repository=repository, document_repository=document_repository)
 
     with pytest.raises(ConflictServiceError):
-        service.create_version(7, version_payload, current_user)
+        service.create_version(7, version_payload, author)
 
 
 def test_create_version_blocks_reader_role(version_payload) -> None:

@@ -50,8 +50,10 @@ class VersionService:
         latest_version = self.repository.get_latest_version_for_document(document_id)
         if latest_version is not None and latest_version.status in {
             DocumentStatus.RASCUNHO,
+            DocumentStatus.RASCUNHO_REVISADO,
             DocumentStatus.REVISAR_RASCUNHO,
             DocumentStatus.PENDENTE_COORDENACAO,
+            DocumentStatus.PENDENTE_QUALIDADE,
             DocumentStatus.EM_REVISAO,
         }:
             raise ConflictServiceError(
@@ -176,20 +178,25 @@ class VersionService:
 
     @staticmethod
     def _ensure_can_write(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
-            raise ForbiddenServiceError("Only author, reviewer, or coordinator can create versions.")
+        if not current_user.has_role(UserRole.AUTOR):
+            raise ForbiddenServiceError("Only author role can create versions.")
 
     @staticmethod
     def _ensure_can_access_document_registry(current_user: AuthenticatedUser) -> None:
-        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR, UserRole.ADMIN}):
+        if not current_user.has_any_role({UserRole.AUTOR, UserRole.REVISOR, UserRole.COORDENADOR}):
             raise ForbiddenServiceError("Only non-reader roles can access document versions.")
 
     @staticmethod
     def _ensure_can_access_document(current_user: AuthenticatedUser, document: Document) -> None:
+        if document.scope == DocumentScope.LOCAL:
+            return
         if document.scope == DocumentScope.CORPORATIVO:
-            return
-        if document.scope == DocumentScope.LOCAL and document.sector_id in current_user.normalized_sector_ids():
-            return
+            if current_user.has_role(UserRole.ADMIN):
+                return
+            user_company_ids = current_user.normalized_company_ids()
+            user_sector_ids = current_user.normalized_sector_ids()
+            if (document.company_id in user_company_ids) or (document.sector_id in user_sector_ids):
+                return
         raise ForbiddenServiceError("You do not have permission to access this document.")
 
     def _attach_uploaded_file_to_version(self, *, file_path: str, document_id: int, version_id: int) -> None:

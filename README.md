@@ -1,99 +1,178 @@
-# DocFlow Unimed
+﻿# DocFlow Unimed
 
-Plataforma web para gestao documental com versionamento, fluxo de aprovacao e controle de acesso por perfil.
+Plataforma web para gestao documental com versionamento, fluxo de aprovacao, controle por perfil e trilha de auditoria.
 
-## Estado atual do sistema
+## TL;DR (avaliacao rapida)
 
-- Login por `username` + senha com JWT (`POST /auth/login`).
-- Busca retorna apenas documentos com versao `VIGENTE`.
-- Tela `Novo Documento` possui dois cards no mesmo lugar:
-  - `Criar documento`
-  - `Atualizar documento` (nova versao).
-- Criacao de documento gera automaticamente:
-  - codigo no formato `TIPO-SET-ID` (ex.: `POP-ENF-8`)
-  - versao `1` em `RASCUNHO`.
-- Nova versao gera numero automatico (`ultima + 1`) e inicia em `RASCUNHO`.
-- Arquivos enviados vao para banco (`stored_files`) via `/file-storage/upload`.
+1. Copie `.env.example` para `.env`.
+2. Suba o ambiente:
 
-## Fluxo documental implementado
+```bash
+docker compose up -d --build postgres backend frontend
+```
+
+3. Acesse:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+
+4. Banco vazio? Crie o primeiro admin (secao [Primeiro acesso sem seed](#primeiro-acesso-sem-seed)).
+
+## O que o sistema entrega
+
+- Cadastro e busca de documentos.
+- Criacao de versoes sem sobrescrever historico anterior.
+- Fluxo de aprovacao por papel (`COORDENADOR/APROVADOR` e `QUALIDADE`).
+- Visibilidade por escopo (`CORPORATIVO` e `LOCAL`).
+- Upload e download de arquivos salvos no banco (`stored_files`).
+- Auditoria de eventos do fluxo (`document_events`) e auditoria geral (`audit_logs` + `audit_log_changes`).
+
+## Stack e arquitetura
+
+- Frontend: React 18 + Vite 5
+- Backend: FastAPI + SQLAlchemy
+- Banco: PostgreSQL 16
+- Auth: JWT Bearer
+- Infra local: Docker Compose
+
+```text
+Frontend (React/Vite) -> Backend API (FastAPI) -> PostgreSQL
+```
+
+Estrutura backend:
+
+```text
+backend/app/
+  core/ models/ schemas/ repositories/ services/ routers/
+```
+
+## Como executar com Docker
+
+### Pre-requisitos
+
+- Docker + Docker Compose instalados.
+
+### Passos
+
+1. Configure variaveis:
+
+```bash
+cp .env.example .env
+```
+
+2. Suba os servicos:
+
+```bash
+docker compose up -d --build postgres backend frontend
+```
+
+3. Verifique healthcheck:
+
+```bash
+curl http://localhost:8000/health
+```
+
+## Primeiro acesso sem seed
+
+O projeto nao usa seed automatica. Se o banco estiver vazio, crie 1 usuario admin manualmente.
+
+1. Gere hash da senha:
+
+```bash
+docker compose exec backend python
+```
+
+No prompt Python:
+
+```python
+from app.core.security import hash_password
+print(hash_password("Admin@123"))
+```
+
+2. Entre no Postgres:
+
+```bash
+docker compose exec -it postgres psql -U postgres -d docflow
+```
+
+3. Execute SQL (substitua `<HASH_BCRYPT>`):
+
+```sql
+INSERT INTO users (name, username, email, password_hash, role, roles, company_ids, sector_ids)
+VALUES ('Admin DocFlow', 'admin', 'admin@docflow.local', '<HASH_BCRYPT>', 'ADMIN', '["ADMIN"]'::jsonb, '[]'::jsonb, '[]'::jsonb);
+```
+
+## Fluxo documental e regras
 
 Status usados:
 
 - `RASCUNHO`
+- `RASCUNHO_REVISADO`
 - `REVISAR_RASCUNHO`
-- `PENDENTE_COORDENACAO`
-- `EM_REVISAO` (compatibilidade legada)
+- `PENDENTE_QUALIDADE`
+- `PENDENTE_COORDENACAO` (legado)
+- `EM_REVISAO` (legado)
 - `REPROVADO`
 - `VIGENTE`
 - `OBSOLETO`
 
 Transicoes principais:
 
-- revisor envia para coordenacao: `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO`
-- revisor desaprova rascunho: `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO`
-- coordenador aprova: `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE`
-- coordenador reprova: `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO`
-- quando uma nova versao vira `VIGENTE`, a `VIGENTE` anterior vira `OBSOLETO`.
+- `AUTOR`: cria documento em `RASCUNHO`.
+- `COORDENADOR/APROVADOR`: aprova `RASCUNHO/REVISAR_RASCUNHO/RASCUNHO_REVISADO` e move para `PENDENTE_QUALIDADE`.
+- `COORDENADOR/APROVADOR`: reprova rascunho e move para `REVISAR_RASCUNHO`.
+- `AUTOR`: ao editar `REVISAR_RASCUNHO`, o status muda para `RASCUNHO_REVISADO`.
+- `QUALIDADE` (role tecnico `REVISOR`): aprova `PENDENTE_QUALIDADE` e torna `VIGENTE`.
+- `QUALIDADE` (role tecnico `REVISOR`): reprova `PENDENTE_QUALIDADE` e move para `REPROVADO`.
+- Nova versao `VIGENTE` torna a vigente anterior `OBSOLETO`
 
-## Menu lateral atual
+Regras importantes:
 
-Itens diretos:
+- Busca (`/documents/search`) retorna apenas versao `VIGENTE` visivel ao usuario.
+- So existe uma versao `VIGENTE` por documento (indice parcial no banco).
+- Codigo automatico: `TIPO-SETOR-ID`.
+- Validade de vencimento:
+  - Criacao de documento: `>= hoje` e `<= hoje + 2 anos`
+  - Criacao/edicao de versao: `>= hoje`
+- Siglas de setor e tipo documental sao obrigatorias, maiusculas e alfanumericas.
 
-- `Busca`
-- `Central de Aprovacao`
+## Perfis e permissoes
 
-Grupo `Solicitacoes`:
+| Perfil | Busca | Novo Documento / Criar versao | Historico Solicitacoes | Central Aprovacao | Painel Documentos | Cadastros (empresa/setor/tipo) | Cadastro Usuarios | Historico Acoes |
+|---|---|---|---|---|---|---|---|---|
+| LEITOR | Sim | Nao | Nao | Nao | Nao | Nao | Nao | Nao |
+| AUTOR | Sim | Sim | Sim | Nao | Nao | Nao | Nao | Nao |
+| QUALIDADE (`REVISOR`) | Sim | Nao | Nao | Sim | Sim | Sim | Nao | Nao |
+| COORDENADOR/APROVADOR (`COORDENADOR`) | Sim | Nao | Nao | Sim | Nao | Nao | Nao | Sim (somente setor) |
+| ADMIN | Sim | Nao | Nao | Nao | Nao | Sim | Sim | Sim (todos setores) |
 
-- `Novo Documento`
-- `Historico de Solicitacoes`
-- `Nova RNC (Em breve)`
+Regras de backend relevantes:
 
-Grupo `Painel de Indicadores`:
+- Criar documento, editar/excluir rascunho e criar nova versao: apenas `AUTOR`.
+- Aprovar/reprovar etapa de rascunho: apenas `COORDENADOR`.
+- Aprovar/reprovar etapa de qualidade: apenas `REVISOR` (nome funcional: `QUALIDADE`).
+- Gestao de usuarios: apenas `ADMIN`.
+- Gestao de catalogos: `ADMIN` e `REVISOR`.
+- Historico de acoes (`/audit/events`): `ADMIN` (global) e `COORDENADOR` (apenas documentos do proprio setor).
 
-- `Painel de Documentos`
-- `Painel de RNC (Em breve)`
+## Documentacao da API (Swagger/OpenAPI)
 
-Grupo `Gestao de Cadastros`:
-
-- `Cadastro de Usuarios`
-- `Cadastro de Setores`
-- `Cadastro de Empresas`
-- `Cadastro Tipo de Documento`
-
-## Regras de acesso (frontend)
-
-Implementadas em `frontend/src/utils/roles.js`:
-
-- `LEITOR`: apenas `Busca`
-- `AUTOR`: `Busca`, `Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`
-- `REVISOR`: tudo de `AUTOR` + `Central de Aprovacao` + `Painel de Indicadores` + `Gestao de Cadastros`
-- `COORDENADOR`: `Busca`, `Novo Documento`, `Historico de Solicitacoes`, `Nova RNC (Em breve)`, `Central de Aprovacao`
-- `ADMIN`: `Busca` + `Cadastro de Usuarios` + `Gestao de Cadastros`
-
-Observacao importante:
-
-- O frontend exibe catalogos para `REVISOR`, mas o backend (`/admin/catalog`) exige `ADMIN`.
-
-## UX de filtros
-
-Os filtros do frontend preservam viewport (nao pulam para o topo da pagina) com:
-
-- `frontend/src/hooks/useViewportPreserver.js`
-
-Aplicado nas telas com filtros (busca, solicitacoes, historico, painel de documentos, novo documento e telas administrativas).
+- Swagger UI: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+- ReDoc: `http://localhost:8000/redoc`
 
 ## Endpoints principais
 
 Auth:
-
 - `POST /auth/login`
+- `POST /auth/refresh`
 
 Documents:
-
 - `POST /documents`
 - `GET /documents`
+- `GET /documents/workflow`
 - `GET /documents/{document_id}`
-- `GET /documents/form-options`
+- `GET /documents/{document_id}/events`
 - `PATCH /documents/{document_id}/draft`
 - `DELETE /documents/{document_id}/draft`
 - `POST /documents/{document_id}/submit-review`
@@ -101,93 +180,72 @@ Documents:
 - `POST /documents/{document_id}/reject`
 
 Versions:
-
 - `POST /documents/{document_id}/versions`
 - `GET /documents/{document_id}/versions`
 
 Search:
-
 - `GET /documents/search`
 
 Files:
-
 - `POST /file-storage/upload`
 - `GET /file-storage/{storage_key}`
 - `GET /file-storage/{storage_key}?download=1`
 
-Admin users:
+Admin:
+- `GET/POST/PUT/DELETE /admin/users...`
+- `GET/POST/PUT/DELETE /admin/catalog...`
+- `GET /audit/events`
 
-- `GET /admin/users`
-- `GET /admin/users/options`
-- `POST /admin/users`
-- `PUT /admin/users/{user_id}`
-- `DELETE /admin/users/{user_id}`
+## Como rodar testes
 
-Admin catalog:
-
-- `GET /admin/catalog/options`
-- `POST /admin/catalog/companies`
-- `PUT /admin/catalog/companies/{company_id}`
-- `DELETE /admin/catalog/companies/{company_id}`
-- `POST /admin/catalog/sectors`
-- `PUT /admin/catalog/sectors/{sector_id}`
-- `DELETE /admin/catalog/sectors/{sector_id}`
-- `POST /admin/catalog/document-types`
-- `PUT /admin/catalog/document-types/{document_type_id}`
-- `DELETE /admin/catalog/document-types/{document_type_id}`
-
-## Regras de cadastro e normalizacao
-
-Empresas, setores e nome de tipo documental:
-
-- formato titulo por palavra
-- `de`, `do`, `da` ficam minusculas quando nao sao a primeira palavra
-- palavras explicitamente maiusculas (ex.: `TI`, `CEU`) sao preservadas.
-
-Siglas:
-
-- `document_types.sigla`: obrigatoria, maiuscula, alfanumerica
-- `sectors.sigla`: obrigatoria, maiuscula, alfanumerica
-
-## Auditoria e rastreabilidade
-
-- Eventos de fluxo sao persistidos em `document_events` (evento, documento, versao, usuario, data/hora).
-- `AuditService` usa `DocumentEventRepository` quando fornecido.
-- `document_versions` possui campos de auditoria de invalidacao:
-  - `invalidated_by`
-  - `invalidated_at`
-
-## Execucao com Docker
-
-1. Copie `.env.example` para `.env`.
-2. Suba os servicos:
+Backend (local):
 
 ```bash
-docker compose up -d --build postgres backend frontend
+cd backend
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
-3. Enderecos:
-
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:8000`
-- Healthcheck: `http://localhost:8000/health`
-
-## Testes
-
-Backend:
+Backend (container):
 
 ```bash
-python -m pytest -q backend/tests
+docker compose exec -T backend pip install -r requirements-dev.txt
+docker compose exec -T backend python -m pytest -q tests
 ```
 
-Frontend:
+Frontend (build):
 
 ```bash
+npm --prefix frontend install
 npm --prefix frontend run build
+```
+
+## Estrutura do repositorio
+
+```text
+.
+|-- backend/
+|   |-- app/
+|   |-- tests/
+|   `-- main.py
+|-- frontend/src/
+|   |-- components/
+|   |-- hooks/
+|   |-- pages/
+|   |-- services/
+|   `-- utils/
+|-- docker-compose.yml
+`-- README.md
 ```
 
 ## Limites atuais
 
-- Telas de RNC estao como placeholder (`Em breve`).
-- Nao ha migracoes Alembic versionadas no fluxo atual (schema criado/ajustado no startup).
-- Auditoria persiste eventos tecnicos; ainda nao existe trilha funcional completa em UI para consulta desses eventos.
+- Modulos de RNC ainda estao em placeholder (`Em breve`).
+- Nao ha migracoes Alembic versionadas; o startup aplica ajustes de schema para compatibilidade.
+
+## Documentos complementares
+
+- `ARCHITECTURE.md`
+- `ResumoFuncionalidades.md`
+- `AI_INSTRUCTIONS.md`
+

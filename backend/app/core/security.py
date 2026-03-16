@@ -129,19 +129,13 @@ def create_access_token(
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
-    credentials_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
+def _decode_authenticated_user(token: str) -> AuthenticatedUser:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         subject = payload.get("sub")
         role_value = payload.get("role")
         if not isinstance(subject, str) or not isinstance(role_value, str):
-            raise credentials_error
+            raise ValueError("Missing token subject or role.")
         role = UserRole(role_value)
         roles_value = payload.get("roles")
         roles: list[UserRole] = []
@@ -188,7 +182,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
         if sector_id is not None and sector_id not in sector_ids:
             sector_ids.append(sector_id)
     except (JWTError, ValueError) as exc:
-        raise credentials_error from exc
+        raise ValueError("Could not decode authenticated user from token.") from exc
 
     return AuthenticatedUser(
         email=email,
@@ -201,3 +195,19 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
         sector_id=sector_id,
         sector_ids=sector_ids,
     )
+
+
+def get_authenticated_user_from_token(token: str) -> AuthenticatedUser:
+    return _decode_authenticated_user(token)
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> AuthenticatedUser:
+    credentials_error = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        return _decode_authenticated_user(token)
+    except ValueError as exc:
+        raise credentials_error from exc

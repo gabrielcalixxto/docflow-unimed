@@ -20,12 +20,18 @@ from app.schemas.document import (
     DocumentRead,
     DocumentRejectRequest,
 )
+from app.schemas.errors import build_standard_error_responses
 from app.schemas.workflow import WorkflowDocumentListResponse
 from app.services.audit_service import AuditService
 from app.services.document_service import DocumentService
 from app.services.errors import ServiceError
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/documents", tags=["Documents"])
+
+DOCUMENT_CREATE_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
+DOCUMENT_QUERY_ERRORS = build_standard_error_responses(401, 403, 404, 422, 500)
+DOCUMENT_LIST_ERRORS = build_standard_error_responses(401, 403, 422, 500)
+DOCUMENT_FLOW_ERRORS = build_standard_error_responses(401, 403, 404, 409, 422, 500)
 
 
 def get_document_service(db: Session) -> DocumentService:
@@ -41,7 +47,16 @@ def get_document_service(db: Session) -> DocumentService:
     )
 
 
-@router.post("", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar documento",
+    description=(
+        "Cria um novo documento com versão inicial em rascunho e código automático."
+    ),
+    responses=DOCUMENT_CREATE_ERRORS,
+)
 def create_document(
     payload: DocumentCreate,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -55,7 +70,13 @@ def create_document(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.get("/form-options", response_model=DocumentFormOptionsRead)
+@router.get(
+    "/form-options",
+    response_model=DocumentFormOptionsRead,
+    summary="Listar opções para formulário de documento",
+    description="Retorna empresas, setores, tipos documentais e escopos válidos para criação.",
+    responses=build_standard_error_responses(401, 422, 500),
+)
 def get_document_form_options(
     _: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -64,7 +85,13 @@ def get_document_form_options(
     return service.get_form_options()
 
 
-@router.get("", response_model=list[DocumentRead])
+@router.get(
+    "",
+    response_model=list[DocumentRead],
+    summary="Listar documentos",
+    description="Retorna documentos acessíveis ao usuário conforme escopo e permissões.",
+    responses=DOCUMENT_LIST_ERRORS,
+)
 def list_documents(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -76,7 +103,15 @@ def list_documents(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.get("/workflow", response_model=WorkflowDocumentListResponse)
+@router.get(
+    "/workflow",
+    response_model=WorkflowDocumentListResponse,
+    summary="Listar documentos do workflow",
+    description=(
+        "Retorna lista paginada com versões e status para fluxo de criação, revisão e aprovação."
+    ),
+    responses=DOCUMENT_LIST_ERRORS,
+)
 def list_workflow_documents(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -106,7 +141,13 @@ def list_workflow_documents(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.get("/{document_id}/events", response_model=AuditLogListResponse)
+@router.get(
+    "/{document_id}/events",
+    response_model=AuditLogListResponse,
+    summary="Listar histórico de eventos de um documento",
+    description="Retorna trilha de auditoria do documento informado.",
+    responses=DOCUMENT_QUERY_ERRORS,
+)
 def get_document_events(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -132,7 +173,13 @@ def get_document_events(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.get("/{document_id}", response_model=DocumentRead)
+@router.get(
+    "/{document_id}",
+    response_model=DocumentRead,
+    summary="Buscar documento por ID",
+    description="Retorna os dados do documento caso o usuário tenha permissão de acesso.",
+    responses=DOCUMENT_QUERY_ERRORS,
+)
 def get_document(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -148,7 +195,13 @@ def get_document(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.patch("/{document_id}/draft", response_model=MessageResponse)
+@router.patch(
+    "/{document_id}/draft",
+    response_model=MessageResponse,
+    summary="Atualizar rascunho de documento",
+    description="Permite ao solicitante editar título, arquivo e vencimento enquanto estiver em rascunho.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
 def update_draft_document(
     document_id: int,
     payload: DocumentDraftUpdate,
@@ -163,7 +216,13 @@ def update_draft_document(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.delete("/{document_id}/draft", response_model=MessageResponse)
+@router.delete(
+    "/{document_id}/draft",
+    response_model=MessageResponse,
+    summary="Excluir rascunho de documento",
+    description="Remove documento em rascunho criado pelo próprio solicitante.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
 def delete_draft_document(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -177,7 +236,13 @@ def delete_draft_document(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/{document_id}/submit-review", response_model=MessageResponse)
+@router.post(
+    "/{document_id}/submit-review",
+    response_model=MessageResponse,
+    summary="Enviar rascunho para coordenação",
+    description="Move versão de rascunho para pendente de coordenação.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
 def submit_review(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -191,7 +256,13 @@ def submit_review(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/{document_id}/approve", response_model=MessageResponse)
+@router.post(
+    "/{document_id}/approve",
+    response_model=MessageResponse,
+    summary="Aprovar documento",
+    description="Aprova versão pendente e torna vigente, marcando anterior como obsoleta quando aplicável.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
 def approve_document(
     document_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -205,7 +276,13 @@ def approve_document(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/{document_id}/reject", response_model=MessageResponse)
+@router.post(
+    "/{document_id}/reject",
+    response_model=MessageResponse,
+    summary="Reprovar documento",
+    description="Reprova versão no fluxo atual e registra motivo opcional.",
+    responses=DOCUMENT_FLOW_ERRORS,
+)
 def reject_document(
     document_id: int,
     payload: DocumentRejectRequest | None = None,

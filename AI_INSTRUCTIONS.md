@@ -37,8 +37,10 @@ Nao tratar como CRUD generico.
 Status validos:
 
 - `RASCUNHO`
+- `RASCUNHO_REVISADO`
 - `REVISAR_RASCUNHO`
-- `PENDENTE_COORDENACAO`
+- `PENDENTE_QUALIDADE`
+- `PENDENTE_COORDENACAO` (compatibilidade legada)
 - `EM_REVISAO` (compatibilidade legada)
 - `REPROVADO`
 - `VIGENTE`
@@ -46,20 +48,24 @@ Status validos:
 
 Transicoes:
 
-- `RASCUNHO/REVISAR_RASCUNHO -> PENDENTE_COORDENACAO` (revisor envia)
-- `RASCUNHO/REVISAR_RASCUNHO -> REVISAR_RASCUNHO` (revisor rejeita rascunho)
-- `PENDENTE_COORDENACAO/EM_REVISAO -> VIGENTE` (coordenador aprova)
-- `PENDENTE_COORDENACAO/EM_REVISAO -> REPROVADO` (coordenador reprova)
+- `AUTOR` cria documento/versao em `RASCUNHO`
+- `COORDENADOR` aprova rascunho para `PENDENTE_QUALIDADE`
+- `COORDENADOR` reprova rascunho para `REVISAR_RASCUNHO`
+- editar `REVISAR_RASCUNHO` move para `RASCUNHO_REVISADO`
+- `REVISOR` (nome funcional `QUALIDADE`) aprova `PENDENTE_QUALIDADE` para `VIGENTE`
+- `REVISOR` (nome funcional `QUALIDADE`) reprova `PENDENTE_QUALIDADE` para `REPROVADO`
 - `VIGENTE -> OBSOLETO` (quando nova versao vira vigente)
 
 ### 3.3 Regras por perfil (backend)
 
-- `AUTOR`, `REVISOR`, `COORDENADOR`: podem criar documento e criar nova versao
-- submit para coordenacao: apenas `REVISOR`
-- aprovacao/reprovacao final: apenas `COORDENADOR`
-- coordenador com setor definido aprova apenas documentos do mesmo setor
+- criar documento e criar nova versao: apenas `AUTOR`
+- aprovacao/reprovacao de rascunho: apenas `COORDENADOR`
+- aprovacao/reprovacao etapa final: apenas `REVISOR` (nome funcional `QUALIDADE`)
+- coordenador com setor definido aprova/reprova apenas documentos do mesmo setor
 - edicao/exclusao de rascunho: apenas solicitante da criacao
-- gestao de usuarios e catalogo backend: apenas `ADMIN`.
+- gestao de usuarios: apenas `ADMIN`
+- catalogo backend: `ADMIN` e `REVISOR` (nome funcional `QUALIDADE`)
+- historico de acoes: `ADMIN` global, `COORDENADOR` por setor.
 
 ### 3.4 Regras de data
 
@@ -156,4 +162,4 @@ Grupo `Gestao de Cadastros`:
 
 - RNC ainda placeholder (`Em breve`)
 - sem Alembic versionado no fluxo atual (schema ajustado em startup)
-- eventos de auditoria sao persistidos em `document_events`, mas sem tela dedicada para consulta.
+- eventos de auditoria sao persistidos em `document_events` e `audit_logs`, com tela dedicada para consulta.
