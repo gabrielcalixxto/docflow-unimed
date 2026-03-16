@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
+import { resolveApiFileUrl, showGlobalError } from "../services/api";
 import { fetchWorkflowItems, summarizeWorkflow } from "../services/workflow";
 import { formatStatusLabel } from "../utils/status";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
 const FLOATING_BAR_TOP_OFFSET = 16;
 const FLOATING_BAR_HEIGHT = 15;
 
@@ -53,25 +53,11 @@ function extractFileName(path) {
 }
 
 function resolveFileUrl(path) {
-  if (!path) {
-    return "";
-  }
-  const value = String(path).trim();
-  if (/^https?:\/\//i.test(value)) {
-    return value;
-  }
-  if (value.startsWith("/")) {
-    return `${API_BASE_URL}${value}`;
-  }
-  return "";
+  return resolveApiFileUrl(path);
 }
 
 function resolveFileDownloadUrl(path) {
-  const base = resolveFileUrl(path);
-  if (!base) {
-    return "";
-  }
-  return `${base}${base.includes("?") ? "&" : "?"}download=1`;
+  return resolveApiFileUrl(path, { download: true });
 }
 
 function normalizeNumericIds(values) {
@@ -92,7 +78,6 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
   const syncingScrollRef = useRef(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [floatingBarLayout, setFloatingBarLayout] = useState({
     visible: false,
     mode: "hidden",
@@ -116,7 +101,6 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
 
   const loadItems = async () => {
     setLoading(true);
-    setError("");
     try {
       const data = await fetchWorkflowItems();
       setItems(data);
@@ -125,7 +109,7 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      setError(requestError.message || "Nao foi possivel carregar o painel.");
+      showGlobalError(requestError.message || "Nao foi possivel carregar o painel.");
     } finally {
       setLoading(false);
     }
@@ -531,8 +515,6 @@ export default function PainelDocumentos({ session, onUnauthorized }) {
           <p>Resumo do acervo considerando todas as versoes de cada documento.</p>
         </div>
       </section>
-
-      {error && <p className="error-text margin-top">{error}</p>}
 
       <section className="workflow-summary-grid">
         <article className="panel-float workflow-stat">

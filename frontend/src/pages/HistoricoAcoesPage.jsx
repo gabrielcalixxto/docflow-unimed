@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { getAuditEvents } from "../services/api";
+import { getAuditEvents, showGlobalError } from "../services/api";
 
 const ACTION_LABELS = {
   CREATE: "Cadastro",
@@ -11,6 +11,8 @@ const ACTION_LABELS = {
   STATUS_CHANGE: "Mudanca de status",
   BULK_SYNC: "Sincronizacao automatica",
   REJECT_REASON: "Motivo de reprovacao",
+  VIEW_FILE: "Visualizacao de arquivo",
+  DOWNLOAD_FILE: "Download de arquivo",
 };
 
 const STATUS_LABELS = {
@@ -61,6 +63,7 @@ const FIELD_LABELS = {
   sector_ids: "Setores",
   content_type: "Tipo de arquivo",
   size_bytes: "Tamanho",
+  access_mode: "Modo de acesso",
 };
 
 function formatDateTime(value) {
@@ -197,6 +200,12 @@ function buildEventSummary(eventItem) {
     }
     return `${actor} alterou ${entityLabel}.`;
   }
+  if (eventItem.action === "VIEW_FILE") {
+    return `${actor} visualizou ${entityLabel}.`;
+  }
+  if (eventItem.action === "DOWNLOAD_FILE") {
+    return `${actor} baixou ${entityLabel}.`;
+  }
   return `${actor} executou ${formatAction(eventItem.action)} em ${entityLabel}.`;
 }
 
@@ -216,11 +225,9 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
   const [events, setEvents] = useState([]);
   const [expandedRows, setExpandedRows] = useState({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const loadEvents = async () => {
     setLoading(true);
-    setError("");
     try {
       const response = await getAuditEvents({ page: 1, page_size: 500 });
       const items = Array.isArray(response?.items) ? response.items : [];
@@ -230,7 +237,7 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      setError(requestError.message || "Nao foi possivel carregar o historico de acoes.");
+      showGlobalError(requestError.message || "Nao foi possivel carregar o historico de acoes.");
     } finally {
       setLoading(false);
     }
@@ -401,8 +408,6 @@ export default function HistoricoAcoesPage({ onUnauthorized }) {
           <p>Cada linha representa um evento real. Clique para expandir os campos alterados.</p>
         </div>
       </section>
-
-      {error && <p className="error-text margin-top">{error}</p>}
 
       <section className="panel-float painel-filters-grid">
         <label>

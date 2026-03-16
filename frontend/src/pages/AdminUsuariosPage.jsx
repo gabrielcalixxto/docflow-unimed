@@ -7,13 +7,19 @@ import {
   deleteAdminUser,
   getAdminUserOptions,
   getAdminUsers,
+  showGlobalError,
   updateAdminUser,
 } from "../services/api";
 import { displayRole } from "../utils/roles";
 
 const ROLE_DISPLAY_ORDER = ["LEITOR", "AUTOR", "REVISOR", "COORDENADOR", "ADMIN"];
+const LOGIN_PATTERN = /^[a-z]+(?:\.[a-z]+)+$/;
+const PASSWORD_NUMBER_PATTERN = /\d/;
+const PASSWORD_SPECIAL_PATTERN = /[^A-Za-z0-9\s]/;
+const LOWERCASE_NAME_WORDS = new Set(["de", "do", "da"]);
 
 const INITIAL_CREATE_FORM = {
+  username: "",
   name: "",
   email: "",
   roles: [],
@@ -25,6 +31,7 @@ const INITIAL_CREATE_FORM = {
 
 const INITIAL_EDIT_FORM = {
   userId: null,
+  username: "",
   name: "",
   email: "",
   roles: [],
@@ -121,6 +128,39 @@ function mergeUniqueIds(currentValues, valuesToAdd) {
   return [...new Set([...(currentValues || []), ...(valuesToAdd || [])])];
 }
 
+function normalizeLoginValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeLoginInput(value) {
+  return normalizeLoginValue(value).replace(/\s+/g, "");
+}
+
+function isPasswordComplexEnough(value) {
+  return (
+    typeof value === "string" &&
+    value.length >= 8 &&
+    PASSWORD_NUMBER_PATTERN.test(value) &&
+    PASSWORD_SPECIAL_PATTERN.test(value)
+  );
+}
+
+function formatPersonName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return normalized
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && LOWERCASE_NAME_WORDS.has(lower)) {
+        return lower;
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 export default function AdminUsuariosPage({ onUnauthorized }) {
   const { preserveViewport } = useViewportPreserver();
   const [users, setUsers] = useState([]);
@@ -141,7 +181,14 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     sector: "ALL",
   });
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const companyNameById = useMemo(
     () => new Map((options.companies || []).map((company) => [String(company.id), company.name])),
@@ -188,7 +235,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         if (prev && companies.some((company) => String(company.id) === prev)) {
           return prev;
         }
-        return companies[0] ? String(companies[0].id) : "";
+        return "";
       });
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -344,8 +391,19 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
   const handleCreateUser = async (event) => {
     event.preventDefault();
+    const normalizedUsername = normalizeLoginValue(createForm.username);
+    const normalizedName = formatPersonName(createForm.name);
+
+    if (!LOGIN_PATTERN.test(normalizedUsername)) {
+      showFeedback("error", "Login invalido. Use o formato nome.texto, sem espacos, numeros ou caracteres especiais.");
+      return;
+    }
     if (createForm.roles.length === 0) {
       showFeedback("error", "Selecione pelo menos um papel.");
+      return;
+    }
+    if (!isPasswordComplexEnough(createForm.password)) {
+      showFeedback("error", "Senha invalida. Use no minimo 8 caracteres, com numero e caractere especial.");
       return;
     }
     if (createForm.password !== createForm.passwordConfirm) {
@@ -357,7 +415,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       await createAdminUser({
-        name: createForm.name.trim(),
+        username: normalizedUsername,
+        name: normalizedName,
         email: createForm.email.trim().toLowerCase(),
         roles: createForm.roles,
         company_ids: createForm.companyIds.map((value) => Number(value)),
@@ -399,6 +458,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
     setEditForm({
       userId: user.id,
+      username: user.username || "",
       name: user.name || "",
       email: user.email || "",
       roles,
@@ -414,11 +474,22 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
 
   const handleUpdateUser = async (event) => {
     event.preventDefault();
+    const normalizedUsername = normalizeLoginValue(editForm.username);
+    const normalizedName = formatPersonName(editForm.name);
+
     if (!editForm.userId) {
+      return;
+    }
+    if (!LOGIN_PATTERN.test(normalizedUsername)) {
+      showFeedback("error", "Login invalido. Use o formato nome.texto, sem espacos, numeros ou caracteres especiais.");
       return;
     }
     if (editForm.roles.length === 0) {
       showFeedback("error", "Selecione pelo menos um papel.");
+      return;
+    }
+    if (editForm.password && !isPasswordComplexEnough(editForm.password)) {
+      showFeedback("error", "Nova senha invalida. Use no minimo 8 caracteres, com numero e caractere especial.");
       return;
     }
     if (editForm.password && editForm.password !== editForm.passwordConfirm) {
@@ -430,7 +501,8 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
     setFeedback({ type: "", message: "" });
     try {
       await updateAdminUser(editForm.userId, {
-        name: editForm.name.trim(),
+        username: normalizedUsername,
+        name: normalizedName,
         email: editForm.email.trim().toLowerCase(),
         roles: editForm.roles,
         company_ids: editForm.companyIds.map((value) => Number(value)),
@@ -536,14 +608,27 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid admin-users-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreateUser}>
           <h3>Criar usuario</h3>
           <div className="form-grid">
             <label>
-              Nome
+              Login
+              <input
+                required
+                value={createForm.username}
+                placeholder="usuario.exemplo"
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, username: normalizeLoginInput(event.target.value) }))
+                }
+              />
+            </label>
+            <label>
+              Nome completo
               <input
                 required
                 value={createForm.name}
@@ -564,7 +649,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <p className="admin-field-label">Empresas</p>
               <div className="company-picker-row">
                 <select value={createCompanyToAdd} onChange={(event) => setCreateCompanyToAdd(event.target.value)}>
-                  <option value="">Selecione a empresa</option>
+                  <option value="">Selecione a Empresa</option>
                   <option value="ALL">TODOS</option>
                   {options.companies.map((company) => (
                     <option key={company.id} value={String(company.id)}>
@@ -724,7 +809,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <input
                 required
                 type="password"
-                minLength={6}
+                minLength={8}
                 value={createForm.password}
                 onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
               />
@@ -734,7 +819,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
               <input
                 required
                 type="password"
-                minLength={6}
+                minLength={8}
                 value={createForm.passwordConfirm}
                 onChange={(event) =>
                   setCreateForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
@@ -753,7 +838,18 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
           {editForm.userId ? (
             <div className="form-grid">
               <label>
-                Nome
+                Login
+                <input
+                  required
+                  value={editForm.username}
+                  placeholder="usuario.exemplo"
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, username: normalizeLoginInput(event.target.value) }))
+                  }
+                />
+              </label>
+              <label>
+                Nome completo
                 <input
                   required
                   value={editForm.name}
@@ -774,7 +870,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 <p className="admin-field-label">Empresas</p>
                 <div className="company-picker-row">
                   <select value={editCompanyToAdd} onChange={(event) => setEditCompanyToAdd(event.target.value)}>
-                    <option value="">Selecione a empresa</option>
+                    <option value="">Selecione a Empresa</option>
                     <option value="ALL">TODOS</option>
                     {options.companies.map((company) => (
                       <option key={company.id} value={String(company.id)}>
@@ -933,7 +1029,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 Nova senha (opcional)
                 <input
                   type="password"
-                  minLength={6}
+                  minLength={8}
                   value={editForm.password}
                   onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
                 />
@@ -942,7 +1038,7 @@ export default function AdminUsuariosPage({ onUnauthorized }) {
                 Repetir nova senha
                 <input
                   type="password"
-                  minLength={6}
+                  minLength={8}
                   value={editForm.passwordConfirm}
                   onChange={(event) =>
                     setEditForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))

@@ -4,6 +4,7 @@ import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import {
   createAdminDocumentType,
   getAdminCatalogOptions,
+  showGlobalError,
   updateAdminDocumentType,
 } from "../services/api";
 
@@ -22,7 +23,14 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
   const [editingSigla, setEditingSigla] = useState("");
   const [editingName, setEditingName] = useState("");
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -127,7 +135,9 @@ export default function CadastroTipoDocumentoPage({ onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreate}>

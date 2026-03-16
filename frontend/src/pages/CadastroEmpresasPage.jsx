@@ -5,6 +5,7 @@ import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminCompany,
   getAdminCatalogOptions,
+  showGlobalError,
   updateAdminCompany,
 } from "../services/api";
 
@@ -24,7 +25,14 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
   const [editingCompanyId, setEditingCompanyId] = useState(null);
   const [editingCompanyName, setEditingCompanyName] = useState("");
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const sectorsByCompany = useMemo(() => {
     const counts = new Map();
@@ -146,7 +154,9 @@ export default function CadastroEmpresasPage({ onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreate}>

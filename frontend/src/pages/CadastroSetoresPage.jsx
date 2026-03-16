@@ -5,6 +5,7 @@ import useViewportPreserver from "../hooks/useViewportPreserver";
 import {
   createAdminSector,
   getAdminCatalogOptions,
+  showGlobalError,
   updateAdminSector,
 } from "../services/api";
 
@@ -34,7 +35,14 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
     [companies],
   );
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -201,7 +209,9 @@ export default function CadastroSetoresPage({ onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid">
         <form className="panel-float workflow-card" onSubmit={handleCreate}>

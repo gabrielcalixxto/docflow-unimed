@@ -6,6 +6,7 @@ import {
   createVersion,
   getDocumentFormOptions,
   searchDocuments,
+  showGlobalError,
   uploadDocumentFile,
 } from "../services/api";
 import { getCurrentLocalDateISO, getLocalDatePlusYearsISO } from "../utils/date";
@@ -137,7 +138,14 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
   const createFileInputRef = useRef(null);
   const updateFileInputRef = useRef(null);
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -508,7 +516,9 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="workflow-grid dual-workflow-grid">
         <form
@@ -687,8 +697,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 Solte o arquivo dentro do card de Novo documento
               </div>
             </label>
-            <label>
-              Arquivo selecionado
+            <div className="field-block">
+              <p>Arquivo selecionado</p>
               <div className="selected-document-box selected-file-box">
                 <span>{documentFile ? documentFile.name : "Nenhum arquivo selecionado"}</span>
                 {documentFile && (
@@ -697,7 +707,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                   </button>
                 )}
               </div>
-            </label>
+            </div>
             <label>
               Data de vencimento
               <input
@@ -772,8 +782,8 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                 Solte o arquivo dentro do card de Criar nova versao
               </div>
             </label>
-            <label>
-              Arquivo selecionado
+            <div className="field-block">
+              <p>Arquivo selecionado</p>
               <div className="selected-document-box selected-file-box">
                 <span>{versionFile ? versionFile.name : "Nenhum arquivo selecionado"}</span>
                 {versionFile && (
@@ -782,7 +792,7 @@ export default function NovoDocumentoPage({ onUnauthorized }) {
                   </button>
                 )}
               </div>
-            </label>
+            </div>
             <label>
               Data de vencimento
               <input

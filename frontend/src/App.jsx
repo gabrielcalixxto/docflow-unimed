@@ -19,6 +19,7 @@ import {
   getStoredToken,
   login,
   refreshSession,
+  setGlobalErrorListener,
   setUnauthorizedListener,
   storeToken,
 } from "./services/api";
@@ -68,6 +69,24 @@ function resolveFallbackPage(roles) {
   return PAGE_FALLBACK_ORDER.find((pageId) => PAGE_ACCESS_RULES[pageId]?.(roles)) || "search";
 }
 
+function GlobalErrorDialog({ message, onClose }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="app-error-dialog-backdrop" role="presentation">
+      <div className="app-error-dialog" role="dialog" aria-modal="true" aria-labelledby="app-error-title">
+        <h3 id="app-error-title">Erro</h3>
+        <p>{message}</p>
+        <button type="button" className="app-error-dialog-btn" onClick={onClose}>
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function buildSession(token) {
   if (!token) {
     return null;
@@ -110,6 +129,7 @@ export default function App() {
   const [isBootstrappingSession, setIsBootstrappingSession] = useState(() => Boolean(getStoredToken()));
   const [activePage, setActivePage] = useState("search");
   const [authError, setAuthError] = useState("");
+  const [globalErrorMessage, setGlobalErrorMessage] = useState("");
 
   const session = useMemo(() => buildSession(token), [token]);
 
@@ -200,56 +220,81 @@ export default function App() {
     };
   }, [handleUnauthorized]);
 
+  const handleGlobalError = useCallback((error) => {
+    const message = typeof error?.message === "string" ? error.message.trim() : "";
+    setGlobalErrorMessage(message || "Nao foi possivel concluir a operacao.");
+  }, []);
+
+  useEffect(() => {
+    setGlobalErrorListener(handleGlobalError);
+    return () => {
+      setGlobalErrorListener(null);
+    };
+  }, [handleGlobalError]);
+
   if (isBootstrappingSession) {
-    return <div className="page-animation">Carregando sessao...</div>;
+    return (
+      <>
+        <div className="page-animation">Carregando sessao...</div>
+        <GlobalErrorDialog message={globalErrorMessage} onClose={() => setGlobalErrorMessage("")} />
+      </>
+    );
   }
 
   if (!session) {
-    return <LoginPage onLogin={handleLogin} errorMessage={authError} />;
+    return (
+      <>
+        <LoginPage onLogin={handleLogin} />
+        <GlobalErrorDialog message={globalErrorMessage} onClose={() => setGlobalErrorMessage("")} />
+      </>
+    );
   }
 
   const canOpenActivePage = PAGE_ACCESS_RULES[activePage]?.(session.roles) ?? true;
   const resolvedPage = canOpenActivePage ? activePage : resolveFallbackPage(session.roles);
 
   return (
-    <AppShell
-      activePage={resolvedPage}
-      onPageChange={setActivePage}
-      session={session}
-      onLogout={() => handleLogout("")}
-    >
-      {resolvedPage === "search" && (
-        <SearchPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "painel-documentos" && (
-        <PainelDocumentos session={session} onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "painel-rnc" && <PainelRncPage />}
-      {resolvedPage === "nova-rnc" && <NovaRncPage />}
-      {resolvedPage === "novo-documento" && (
-        <NovoDocumentoPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "central-aprovacao" && (
-        <SolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "historico-solicitacoes" && (
-        <HistoricoSolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "painel-usuarios" && (
-        <AdminUsuariosPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "cadastro-setores" && (
-        <CadastroSetoresPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "cadastro-empresas" && (
-        <CadastroEmpresasPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "cadastro-tipo-documento" && (
-        <CadastroTipoDocumentoPage onUnauthorized={handleUnauthorized} />
-      )}
-      {resolvedPage === "historico-acoes" && (
-        <HistoricoAcoesPage onUnauthorized={handleUnauthorized} />
-      )}
-    </AppShell>
+    <>
+      <AppShell
+        activePage={resolvedPage}
+        onPageChange={setActivePage}
+        session={session}
+        onLogout={() => handleLogout("")}
+      >
+        {resolvedPage === "search" && (
+          <SearchPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "painel-documentos" && (
+          <PainelDocumentos session={session} onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "painel-rnc" && <PainelRncPage />}
+        {resolvedPage === "nova-rnc" && <NovaRncPage />}
+        {resolvedPage === "novo-documento" && (
+          <NovoDocumentoPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "central-aprovacao" && (
+          <SolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "historico-solicitacoes" && (
+          <HistoricoSolicitacoesPage session={session} onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "painel-usuarios" && (
+          <AdminUsuariosPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "cadastro-setores" && (
+          <CadastroSetoresPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "cadastro-empresas" && (
+          <CadastroEmpresasPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "cadastro-tipo-documento" && (
+          <CadastroTipoDocumentoPage onUnauthorized={handleUnauthorized} />
+        )}
+        {resolvedPage === "historico-acoes" && (
+          <HistoricoAcoesPage onUnauthorized={handleUnauthorized} />
+        )}
+      </AppShell>
+      <GlobalErrorDialog message={globalErrorMessage} onClose={() => setGlobalErrorMessage("")} />
+    </>
   );
 }

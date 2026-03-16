@@ -1,18 +1,12 @@
 import { useState } from "react";
 
-export default function LoginPage({ onLogin, errorMessage }) {
-  const [username, setUsername] = useState("qualidade.docflow");
-  const [password, setPassword] = useState("123");
+export default function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [localError, setLocalError] = useState("");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!username || !password) {
-      setLocalError("Preencha login e senha.");
-      return;
-    }
-    setLocalError("");
     setIsSubmitting(true);
     try {
       await onLogin({
@@ -43,6 +37,7 @@ export default function LoginPage({ onLogin, errorMessage }) {
           <input
             id="login-username"
             type="text"
+            required
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder="gabriel.soares"
@@ -53,13 +48,12 @@ export default function LoginPage({ onLogin, errorMessage }) {
           <input
             id="login-password"
             type="password"
+            required
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Sua senha"
             autoComplete="current-password"
           />
-
-          {(localError || errorMessage) && <p className="error-text">{localError || errorMessage}</p>}
 
           <button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Entrando..." : "Entrar"}

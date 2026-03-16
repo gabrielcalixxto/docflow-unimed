@@ -1,16 +1,37 @@
 import axios from "axios";
 
 const TOKEN_STORAGE_KEY = "docflow_access_token";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
 let unauthorizedListener = null;
+let globalErrorListener = null;
+let lastGlobalErrorMessage = "";
+let lastGlobalErrorAt = 0;
+const GLOBAL_ERROR_DEDUP_WINDOW_MS = 700;
 
 function notifyUnauthorized(status) {
   if (typeof unauthorizedListener === "function") {
     unauthorizedListener(status);
+  }
+}
+
+function notifyGlobalError(error) {
+  if (typeof globalErrorListener !== "function") {
+    return;
+  }
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  const now = Date.now();
+  if (message && message === lastGlobalErrorMessage && now - lastGlobalErrorAt < GLOBAL_ERROR_DEDUP_WINDOW_MS) {
+    return;
+  }
+  lastGlobalErrorMessage = message;
+  lastGlobalErrorAt = now;
+  if (typeof globalErrorListener === "function") {
+    globalErrorListener(error);
   }
 }
 
@@ -53,6 +74,7 @@ async function request(config, withAuth = true) {
     if (withAuth && (normalizedError.status === 401 || normalizedError.status === 403)) {
       notifyUnauthorized(normalizedError.status);
     }
+    notifyGlobalError(normalizedError);
     throw normalizedError;
   }
 }
@@ -71,6 +93,44 @@ export function clearStoredToken() {
 
 export function setUnauthorizedListener(listener) {
   unauthorizedListener = typeof listener === "function" ? listener : null;
+}
+
+export function setGlobalErrorListener(listener) {
+  globalErrorListener = typeof listener === "function" ? listener : null;
+}
+
+export function showGlobalError(message) {
+  const text = String(message || "").trim() || "Nao foi possivel concluir a operacao.";
+  notifyGlobalError(new Error(text));
+}
+
+export function resolveApiFileUrl(path, { download = false } = {}) {
+  if (!path) {
+    return "";
+  }
+  const value = String(path).trim();
+  if (/^https?:\/\//i.test(value)) {
+    const url = new URL(value);
+    if (download) {
+      url.searchParams.set("download", "1");
+    }
+    return url.toString();
+  }
+  if (!value.startsWith("/")) {
+    return "";
+  }
+
+  const url = new URL(`${API_BASE_URL}${value}`);
+  if (value.startsWith("/file-storage/")) {
+    const token = getStoredToken();
+    if (token) {
+      url.searchParams.set("token", token);
+    }
+  }
+  if (download) {
+    url.searchParams.set("download", "1");
+  }
+  return url.toString();
 }
 
 export async function login(credentials) {

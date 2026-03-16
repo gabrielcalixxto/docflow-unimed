@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { deleteDraftDocument, updateDraftDocument } from "../services/api";
+import { deleteDraftDocument, showGlobalError, updateDraftDocument } from "../services/api";
 import { fetchWorkflowItems } from "../services/workflow";
 import { getCurrentLocalDateISO } from "../utils/date";
 import { formatStatusLabel } from "../utils/status";
@@ -51,7 +51,14 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
     expirationDate: "",
   });
 
-  const showFeedback = (type, message) => setFeedback({ type, message });
+  const showFeedback = (type, message) => {
+    if (type === "error") {
+      showGlobalError(message);
+      setFeedback({ type: "", message: "" });
+      return;
+    }
+    setFeedback({ type, message });
+  };
 
   const loadItems = async () => {
     setLoading(true);
@@ -334,7 +341,9 @@ export default function HistoricoSolicitacoesPage({ session, onUnauthorized }) {
         </div>
       </section>
 
-      {feedback.message && <p className={`feedback ${feedback.type}`}>{feedback.message}</p>}
+      {feedback.type === "success" && feedback.message && (
+        <p className={`feedback ${feedback.type}`}>{feedback.message}</p>
+      )}
 
       <section className="panel-float painel-filters-grid">
         <label>

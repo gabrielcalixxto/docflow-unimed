@@ -2,9 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import useRealtimeEvents from "../hooks/useRealtimeEvents";
 import useViewportPreserver from "../hooks/useViewportPreserver";
-import { getDocumentEvents, getDocumentFormOptions, searchDocuments } from "../services/api";
+import {
+  getDocumentEvents,
+  getDocumentFormOptions,
+  resolveApiFileUrl,
+  searchDocuments,
+  showGlobalError,
+} from "../services/api";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
 const PDF_VIEWER_PARAMS = "toolbar=0&navpanes=0&scrollbar=1";
 
 function extractFileName(path) {
@@ -16,17 +21,7 @@ function extractFileName(path) {
 }
 
 function resolvePreviewSrc(path) {
-  if (!path) {
-    return "";
-  }
-  const value = String(path).trim();
-  if (/^https?:\/\//i.test(value)) {
-    return value;
-  }
-  if (value.startsWith("/")) {
-    return `${API_BASE_URL}${value}`;
-  }
-  return "";
+  return resolveApiFileUrl(path);
 }
 
 function buildViewerSrc(path) {
@@ -80,16 +75,13 @@ export default function SearchPage({ onUnauthorized }) {
   });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedResult, setSelectedResult] = useState(null);
   const [documentEvents, setDocumentEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const [eventsError, setEventsError] = useState("");
 
   const loadResults = async () => {
     setLoading(true);
-    setError("");
     try {
       const [searchData, formOptions] = await Promise.all([searchDocuments(), getDocumentFormOptions()]);
       setItems(searchData.items || []);
@@ -117,7 +109,7 @@ export default function SearchPage({ onUnauthorized }) {
         onUnauthorized?.();
         return;
       }
-      setError(requestError.message || "Nao foi possivel carregar os documentos.");
+      showGlobalError(requestError.message || "Nao foi possivel carregar os documentos.");
     } finally {
       setLoading(false);
     }
@@ -189,7 +181,6 @@ export default function SearchPage({ onUnauthorized }) {
     const documentId = selectedResult?.document_id;
     if (!viewerOpen || !documentId) {
       setDocumentEvents([]);
-      setEventsError("");
       return;
     }
 
@@ -197,7 +188,6 @@ export default function SearchPage({ onUnauthorized }) {
 
     const loadDocumentEvents = async () => {
       setEventsLoading(true);
-      setEventsError("");
       try {
         const response = await getDocumentEvents(documentId, { page: 1, page_size: 100 });
         if (!mounted) {
@@ -212,7 +202,7 @@ export default function SearchPage({ onUnauthorized }) {
           onUnauthorized?.();
           return;
         }
-        setEventsError(requestError.message || "Nao foi possivel carregar a trilha de auditoria.");
+        showGlobalError(requestError.message || "Nao foi possivel carregar a trilha de auditoria.");
       } finally {
         if (mounted) {
           setEventsLoading(false);
@@ -231,7 +221,7 @@ export default function SearchPage({ onUnauthorized }) {
     if (!selectedResult) {
       return;
     }
-    const src = resolvePreviewSrc(selectedResult.file_path);
+    const src = resolveApiFileUrl(selectedResult.file_path, { download: true });
     if (!src) {
       return;
     }
@@ -384,8 +374,6 @@ export default function SearchPage({ onUnauthorized }) {
         </label>
       </section>
 
-      {error && <p className="error-text margin-top">{error}</p>}
-
       <section className="results-grid">
         {filteredItems.map((item, index) => (
           <button
@@ -500,9 +488,8 @@ export default function SearchPage({ onUnauthorized }) {
               </ul>
 
               <h4>Trilha de auditoria</h4>
-              {eventsError && <p className="error-text">{eventsError}</p>}
               {eventsLoading && <p>Carregando eventos...</p>}
-              {!eventsLoading && !eventsError && (
+              {!eventsLoading && (
                 <ul>
                   {documentEvents.map((eventItem) => (
                     <li key={eventItem.id}>
